@@ -5,7 +5,17 @@
 automated suite. The integration tests spin up a real SQLite database in a temp
 directory, run the real queue engine and pipeline, and write real files.
 
-Result at delivery: **2 files, 55 tests, all passing** (`npm test`, Node 22.22, Linux).
+Result at delivery: **55 tests, all passing** (`npm test`, Node 22.22, Linux). A third file,
+`tests/demo-data.smoke.test.ts`, is skipped by default; with `VF_DEMO_DIR=<dir>` it generates a
+populated database for UI smoke-testing.
+
+## Headless UI smoke test
+
+`VF_SMOKE_TEST=<dir> VF_SMOKE_PAGES=dashboard,generate,… electron .` starts the real app
+(main process + preload + renderer, real SQLite), navigates through the listed pages, saves a
+screenshot per page and the renderer console into `<dir>`, then quits. At delivery this was run
+under Xvfb against the demo database for all 10 pages: every page rendered and the renderer
+console was empty (no errors or warnings).
 
 | # | Required test | Where |
 |---|---|---|

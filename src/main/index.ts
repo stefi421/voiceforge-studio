@@ -106,7 +106,8 @@ function createWindow(s: Services): BrowserWindow {
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
     title: 'VoiceForge Studio',
-    icon: process.platform === 'win32' ? path.join(__dirname, '../../build/icon.ico') : undefined,
+    // Packaged: build/icon.ico is shipped next to app.asar via extraResources; dev: read it from the repo.
+    icon: process.platform === 'win32' ? (app.isPackaged ? path.join(process.resourcesPath, 'icon.ico') : path.join(__dirname, '../../build/icon.ico')) : undefined,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
