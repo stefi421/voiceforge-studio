@@ -34,7 +34,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): JSX.Element 
   }, [])
 
   const list = useMemo(() => {
-    const all = voices.data ?? []
+    const all = Array.isArray(voices.data) ? voices.data : []
     const q = query.trim().toLowerCase()
     return all
       .filter((v) => !onlyFav || v.favorite)
@@ -94,7 +94,7 @@ export function VoicePicker({ value, onChange }: VoicePickerProps): JSX.Element 
     )
   }
 
-  const selected = (voices.data ?? []).find((v) => v.voiceId === value)
+  const selected = (Array.isArray(voices.data) ? voices.data : []).find((v) => v.voiceId === value)
 
   return (
     <div className="col gap-3">

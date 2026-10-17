@@ -40,8 +40,8 @@ export function UsagePage(): JSX.Element {
   const usage = useAsync(() => api.invoke('usage:summary', range), [range.from, range.to])
   const u = usage.data
 
-  const daily = useMemo(() => (u?.daily ?? []).map((d) => ({ label: d.day.slice(5), a: d.openaiCost, b: d.elevenCost })), [u])
-  const monthly = useMemo(() => (u?.monthly ?? []).map((m) => ({ label: m.month, a: m.openaiCost, b: m.elevenCost })), [u])
+  const daily = useMemo(() => (Array.isArray(u?.daily) ? u.daily : []).map((d) => ({ label: d.day.slice(5), a: d.openaiCost, b: d.elevenCost })), [u])
+  const monthly = useMemo(() => (Array.isArray(u?.monthly) ? u.monthly : []).map((m) => ({ label: m.month, a: m.openaiCost, b: m.elevenCost })), [u])
   const daily_ = settings.spending.dailyLimitUsd
   const monthly_ = settings.spending.monthlyLimitUsd
 
@@ -86,9 +86,9 @@ export function UsagePage(): JSX.Element {
           </>
         )}
         <span className="spacer" />
-        {u && (
+        {u?.range && (
           <span className="xs muted">
-            {u.range.from} → {u.range.to} · {u.estimatesLabel}
+            {u.range.from} → {u.range.to} · {u.estimatesLabel ?? 'estimates'}
           </span>
         )}
       </div>
@@ -98,7 +98,7 @@ export function UsagePage(): JSX.Element {
       <div className="grid grid-2">
         <Card title="OpenAI" actions={<Badge>estimate</Badge>}>
           <div className="card-body">
-            {!u ? (
+            {!u?.openai ? (
               <SkeletonRows rows={3} />
             ) : (
               <div className="grid grid-4" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
@@ -112,7 +112,7 @@ export function UsagePage(): JSX.Element {
         </Card>
         <Card title="ElevenLabs" actions={<Badge>estimate</Badge>}>
           <div className="card-body">
-            {!u ? (
+            {!u?.elevenlabs ? (
               <SkeletonRows rows={3} />
             ) : (
               <div className="grid grid-3" style={{ gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
@@ -145,7 +145,7 @@ export function UsagePage(): JSX.Element {
       <div className="grid grid-2">
         <Card title="By channel">
           <div className="card-body-flush">
-            {!u || u.byChannel.length === 0 ? (
+            {!u || !Array.isArray(u.byChannel) || u.byChannel.length === 0 ? (
               <EmptyState compact icon={<ChartColumn size={18} />} title="No usage in range" />
             ) : (
               <table className="table">
@@ -175,7 +175,7 @@ export function UsagePage(): JSX.Element {
         </Card>
         <Card title="By project">
           <div className="card-body-flush" style={{ maxHeight: 420, overflow: 'auto' }}>
-            {!u || u.byProject.length === 0 ? (
+            {!u || !Array.isArray(u.byProject) || u.byProject.length === 0 ? (
               <EmptyState compact icon={<ChartColumn size={18} />} title="No usage in range" />
             ) : (
               <table className="table">

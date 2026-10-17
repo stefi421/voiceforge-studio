@@ -181,7 +181,7 @@ export function QueuePage(): JSX.Element {
     }
   }
 
-  const batchOptions = [{ value: '', label: 'All batches' }, ...(batches.data ?? []).map((b) => ({ value: b.id, label: `${b.name} (${b.completed}/${b.total}${b.failed ? `, ${b.failed} failed` : ''})` }))]
+  const batchOptions = [{ value: '', label: 'All batches' }, ...(Array.isArray(batches.data) ? batches.data : []).map((b) => ({ value: b.id, label: `${b.name} (${b.completed}/${b.total}${b.failed ? `, ${b.failed} failed` : ''})` }))]
   const channelOptions = [{ value: '', label: 'All channels' }, ...activeChannels(channels).map((c) => ({ value: c.id, label: `${c.icon} ${c.name}` }))]
   const pct = scoped.total > 0 ? (scoped.completed / scoped.total) * 100 : 0
 

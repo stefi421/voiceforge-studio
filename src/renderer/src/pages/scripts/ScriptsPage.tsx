@@ -7,7 +7,7 @@ import { activeChannels, useApp } from '@/store/app'
 import { useRouter } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { formatDateTime, formatDuration, formatNumber, relativeTime } from '@/lib/format'
-import { Badge, Button, ChannelChip, Checkbox, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
+import { Alert, Badge, Button, ChannelChip, Checkbox, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
 import { ScriptDrawer } from './ScriptDrawer'
 
 const STATUSES: ScriptStatus[] = ['draft', 'validated', 'approved', 'rejected', 'invalid']
@@ -39,7 +39,7 @@ export function ScriptsPage(): JSX.Element {
     () => api.invoke('scripts:list', { search: q || undefined, channelId: channelId || undefined, status: status || undefined, limit: 5000, sort: 'createdAt', dir: 'desc' }),
     [q, channelId, status, stats.completed]
   )
-  const rows = list.data ?? []
+  const rows = useMemo(() => (Array.isArray(list.data) ? list.data : []), [list.data])
 
   const columns = useMemo<Column<ScriptView>[]>(
     () => [
@@ -126,6 +126,12 @@ export function ScriptsPage(): JSX.Element {
         <span className="spacer" />
         <span className="xs muted">{rows.length} scripts</span>
       </div>
+      {list.error && (
+        <Alert tone="danger" title="Could not load scripts" actions={<Button size="sm" onClick={() => void list.reload()}>Retry</Button>}>
+          {list.error.message}
+          {list.error.action ? ` — ${list.error.action}` : ''}
+        </Alert>
+      )}
       <Table
         columns={columns}
         rows={rows}

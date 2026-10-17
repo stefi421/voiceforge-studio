@@ -142,7 +142,7 @@ export function StorageSection(): JSX.Element {
             Refresh list
           </Button>
         </div>
-        {(backups.data ?? []).length > 0 && (
+        {(Array.isArray(backups.data) ? backups.data : []).length > 0 && (
           <div className="table-wrap">
             <table className="table">
               <thead>
@@ -155,7 +155,7 @@ export function StorageSection(): JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {(backups.data ?? []).map((b) => (
+                {(Array.isArray(backups.data) ? backups.data : []).map((b) => (
                   <tr key={b.path}>
                     <td>{formatDateTime(b.createdAt)}</td>
                     <td className="mono xs truncate" style={{ maxWidth: 320 }} title={b.path}>{b.path}</td>

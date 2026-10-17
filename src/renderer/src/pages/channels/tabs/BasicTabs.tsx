@@ -218,7 +218,7 @@ export function OutputTab({ form, patch, errors }: TabProps): JSX.Element {
   const models = useAsync(() => api.invoke('openai:listModels', undefined), [hasKey], { enabled: hasKey })
   const modelOptions = useMemo(() => {
     const ids = new Set<string>(SUGGESTED_OPENAI_MODELS)
-    for (const m of models.data ?? []) ids.add(m.id)
+    for (const m of Array.isArray(models.data) ? models.data : []) ids.add(m.id)
     if (form.openaiModel) ids.add(form.openaiModel)
     return [{ value: '', label: `Global default (${settings.openai.defaultModel})` }, ...Array.from(ids).sort().map((id) => ({ value: id, label: id }))]
   }, [models.data, form.openaiModel, settings.openai.defaultModel])

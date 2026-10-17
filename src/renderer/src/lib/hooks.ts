@@ -14,7 +14,7 @@ export interface AsyncState<T> {
  * Ignores stale responses, exposes a manual reload and lets callers patch data
  * locally (e.g. after a live event).
  */
-export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown>, opts: { enabled?: boolean } = {}): AsyncState<T> {
+export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown>, opts: { enabled?: boolean; fallback?: T } = {}): AsyncState<T> {
   const [data, setDataState] = useState<T | null>(null)
   const [loading, setLoading] = useState<boolean>(opts.enabled !== false)
   const [error, setError] = useState<IpcErrorLike | null>(null)
@@ -22,6 +22,8 @@ export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown>, 
   const fnRef = useRef(fn)
   fnRef.current = fn
   const enabled = opts.enabled !== false
+  const fallbackRef = useRef(opts.fallback)
+  fallbackRef.current = opts.fallback
 
   const reload = useCallback(async () => {
     if (!enabled) return
@@ -30,11 +32,15 @@ export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown>, 
     try {
       const result = await fnRef.current()
       if (id === seq.current) {
-        setDataState(result)
+        // A handler that resolves with nothing is treated like "no data" rather than a crash.
+        setDataState(result === undefined || result === null ? (fallbackRef.current ?? null) : result)
         setError(null)
       }
     } catch (err) {
-      if (id === seq.current) setError(toIpcError(err))
+      if (id === seq.current) {
+        setError(toIpcError(err))
+        if (fallbackRef.current !== undefined) setDataState(fallbackRef.current)
+      }
     } finally {
       if (id === seq.current) setLoading(false)
     }

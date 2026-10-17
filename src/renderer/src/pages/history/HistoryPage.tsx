@@ -7,7 +7,7 @@ import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { statusLabel } from '@/lib/jobs'
 import { formatDateTime, formatTime, isoDay } from '@/lib/format'
-import { Badge, Button, Card, EmptyState, PageHeader, SearchInput, Select, StatusBadge } from '@/components/ui'
+import { Alert, Badge, Button, Card, EmptyState, PageHeader, SearchInput, Select, StatusBadge } from '@/components/ui'
 
 function eventTone(e: JobEvent): 'success' | 'danger' | 'warning' | 'info' | 'neutral' {
   const ev = e.event.toLowerCase()
@@ -38,10 +38,11 @@ export function HistoryPage(): JSX.Element {
     }
   }
 
-  const rows = list.data ?? []
+  const rows = Array.isArray(list.data) ? list.data : []
   const byDay = new Map<string, JobEvent[]>()
   for (const e of rows) {
-    const day = isoDay(new Date(e.at))
+    const d = new Date(e.at)
+    const day = Number.isNaN(d.getTime()) ? 'unknown' : isoDay(d)
     const arr = byDay.get(day) ?? []
     arr.push(e)
     byDay.set(day, arr)
@@ -54,7 +55,7 @@ export function HistoryPage(): JSX.Element {
         subtitle="Every status transition, retry and error, newest first."
         actions={
           <>
-            <Select className="filter-select" value={reportBatch} onChange={setReportBatch} options={[{ value: '', label: 'Report: all batches' }, ...(batches.data ?? []).map((b) => ({ value: b.id, label: b.name }))]} />
+            <Select className="filter-select" value={reportBatch} onChange={setReportBatch} options={[{ value: '', label: 'Report: all batches' }, ...(Array.isArray(batches.data) ? batches.data : []).map((b) => ({ value: b.id, label: b.name }))]} />
             <Button icon={<FileDown size={14} />} onClick={exportReport}>
               Export job report
             </Button>
@@ -71,13 +72,19 @@ export function HistoryPage(): JSX.Element {
         <span className="xs muted">{rows.length} events</span>
       </div>
 
+      {list.error && (
+        <Alert tone="danger" title="Could not load history" actions={<Button size="sm" onClick={() => void list.reload()}>Retry</Button>}>
+          {list.error.message}
+          {list.error.action ? ` — ${list.error.action}` : ''}
+        </Alert>
+      )}
       {rows.length === 0 ? (
         <Card>
           <EmptyState icon={<Clock size={20} />} title={list.loading ? 'Loading…' : 'No history yet'} description="Job events are recorded as soon as a generation starts." />
         </Card>
       ) : (
         Array.from(byDay.entries()).map(([day, events]) => (
-          <Card key={day} title={<span>{formatDateTime(`${day}T00:00:00`).slice(0, 11)}<Badge style={{ marginLeft: 8 }}>{events.length}</Badge></span>}>
+          <Card key={day} title={<span>{day === 'unknown' ? 'Unknown date' : formatDateTime(`${day}T00:00:00`).slice(0, 11)}<Badge style={{ marginLeft: 8 }}>{events.length}</Badge></span>}>
             <div className="card-body-flush">
               <table className="table">
                 <thead>

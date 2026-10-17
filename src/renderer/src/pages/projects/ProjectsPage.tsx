@@ -7,7 +7,7 @@ import { useApp } from '@/store/app'
 import { navigate } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { formatDateTime, relativeTime } from '@/lib/format'
-import { Badge, Button, Card, ChannelIcon, Checkbox, ConfirmDialog, Dialog, EmptyState, Field, Input, PageHeader, SearchInput, StatusBadge } from '@/components/ui'
+import { Alert, Badge, Button, Card, ChannelIcon, Checkbox, ConfirmDialog, Dialog, EmptyState, Field, Input, PageHeader, SearchInput, StatusBadge } from '@/components/ui'
 
 export function ProjectsPage(): JSX.Element {
   const channels = useApp((s) => s.channels)
@@ -21,7 +21,7 @@ export function ProjectsPage(): JSX.Element {
   const [busy, setBusy] = useState<string | null>(null)
 
   const list = useAsync(() => api.invoke('projects:list', { search: q || undefined, limit: 5000, sort: 'updatedAt', dir: 'desc', includeArchived: true }), [q, stats.completed])
-  const rows = useMemo(() => (list.data ?? []).filter((p) => showArchived || !p.archived), [list.data, showArchived])
+  const rows = useMemo(() => (Array.isArray(list.data) ? list.data : []).filter((p) => showArchived || !p.archived), [list.data, showArchived])
 
   const groups = useMemo(() => {
     const m = new Map<string, ProjectView[]>()
@@ -110,6 +110,12 @@ export function ProjectsPage(): JSX.Element {
         <span className="xs muted">{rows.length} projects</span>
       </div>
 
+      {list.error && (
+        <Alert tone="danger" title="Could not load projects" actions={<Button size="sm" onClick={() => void list.reload()}>Retry</Button>}>
+          {list.error.message}
+          {list.error.action ? ` — ${list.error.action}` : ''}
+        </Alert>
+      )}
       {groups.length === 0 ? (
         <Card>
           <EmptyState icon={<FolderOpen size={20} />} title={list.loading ? 'Loading…' : 'No projects yet'} description="Start a generation and each title becomes a project." actions={<Button variant="primary" onClick={() => navigate('generate')}>New generation</Button>} />

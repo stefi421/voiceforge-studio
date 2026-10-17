@@ -57,7 +57,7 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, now, onActi
         <ChannelChip name={job.channelName} color={job.channelColor} icon={job.channelIcon} />
       </td>
       <td className="compact">
-        <div className="col" style={{ gap: 4 }}>
+        <div className="col" style={{ gap: 4, alignItems: 'flex-start' }}>
           <StatusBadge status={job.status} />
           <StagePipeline job={job} />
         </div>

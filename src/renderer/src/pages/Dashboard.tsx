@@ -17,14 +17,18 @@ export function DashboardPage(): JSX.Element {
 
   const usage = useAsync(() => api.invoke('usage:summary', {}), [])
   const subscription = useAsync(() => api.invoke('eleven:subscription', undefined), [secrets.elevenlabs], { enabled: secrets.elevenlabs })
-  const projects = useAsync(() => api.invoke('projects:list', { limit: 8, sort: 'updatedAt', dir: 'desc' }), [stats.completed])
-  const scripts = useAsync(() => api.invoke('scripts:list', { limit: 5000 }), [stats.completed])
-  const audio = useAsync(() => api.invoke('audio:list', { limit: 5000, sort: 'createdAt', dir: 'desc' }), [stats.completed])
+  const projects = useAsync(() => api.invoke('projects:list', { limit: 8, sort: 'updatedAt', dir: 'desc' }), [stats.completed], { fallback: [] })
+  const scripts = useAsync(() => api.invoke('scripts:list', { limit: 5000 }), [stats.completed], { fallback: [] })
+  const audio = useAsync(() => api.invoke('audio:list', { limit: 5000, sort: 'createdAt', dir: 'desc' }), [stats.completed], { fallback: [] })
   const [playing, setPlaying] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
 
+  const projectRows = useMemo(() => (Array.isArray(projects.data) ? projects.data : []), [projects.data])
+  const scriptCount = Array.isArray(scripts.data) ? scripts.data.length : 0
+  const audioRows = useMemo(() => (Array.isArray(audio.data) ? audio.data : []), [audio.data])
   const channelsWithoutVoice = useMemo(() => live.filter((c) => !c.elevenVoiceId), [live])
-  const recentAudio = useMemo(() => (audio.data ?? []).filter((a) => a.status === 'ready').slice(0, 6), [audio.data])
+  const recentAudio = useMemo(() => audioRows.filter((a) => a.status === 'ready').slice(0, 6), [audioRows])
+  const loadErrors = [usage.error, projects.error, scripts.error, audio.error].filter((e): e is NonNullable<typeof e> => Boolean(e))
   const checklist: Array<{ label: string; done: boolean; action: () => void }> = [
     { label: 'Add your OpenAI API key', done: secrets.openai, action: () => navigate('settings', { tab: 'openai' }) },
     { label: 'Add your ElevenLabs API key', done: secrets.elevenlabs, action: () => navigate('settings', { tab: 'elevenlabs' }) },
@@ -87,6 +91,13 @@ export function DashboardPage(): JSX.Element {
         }
       />
 
+      {loadErrors.length > 0 && (
+        <Alert tone="danger" title="Some dashboard data could not be loaded">
+          {loadErrors[0]?.message}
+          {loadErrors[0]?.action ? ` — ${loadErrors[0].action}` : ''}
+        </Alert>
+      )}
+
       {setupNeeded && (
         <Alert tone="warning" title="Finish setting up VoiceForge Studio">
           <div className="checklist mt-2">
@@ -107,11 +118,11 @@ export function DashboardPage(): JSX.Element {
 
       <div className="grid grid-4">
         <Stat label="Channels" icon={<Tv size={12} />} value={live.length} sub={`${channels.length - live.length} archived`} onClick={() => navigate('channels')} />
-        <Stat label="Scripts generated" icon={<FileText size={12} />} value={scripts.loading ? <Skeleton width={60} height={28} /> : formatNumber(scripts.data?.length ?? 0)} onClick={() => navigate('scripts')} />
+        <Stat label="Scripts generated" icon={<FileText size={12} />} value={scripts.loading ? <Skeleton width={60} height={28} /> : formatNumber(scriptCount)} onClick={() => navigate('scripts')} />
         <Stat
           label="Voiceovers completed"
           icon={<AudioLines size={12} />}
-          value={audio.loading ? <Skeleton width={60} height={28} /> : formatNumber((audio.data ?? []).filter((a) => a.status === 'ready').length)}
+          value={audio.loading ? <Skeleton width={60} height={28} /> : formatNumber(audioRows.filter((a) => a.status === 'ready').length)}
           onClick={() => navigate('audio')}
         />
         <Stat
@@ -141,7 +152,7 @@ export function DashboardPage(): JSX.Element {
           <div className="card-body col gap-3">
             {usage.loading ? (
               <Skeleton height={48} />
-            ) : u ? (
+            ) : u?.openai ? (
               <>
                 <div className="stat-value" style={{ fontSize: 24 }}>
                   <CostLabel usd={u.openai.estimatedCost} />
@@ -160,7 +171,7 @@ export function DashboardPage(): JSX.Element {
           <div className="card-body col gap-3">
             {usage.loading ? (
               <Skeleton height={48} />
-            ) : u ? (
+            ) : u?.elevenlabs ? (
               <>
                 <div className="stat-value" style={{ fontSize: 24 }}>
                   <CostLabel usd={u.elevenlabs.estimatedCost} />
@@ -207,10 +218,10 @@ export function DashboardPage(): JSX.Element {
               <div style={{ padding: 16 }}>
                 <Skeleton height={60} />
               </div>
-            ) : (projects.data ?? []).length === 0 ? (
+            ) : projectRows.length === 0 ? (
               <EmptyState compact icon={<FolderOpen size={20} />} title="No projects yet" description="Every title you generate becomes a project with its script and audio files." />
             ) : (
-              (projects.data ?? []).slice(0, 8).map((p) => (
+              projectRows.slice(0, 8).map((p) => (
                 <div key={p.id} className="row-between" style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)' }}>
                   <div className="col" style={{ gap: 2, minWidth: 0 }}>
                     <span className="strong truncate">{p.title}</span>

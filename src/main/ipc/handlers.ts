@@ -492,8 +492,11 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     return { ok: true as const }
   })
   reg.handle('usage:summary', usageRangeSchema, ({ from, to }) => {
-    const toIso = to ?? new Date().toISOString()
-    const fromIso = from ?? new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    // Date-only values ("2026-10-17") are treated as whole local days.
+    const dayStart = (d: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00:00`).toISOString() : d)
+    const dayEnd = (d: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T23:59:59.999`).toISOString() : d)
+    const toIso = to ? dayEnd(to) : new Date().toISOString()
+    const fromIso = from ? dayStart(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
     return s.usage.summary(fromIso, toIso)
   })
   reg.handle('backup:create', null, () => backup.create())

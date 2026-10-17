@@ -1,8 +1,8 @@
 import { Component, useEffect, type ErrorInfo, type JSX, type ReactNode } from 'react'
 import { TriangleAlert } from 'lucide-react'
-import type { PageId } from '@shared/ipc'
+import { DASHBOARD_PAGES, type PageId } from '@shared/ipc'
 import { useApp } from '@/store/app'
-import { useRouter } from '@/store/router'
+import { navigate, useRouter } from '@/store/router'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useShortcuts } from '@/components/layout/useShortcuts'
 import { useTheme } from '@/components/layout/useTheme'
@@ -68,6 +68,17 @@ export function App(): JSX.Element {
   useEffect(() => {
     void boot()
   }, [boot])
+
+  // External navigation hook used by the main process (e.g. the VF_SMOKE_TEST screenshot run):
+  // window.dispatchEvent(new CustomEvent('vf:navigate', { detail: 'queue' }))
+  useEffect(() => {
+    const handler = (e: Event): void => {
+      const detail = (e as CustomEvent<unknown>).detail
+      if (typeof detail === 'string' && (DASHBOARD_PAGES as readonly string[]).includes(detail)) navigate(detail as PageId)
+    }
+    window.addEventListener('vf:navigate', handler)
+    return () => window.removeEventListener('vf:navigate', handler)
+  }, [])
 
   const Page = PAGES[page]
 

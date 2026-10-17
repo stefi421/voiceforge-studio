@@ -18,7 +18,7 @@ export function OpenAISection(): JSX.Element {
   const models = useAsync(() => api.invoke('openai:listModels', undefined), [hasKey], { enabled: hasKey })
   const options = useMemo(() => {
     const ids = new Set<string>(SUGGESTED_OPENAI_MODELS)
-    for (const m of models.data ?? []) ids.add(m.id)
+    for (const m of Array.isArray(models.data) ? models.data : []) ids.add(m.id)
     for (const v of [o.defaultModel, o.researchModel, o.reviewModel]) ids.add(v)
     return Array.from(ids).sort().map((id) => ({ value: id, label: id }))
   }, [models.data, o.defaultModel, o.researchModel, o.reviewModel])
@@ -29,7 +29,7 @@ export function OpenAISection(): JSX.Element {
       <div className="settings-group">
         <div className="row-between">
           <div className="settings-group-title">Models</div>
-          <span className="xs muted">{models.data ? `${models.data.length} models from your account` : 'Suggested models shown; live list loads once a key is saved.'}</span>
+          <span className="xs muted">{Array.isArray(models.data) ? `${models.data.length} models from your account` : 'Suggested models shown; live list loads once a key is saved.'}</span>
         </div>
         <div className="form-grid">
           <Field label="Default writing model" hint="Used to write scripts unless a channel overrides it.">
@@ -93,7 +93,7 @@ export function ElevenLabsSection(): JSX.Element {
   }
 
   const modelOptions = useMemo(() => {
-    const opts = (models.data ?? []).filter((m) => m.canDoTextToSpeech).map((m) => ({ value: m.modelId, label: `${m.name} (${m.modelId})` }))
+    const opts = (Array.isArray(models.data) ? models.data : []).filter((m) => m.canDoTextToSpeech).map((m) => ({ value: m.modelId, label: `${m.name} (${m.modelId})` }))
     if (!opts.some((o) => o.value === e.defaultModelId)) opts.unshift({ value: e.defaultModelId, label: e.defaultModelId })
     return opts
   }, [models.data, e.defaultModelId])

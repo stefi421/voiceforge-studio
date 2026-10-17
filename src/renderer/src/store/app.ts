@@ -1,8 +1,21 @@
 import { create } from 'zustand'
 import type { AppInfo, AppSettings, Channel, JobView, QueueStats, SecretsStatus } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
-import { api } from '@/lib/api'
+import { api, toIpcError } from '@/lib/api'
 import { toast } from './toasts'
+
+/** Deep-merges a possibly partial settings object over the defaults so pages can always read every field. */
+function mergeSettings(s: Partial<AppSettings> | null | undefined): AppSettings {
+  if (!s || typeof s !== 'object') return DEFAULT_SETTINGS
+  const out = { ...DEFAULT_SETTINGS } as AppSettings
+  for (const key of Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>) {
+    const incoming = s[key]
+    if (incoming && typeof incoming === 'object') {
+      ;(out as unknown as Record<string, unknown>)[key] = { ...DEFAULT_SETTINGS[key], ...incoming }
+    }
+  }
+  return out
+}
 
 interface AppState {
   booted: boolean
@@ -60,60 +73,93 @@ export const useApp = create<AppState>((set, get) => ({
   sidebarCollapsed: readSidebarPref(),
 
   boot: async () => {
-    if (!subscribed) {
+    if (!subscribed && window.vf && typeof window.vf.on === 'function') {
       subscribed = true
-      api.on('job:changed', (job) => get().upsertJob(job))
-      api.on('queue:stats', (stats) => set({ stats }))
-      api.on('settings:changed', (settings) => set({ settings }))
-      api.on('secrets:changed', (secrets) => set({ secrets }))
-      api.on('notification', (n) => {
-        toast[n.level](n.title, n.message)
-      })
-      api.on('batch:completed', (b) => {
-        const level = b.failed > 0 ? 'warning' : 'success'
-        toast[level](`Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`)
-      })
+      try {
+        api.on('job:changed', (job) => {
+          if (job && typeof job.id === 'string') get().upsertJob(job)
+        })
+        api.on('queue:stats', (stats) => set({ stats: { ...EMPTY_STATS, ...stats } }))
+        api.on('settings:changed', (settings) => set({ settings: mergeSettings(settings) }))
+        api.on('secrets:changed', (secrets) => set({ secrets: { ...EMPTY_SECRETS, ...secrets } }))
+        api.on('notification', (n) => {
+          const level = n.level === 'success' || n.level === 'warning' || n.level === 'error' ? n.level : 'info'
+          toast[level](n.title, n.message)
+        })
+        api.on('batch:completed', (b) => {
+          const level = b.failed > 0 ? 'warning' : 'success'
+          toast[level](`Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`)
+        })
+      } catch (err) {
+        toast.warning('Live updates unavailable', toIpcError(err).message)
+      }
     }
-    try {
-      const [settings, secrets, info, channels, stats] = await Promise.all([
-        api.invoke('settings:get', undefined),
-        api.invoke('secrets:status', undefined),
-        api.invoke('app:info', undefined).catch(() => null),
-        api.invoke('channels:list', { includeArchived: true }),
-        api.invoke('queue:stats', undefined).catch(() => EMPTY_STATS)
-      ])
-      set({ settings, secrets, info, channels, channelsLoaded: true, stats, booted: true, bootError: null })
-      void get().refreshJobs()
-    } catch (err) {
-      const e = err as { message?: string }
-      set({ booted: true, bootError: e?.message ?? 'Failed to connect to the main process.' })
+    if (!window.vf || typeof window.vf.invoke !== 'function') {
+      set({ booted: true, bootError: 'The preload bridge (window.vf) is not available. The app must run inside Electron.' })
+      return
     }
+    // Every call degrades independently so the UI still renders when one handler is missing or fails
+    // (e.g. during the headless smoke test). The first failure is surfaced as a toast, not a dead screen.
+    const failures: string[] = []
+    const safe = async <T,>(label: string, p: Promise<T>, fallback: T): Promise<T> => {
+      try {
+        const v = await p
+        return v === undefined || v === null ? fallback : v
+      } catch (err) {
+        failures.push(`${label}: ${toIpcError(err).message}`)
+        return fallback
+      }
+    }
+    const [settings, secrets, info, channels, stats] = await Promise.all([
+      safe('settings:get', api.invoke('settings:get', undefined), DEFAULT_SETTINGS),
+      safe('secrets:status', api.invoke('secrets:status', undefined), EMPTY_SECRETS),
+      safe('app:info', api.invoke('app:info', undefined), null),
+      safe('channels:list', api.invoke('channels:list', { includeArchived: true }), []),
+      safe('queue:stats', api.invoke('queue:stats', undefined), EMPTY_STATS)
+    ])
+    set({
+      settings: mergeSettings(settings),
+      secrets: { ...EMPTY_SECRETS, ...secrets },
+      info,
+      channels: Array.isArray(channels) ? channels : [],
+      channelsLoaded: true,
+      stats: { ...EMPTY_STATS, ...stats },
+      booted: true,
+      bootError: null
+    })
+    if (failures.length > 0) {
+      toast.warning('Some data could not be loaded', failures.slice(0, 3).join('\n'))
+    }
+    void get()
+      .refreshJobs()
+      .catch(() => undefined)
   },
 
   refreshSettings: async () => {
     const settings = await api.invoke('settings:get', undefined)
-    set({ settings })
+    set({ settings: mergeSettings(settings) })
   },
   refreshSecrets: async () => {
     const secrets = await api.invoke('secrets:status', undefined)
-    set({ secrets })
+    set({ secrets: { ...EMPTY_SECRETS, ...secrets } })
   },
   refreshChannels: async () => {
     const channels = await api.invoke('channels:list', { includeArchived: true })
-    set({ channels, channelsLoaded: true })
+    set({ channels: Array.isArray(channels) ? channels : [], channelsLoaded: true })
   },
   refreshStats: async () => {
     const stats = await api.invoke('queue:stats', undefined)
-    set({ stats })
+    set({ stats: { ...EMPTY_STATS, ...stats } })
   },
   refreshJobs: async (filter = {}) => {
     const list = await api.invoke('queue:list', { limit: 2000, ...filter })
+    const arr = Array.isArray(list) ? list : []
     set((s) => {
       const jobs = { ...s.jobs }
-      for (const j of list) jobs[j.id] = j
+      for (const j of arr) if (j && typeof j.id === 'string') jobs[j.id] = j
       return { jobs }
     })
-    return list
+    return arr
   },
   upsertJob: (job) => set((s) => ({ jobs: { ...s.jobs, [job.id]: job } })),
   removeJob: (id) =>
@@ -133,7 +179,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ sidebarCollapsed: v })
   },
   updateSettings: async (patch) => {
-    const settings = await api.invoke('settings:update', patch)
+    const settings = mergeSettings(await api.invoke('settings:update', patch))
     set({ settings })
     return settings
   }

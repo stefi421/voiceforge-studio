@@ -6,7 +6,7 @@ import { useAsync, useDebouncedValue } from '@/lib/hooks'
 import { activeChannels, useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { basename, formatBytes, formatDateTime, formatDuration, formatNumber, relativeTime } from '@/lib/format'
-import { AudioPlayer, Badge, Button, ChannelChip, ConfirmDialog, Dialog, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
+import { Alert, AudioPlayer, Badge, Button, ChannelChip, ConfirmDialog, Dialog, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
 import { RegenerateAudioDialog, type RegenerateAudioTarget } from '@/components/dialogs/RegenerateAudioDialog'
 
 export function AudioPage(): JSX.Element {
@@ -25,7 +25,7 @@ export function AudioPage(): JSX.Element {
     () => api.invoke('audio:list', { search: q || undefined, channelId: channelId || undefined, status: status || undefined, limit: 5000, sort: 'createdAt', dir: 'desc' }),
     [q, channelId, status, stats.completed]
   )
-  const rows = list.data ?? []
+  const rows = useMemo(() => (Array.isArray(list.data) ? list.data : []), [list.data])
   const versions = useAsync(() => api.invoke('audio:versions', { projectId: versionsOf?.projectId ?? '' }), [versionsOf?.projectId], { enabled: Boolean(versionsOf) })
 
   const showInFolder = (a: AudioView): void => void api.invoke('app:showItemInFolder', { path: a.filePath })
@@ -125,6 +125,12 @@ export function AudioPage(): JSX.Element {
         <span className="spacer" />
         <span className="xs muted">{rows.length} files</span>
       </div>
+      {list.error && (
+        <Alert tone="danger" title="Could not load audio library" actions={<Button size="sm" onClick={() => void list.reload()}>Retry</Button>}>
+          {list.error.message}
+          {list.error.action ? ` — ${list.error.action}` : ''}
+        </Alert>
+      )}
       <Table columns={columns} rows={rows} rowKey={(r) => r.id} emptyState={<EmptyState icon={<AudioLines size={20} />} title={list.loading ? 'Loading…' : 'No audio yet'} description="Finished voiceovers appear here with a player, versions and export." />} />
 
       <RegenerateAudioDialog target={regen} onClose={() => setRegen(null)} onDone={() => void list.reload()} />
@@ -143,7 +149,7 @@ export function AudioPage(): JSX.Element {
 
       <Dialog open={Boolean(versionsOf)} onClose={() => setVersionsOf(null)} size="md" title={versionsOf ? `Audio versions · ${versionsOf.title}` : ''}>
         <div className="version-list">
-          {(versions.data ?? []).map((v) => (
+          {(Array.isArray(versions.data) ? versions.data : []).map((v) => (
             <div key={v.id} className={`version-row ${v.id === versionsOf?.id ? 'active' : ''}`}>
               <span className="strong">v{v.version}</span>
               <Badge tone={v.status === 'ready' ? 'success' : v.status === 'failed' ? 'danger' : 'accent'}>{v.status}</Badge>
