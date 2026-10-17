@@ -37,6 +37,25 @@ jobs:
       # updater reads from a PUBLIC releases-only repository, set the repository variable
       # RELEASE_REPO (e.g. voiceforge-studio-releases) and the secret GH_RELEASE_TOKEN (a
       # fine-grained PAT with "Contents: write" on that repository).
+      - name: Remove a half-published release with the same version (publish runs only)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if gh release view "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" >/dev/null 2>&1; then
+            ASSETS=$(gh release view "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" --json assets --jq '.assets[].name')
+            if echo "$ASSETS" | grep -q '^latest.yml$'; then
+              echo "Release v$VERSION is complete (latest.yml present); leaving it alone."
+              echo "SKIP_PUBLISH=1" >> "$GITHUB_ENV"
+            else
+              echo "Release v$VERSION exists without latest.yml — deleting it so it can be published cleanly."
+              gh release delete "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" -y --cleanup-tag || true
+            fi
+          fi
       - name: Package (and publish on tag)
         shell: bash
         env:
@@ -44,16 +63,33 @@ jobs:
           RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
           RELEASE_OWNER: ${{ github.repository_owner }}
           PUBLISH: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && 'always' || 'never' }}
+          DEBUG: electron-builder
         run: |
           set -o pipefail
+          if [ "$SKIP_PUBLISH" = "1" ]; then PUBLISH=never; fi
           echo "publish=$PUBLISH owner=$RELEASE_OWNER repo=$RELEASE_REPO"
-          if npx electron-builder --win nsis portable --x64 --publish "$PUBLISH" \
-               -c.publish.owner="$RELEASE_OWNER" -c.publish.repo="$RELEASE_REPO" 2>&1 | tee build.log; then
-            { echo "### electron-builder succeeded"; echo '```'; tail -n 40 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          else
-            { echo "### electron-builder failed"; echo '```'; tail -n 150 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
+          STATUS=0
+          npx electron-builder --win nsis portable --x64 --publish "$PUBLISH" \
+               -c.publish.owner="$RELEASE_OWNER" -c.publish.repo="$RELEASE_REPO" 2>&1 | tee build.log || STATUS=$?
+          { echo "### electron-builder exit $STATUS"; echo '```'; tail -n 150 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "BUILD_STATUS=$STATUS" >> "$GITHUB_ENV"
+      - name: Save the build log to the ci-logs branch (readable without signing in)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [ -f build.log ] || exit 0
+          mkdir -p /tmp/cilogs && cd /tmp/cilogs
+          git init -q && git config user.name "github-actions" && git config user.email "actions@github.com"
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q origin ci-logs 2>/dev/null && git checkout -q ci-logs || git checkout -q -b ci-logs
+          cp "$GITHUB_WORKSPACE/build.log" "run-${GITHUB_RUN_ID}.log"
+          git add . && git commit -q -m "Build log for run ${GITHUB_RUN_ID} (status ${BUILD_STATUS:-?})" && git push -q origin ci-logs
+      - name: Fail the job if packaging failed
+        if: ${{ env.BUILD_STATUS != '0' }}
+        shell: bash
+        run: exit 1
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceForge-Studio-windows
