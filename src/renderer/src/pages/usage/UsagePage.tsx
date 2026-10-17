@@ -48,7 +48,7 @@ export function UsagePage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="Usage & Costs"
+        title="Usage & costs"
         subtitle="All amounts are estimates computed locally from your pricing table. Check the provider dashboards for billing."
         actions={
           <>

@@ -17,6 +17,8 @@ import { ProjectsPage } from '@/pages/projects/ProjectsPage'
 import { HistoryPage } from '@/pages/history/HistoryPage'
 import { UsagePage } from '@/pages/usage/UsagePage'
 import { SettingsPage } from '@/pages/settings/SettingsPage'
+import { OnboardingWizard } from '@/pages/onboarding/OnboardingWizard'
+import { api } from '@/lib/api'
 
 const PAGES: Record<PageId, () => JSX.Element> = {
   dashboard: DashboardPage,
@@ -62,6 +64,8 @@ export function App(): JSX.Element {
   const boot = useApp((s) => s.boot)
   const page = useRouter((s) => s.page)
   const nonce = useRouter((s) => s.nonce)
+  const onboardingCompleted = useApp((s) => s.settings.general.onboardingCompleted)
+  const wizardForced = useApp((s) => s.wizardForced)
   useTheme()
   useShortcuts()
 
@@ -74,13 +78,44 @@ export function App(): JSX.Element {
   useEffect(() => {
     const handler = (e: Event): void => {
       const detail = (e as CustomEvent<unknown>).detail
-      if (typeof detail === 'string' && (DASHBOARD_PAGES as readonly string[]).includes(detail)) navigate(detail as PageId)
+      if (typeof detail !== 'string') return
+      if (detail.startsWith('__settings:')) {
+        // Smoke-test helper: apply a settings patch, e.g. '__settings:{"general":{"theme":"light"}}'.
+        try {
+          const patch = JSON.parse(detail.slice('__settings:'.length)) as Record<string, Record<string, unknown>>
+          void useApp.getState().updateSettings(patch).catch(() => undefined)
+        } catch {
+          /* ignore malformed */
+        }
+        return
+      }
+      if (detail === '__skipOnboarding') {
+        // Smoke-test helper: mark setup as done so the regular pages can be captured.
+        void api.invoke('settings:update', { general: { onboardingCompleted: true } }).then((s) => useApp.getState().setSettings(s)).catch(() => undefined)
+        return
+      }
+      // "settings?tab=updates" → navigate('settings', { tab: 'updates' })
+      const [pageId, query] = detail.split('?')
+      if (pageId && (DASHBOARD_PAGES as readonly string[]).includes(pageId)) {
+        const params: Record<string, string> = {}
+        if (query) for (const [k, v] of new URLSearchParams(query)) params[k] = v
+        navigate(pageId as PageId, params)
+      }
     }
     window.addEventListener('vf:navigate', handler)
     return () => window.removeEventListener('vf:navigate', handler)
   }, [])
 
   const Page = PAGES[page]
+
+  if (booted && !bootError && (!onboardingCompleted || wizardForced)) {
+    return (
+      <>
+        <OnboardingWizard />
+        <ToastStack />
+      </>
+    )
+  }
 
   return (
     <div className="app-shell">

@@ -3,6 +3,7 @@ import {
   AudioLines,
   ChartColumn,
   Clock,
+  Download,
   FileText,
   FolderOpen,
   LayoutDashboard,
@@ -22,16 +23,23 @@ import { formatDurationHuman } from '@/lib/format'
 
 export const PAGE_META: Record<PageId, { label: string; icon: LucideIcon; subtitle: string }> = {
   dashboard: { label: 'Dashboard', icon: LayoutDashboard, subtitle: 'Overview of channels, queue and usage' },
-  generate: { label: 'New Generation', icon: Sparkles, subtitle: 'Turn a list of titles into scripts and voiceovers' },
+  generate: { label: 'New generation', icon: Sparkles, subtitle: 'Turn a list of titles into scripts and voiceovers' },
   channels: { label: 'Channels', icon: Tv, subtitle: 'Per-channel writing rules, voices and templates' },
-  queue: { label: 'Generation Queue', icon: ListOrdered, subtitle: 'Live status of every job' },
-  scripts: { label: 'Scripts Library', icon: FileText, subtitle: 'Every generated script, with versions and validation' },
-  audio: { label: 'Audio Library', icon: AudioLines, subtitle: 'Generated voiceovers' },
+  queue: { label: 'Queue', icon: ListOrdered, subtitle: 'Live status of every job' },
+  scripts: { label: 'Scripts', icon: FileText, subtitle: 'Every generated script, with versions and validation' },
+  audio: { label: 'Audio', icon: AudioLines, subtitle: 'Generated voiceovers' },
   projects: { label: 'Projects', icon: FolderOpen, subtitle: 'One project per title, grouped by channel' },
-  history: { label: 'Generation History', icon: Clock, subtitle: 'Timeline of job events' },
-  usage: { label: 'Usage & Costs', icon: ChartColumn, subtitle: 'Estimated provider spend' },
+  history: { label: 'History', icon: Clock, subtitle: 'Timeline of job events' },
+  usage: { label: 'Usage & costs', icon: ChartColumn, subtitle: 'Estimated provider spend' },
   settings: { label: 'Settings', icon: Settings, subtitle: 'Providers, generation defaults, storage' }
 }
+
+/** Navigation groups; keyboard shortcuts still follow DASHBOARD_PAGES order (Ctrl+1 … Ctrl+0). */
+const GROUPS: Array<{ label: string | null; pages: PageId[] }> = [
+  { label: null, pages: ['dashboard', 'generate', 'queue'] },
+  { label: 'Library', pages: ['channels', 'scripts', 'audio', 'projects', 'history'] },
+  { label: 'System', pages: ['usage', 'settings'] }
+]
 
 export function Sidebar(): JSX.Element {
   const page = useRouter((s) => s.page)
@@ -39,6 +47,7 @@ export function Sidebar(): JSX.Element {
   const collapsed = useApp((s) => s.sidebarCollapsed)
   const setCollapsed = useApp((s) => s.setSidebarCollapsed)
   const stats = useApp((s) => s.stats)
+  const update = useApp((s) => s.updateStatus)
 
   const busy = stats.processing > 0
   const dotClass = stats.queuePaused || stats.spendingPaused ? 'paused' : stats.failed > 0 && !busy ? 'failed' : busy ? 'busy' : 'idle'
@@ -47,8 +56,21 @@ export function Sidebar(): JSX.Element {
     : stats.spendingPaused
       ? 'Paused: spending limit reached'
       : busy
-        ? `Processing ${stats.processing} job(s)` + (stats.estimatedSecondsRemaining != null ? ` · ~${formatDurationHuman(stats.estimatedSecondsRemaining)} left` : '')
+        ? `Processing ${stats.processing} job(s)` + (stats.estimatedSecondsRemaining != null ? ` · about ${formatDurationHuman(stats.estimatedSecondsRemaining)} left` : '')
         : 'Queue idle'
+
+  const pillText = stats.queuePaused
+    ? 'Paused'
+    : stats.spendingPaused
+      ? 'Spend limit'
+      : busy
+        ? `${stats.processing} running`
+        : stats.pending > 0
+          ? `${stats.pending} waiting`
+          : 'Idle'
+
+  const updateReady = update?.state === 'downloaded'
+  const updateAvailable = update?.state === 'available'
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -62,59 +84,55 @@ export function Sidebar(): JSX.Element {
         </div>
       </div>
       <nav className="sidebar-nav">
-        {DASHBOARD_PAGES.map((id, i) => {
-          const meta = PAGE_META[id]
-          const Icon = meta.icon
-          const key = i === 9 ? '0' : String(i + 1)
-          const badge = id === 'queue' && stats.awaitingUser > 0 ? stats.awaitingUser : null
-          return (
-            <button
-              key={id}
-              type="button"
-              className={`nav-item ${page === id ? 'active' : ''}`}
-              onClick={() => navigate(id)}
-              title={collapsed ? `${meta.label} (Ctrl+${key})` : undefined}
-            >
-              <Icon size={17} />
-              <span className="nav-label">{meta.label}</span>
-              {badge != null && <span className="nav-badge" title="Jobs waiting for you">{badge}</span>}
-              <span className="nav-kbd">⌃{key}</span>
-            </button>
-          )
-        })}
+        {GROUPS.map((g) => (
+          <div key={g.label ?? 'main'} className="nav-group">
+            {g.label && <div className="nav-group-label">{g.label}</div>}
+            {g.pages.map((id) => {
+              const meta = PAGE_META[id]
+              const Icon = meta.icon
+              const i = DASHBOARD_PAGES.indexOf(id)
+              const key = i === 9 ? '0' : String(i + 1)
+              const badge = id === 'queue' && stats.awaitingUser > 0 ? stats.awaitingUser : null
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`nav-item ${page === id ? 'active' : ''}`}
+                  onClick={() => navigate(id)}
+                  title={collapsed ? `${meta.label} (Ctrl+${key})` : undefined}
+                  aria-current={page === id ? 'page' : undefined}
+                >
+                  <Icon size={16} />
+                  <span className="nav-label">{meta.label}</span>
+                  {badge != null && (
+                    <span className="nav-badge" title="Jobs waiting for you">
+                      {badge}
+                    </span>
+                  )}
+                  <span className="nav-kbd">⌃{key}</span>
+                </button>
+              )
+            })}
+          </div>
+        ))}
       </nav>
       <div className="sidebar-footer">
+        {(updateReady || updateAvailable) && (
+          <button type="button" className="update-banner" onClick={() => navigate('settings', { tab: 'updates' })} title={updateReady ? 'Restart to install the update' : 'A newer version can be downloaded'}>
+            <Download size={14} />
+            <span className="nav-label">{updateReady ? 'Update ready — restart to install' : `Version ${update?.latestVersion} available`}</span>
+          </button>
+        )}
         <div className="queue-pill" title={pillTitle} onClick={() => navigate('queue')} role="button">
           <span className={`dot ${dotClass}`} />
           <div className="queue-pill-counts">
-            {stats.queuePaused ? (
-              <span>Paused</span>
-            ) : stats.spendingPaused ? (
-              <span>Spend limit</span>
-            ) : (
-              <>
-                <span>
-                  <b>{stats.processing}</b> run
-                </span>
-                <span>
-                  <b>{stats.pending}</b> wait
-                </span>
-                {stats.awaitingUser > 0 && (
-                  <span className="text-warning">
-                    <b>{stats.awaitingUser}</b> you
-                  </span>
-                )}
-                {stats.failed > 0 && (
-                  <span className="text-danger">
-                    <b>{stats.failed}</b> fail
-                  </span>
-                )}
-              </>
-            )}
+            <span>{pillText}</span>
+            {stats.awaitingUser > 0 && <span className="text-warning">{stats.awaitingUser} need you</span>}
+            {stats.failed > 0 && <span className="text-danger">{stats.failed} failed</span>}
           </div>
         </div>
         <button type="button" className="nav-item" onClick={() => setCollapsed(!collapsed)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           <span className="nav-label">Collapse</span>
         </button>
       </div>

@@ -6,6 +6,7 @@ import { useAsync, useDebouncedValue } from '@/lib/hooks'
 import { activeChannels, useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { basename, formatBytes, formatDateTime, formatDuration, formatNumber, relativeTime } from '@/lib/format'
+import { navigate } from '@/store/router'
 import { Alert, AudioPlayer, Badge, Button, ChannelChip, ConfirmDialog, Dialog, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
 import { RegenerateAudioDialog, type RegenerateAudioTarget } from '@/components/dialogs/RegenerateAudioDialog'
 
@@ -100,7 +101,7 @@ export function AudioPage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="Audio Library"
+        title="Audio"
         subtitle="Generated voiceovers. Click a row's play button for the inline player."
         actions={
           <Button icon={<RefreshCw size={14} />} loading={list.loading} onClick={() => void list.reload()}>
@@ -131,7 +132,7 @@ export function AudioPage(): JSX.Element {
           {list.error.action ? ` — ${list.error.action}` : ''}
         </Alert>
       )}
-      <Table columns={columns} rows={rows} rowKey={(r) => r.id} emptyState={<EmptyState icon={<AudioLines size={20} />} title={list.loading ? 'Loading…' : 'No audio yet'} description="Finished voiceovers appear here with a player, versions and export." />} />
+      <Table columns={columns} rows={rows} rowKey={(r) => r.id} emptyState={<EmptyState icon={<AudioLines size={20} />} title={list.loading ? 'Loading…' : 'No audio yet'} description="Finished voiceovers appear here with a player, versions and export." actions={!list.loading && <Button variant="primary" onClick={() => navigate('generate')}>Start a generation</Button>} />} />
 
       <RegenerateAudioDialog target={regen} onClose={() => setRegen(null)} onDone={() => void list.reload()} />
 

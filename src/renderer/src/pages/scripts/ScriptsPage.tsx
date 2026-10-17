@@ -4,7 +4,7 @@ import type { ScriptStatus, ScriptView } from '@shared/types'
 import { api } from '@/lib/api'
 import { useAsync, useDebouncedValue } from '@/lib/hooks'
 import { activeChannels, useApp } from '@/store/app'
-import { useRouter } from '@/store/router'
+import { navigate, useRouter } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { formatDateTime, formatDuration, formatNumber, relativeTime } from '@/lib/format'
 import { Alert, Badge, Button, ChannelChip, Checkbox, EmptyState, PageHeader, SearchInput, Select, Table, type Column } from '@/components/ui'
@@ -99,7 +99,7 @@ export function ScriptsPage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="Scripts Library"
+        title="Scripts"
         subtitle="Every generated script, with versions and validation reports."
         actions={
           <>
@@ -141,7 +141,7 @@ export function ScriptsPage(): JSX.Element {
           header: <Checkbox checked={allSelected} indeterminate={!allSelected && selected.size > 0} onChange={(v) => setSelected(v ? new Set(rows.map((r) => r.id)) : new Set())} />,
           render: (r) => <Checkbox checked={selected.has(r.id)} onChange={(v) => toggle(r.id, v)} />
         }}
-        emptyState={<EmptyState icon={<FileText size={20} />} title={list.loading ? 'Loading…' : 'No scripts yet'} description="Scripts appear here as soon as a job finishes writing." />}
+        emptyState={<EmptyState icon={<FileText size={20} />} title={list.loading ? 'Loading…' : 'No scripts yet'} description="Scripts appear here as soon as a job finishes writing." actions={!list.loading && <Button variant="primary" onClick={() => navigate('generate')}>Start a generation</Button>} />}
       />
       <ScriptDrawer scriptId={openId} onClose={() => setOpenId(null)} onChanged={() => void list.reload()} />
     </div>

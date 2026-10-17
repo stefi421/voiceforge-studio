@@ -329,6 +329,8 @@ describe('provider helpers', () => {
     expect(v2).toEqual({ stability: 0.4, similarityBoost: 0.8, style: 0.2, useSpeakerBoost: true, speed: 1.1 })
     const v3 = voiceSettingsForModel('eleven_v3', { stability: 0.4, similarityBoost: 0.8, style: 0.2, useSpeakerBoost: true, speed: 1.1 })
     expect(v3).toEqual({ stability: 0.5, similarityBoost: 0.8 })
+    const v4 = voiceSettingsForModel('eleven_v4', { stability: 0.4, similarityBoost: 0.8, style: 0.2, useSpeakerBoost: true, speed: 1.1 })
+    expect(v4).toEqual({ stability: 0.4, similarityBoost: 0.8 })
   })
 })
 

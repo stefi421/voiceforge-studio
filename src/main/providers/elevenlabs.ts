@@ -21,13 +21,17 @@ export const KNOWN_MODEL_LIMITS: Record<string, { maxChars: number; style: boole
   eleven_flash_v2: { maxChars: 30000, style: true, speakerBoost: true, speed: true },
   eleven_turbo_v2_5: { maxChars: 40000, style: true, speakerBoost: true, speed: true },
   eleven_turbo_v2: { maxChars: 30000, style: true, speakerBoost: true, speed: true },
-  eleven_v3: { maxChars: 5000, style: false, speakerBoost: false, speed: false }
+  eleven_v3: { maxChars: 5000, style: false, speakerBoost: false, speed: false },
+  eleven_v3_conversational: { maxChars: 5000, style: false, speakerBoost: false, speed: false },
+  // Eleven v4 (2026): stability + similarity only — "Style and Speed sliders are not available in Eleven v4".
+  eleven_v4: { maxChars: 10000, style: false, speakerBoost: false, speed: false },
+  eleven_v4_turbo: { maxChars: 10000, style: false, speakerBoost: false, speed: false }
 }
 
 export function modelSupportsSpeed(modelId: string): boolean {
   const k = KNOWN_MODEL_LIMITS[modelId]
   if (k) return k.speed
-  return !/^eleven_v3/.test(modelId)
+  return !/^eleven_v[3-9]/.test(modelId)
 }
 
 /** Keep only the voice-setting keys the chosen model accepts. */
@@ -41,7 +45,7 @@ export function voiceSettingsForModel(modelId: string, settings: VoiceSettings, 
   if (canBoost && settings.useSpeakerBoost !== undefined) out.useSpeakerBoost = settings.useSpeakerBoost
   if (modelSupportsSpeed(modelId) && settings.speed !== undefined && settings.speed !== 1) out.speed = settings.speed
   if (/^eleven_v3/.test(modelId) && out.stability !== undefined) {
-    // v3 accepts discrete stability values only.
+    // v3 accepts discrete stability values only (Creative 0 / Natural 0.5 / Robust 1).
     out.stability = out.stability < 0.25 ? 0 : out.stability < 0.75 ? 0.5 : 1
   }
   return out

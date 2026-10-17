@@ -5,9 +5,14 @@
 automated suite. The integration tests spin up a real SQLite database in a temp
 directory, run the real queue engine and pipeline, and write real files.
 
-Result at delivery: **55 tests, all passing** (`npm test`, Node 22.22, Linux). A third file,
+Result at delivery: **58 tests, all passing** (`npm test`, Node 22.22, Linux). A third file,
 `tests/demo-data.smoke.test.ts`, is skipped by default; with `VF_DEMO_DIR=<dir>` it generates a
 populated database for UI smoke-testing.
+
+Updater (`tests/updater.test.ts`, electron + electron-updater mocked): check → available
+→ download (progress events) → install after a clean shutdown; never auto-downloads;
+"up to date"; 404 → actionable error; feed follows Settings; portable build reports
+unsupported.
 
 ## Headless UI smoke test
 

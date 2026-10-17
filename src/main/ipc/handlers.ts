@@ -25,6 +25,7 @@ import type { Services } from '../services/container'
 import type { QueueEngine } from '../queue/engine'
 import { GenerationService } from '../services/generation'
 import { BackupService } from '../services/backup'
+import type { UpdateService } from '../services/updater'
 import { ProjectService } from '../services/projects'
 import { atomicWriteFile, ensureDir } from '../services/files'
 import { AppError } from '../util/errors'
@@ -39,8 +40,11 @@ export interface HandlerDeps {
   engine: QueueEngine
   generation: GenerationService
   backup: BackupService
+  updates: UpdateService
   getWindow: () => BrowserWindow | null
   requestRestart: () => void
+  /** Flushes the queue and database before the process exits (used by install-update). */
+  prepareShutdown: () => Promise<void>
 }
 
 function win(deps: HandlerDeps): BrowserWindow | undefined {
@@ -70,6 +74,12 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
 
   const openPathSchema = z.object({ path: pathSchema })
   reg.handle('app:openPath', openPathSchema, async ({ path: p }) => {
+    // Web links (release pages, provider dashboards) go to the system browser; everything else is a local path.
+    if (/^https:\/\/(github\.com|platform\.openai\.com|elevenlabs\.io)\//i.test(p)) {
+      await shell.openExternal(p)
+      return { ok: true }
+    }
+    if (/^[a-z]+:\/\//i.test(p)) return { ok: false, message: 'Only GitHub, OpenAI and ElevenLabs links can be opened from the app.' }
     if (!fs.existsSync(p)) {
       ensureDir(p)
     }
@@ -105,6 +115,14 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     s.events.emit('settings:changed', next)
     return next
   })
+
+  // ---------------------------------------------------------------------------
+  // Updates (user-initiated; see services/updater.ts)
+  // ---------------------------------------------------------------------------
+  reg.handle('updates:status', null, () => deps.updates.getStatus())
+  reg.handle('updates:check', null, () => deps.updates.check())
+  reg.handle('updates:download', null, () => deps.updates.download())
+  reg.handle('updates:install', null, () => deps.updates.install(deps.prepareShutdown))
 
   // ---------------------------------------------------------------------------
   // Settings & secrets

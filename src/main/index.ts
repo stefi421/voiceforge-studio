@@ -14,6 +14,7 @@ import { registerHandlers } from './ipc/handlers'
 import { seedDefaults } from './services/seed'
 import { cleanupTempFiles } from './services/files'
 import { ElevenLabsClientProvider } from './providers/elevenlabs'
+import { UpdateService } from './services/updater'
 
 const isDev = !app.isPackaged && !!process.env.ELECTRON_RENDERER_URL
 const RENDERER_ORIGIN = isDev ? new URL(process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173').origin : 'file://'
@@ -29,6 +30,7 @@ let mainWindow: BrowserWindow | null = null
 let services: Services | null = null
 let engine: QueueEngine | null = null
 let restartRequested = false
+let quitting = false
 
 function swapInPendingRestore(dbPath: string): void {
   const pending = path.join(app.getPath('userData'), 'restore-pending.sqlite')
@@ -147,6 +149,7 @@ function createWindow(s: Services): BrowserWindow {
   forward('notification')
   forward('settings:changed')
   forward('secrets:changed')
+  forward('update:status')
   return win
 }
 
@@ -278,23 +281,32 @@ app.whenReady().then(() => {
   engine = new QueueEngine(s, logger.child('queue'))
   const generation = new GenerationService(s, engine)
   const backup = new BackupService(s)
+  const updates = new UpdateService(s, logger.child('updates'))
   const registry = new IpcRegistry(logger, [RENDERER_ORIGIN])
   registerHandlers(registry, {
     s,
     engine,
     generation,
     backup,
+    updates,
     getWindow: () => mainWindow,
     requestRestart: () => {
       restartRequested = true
       app.relaunch()
       app.quit()
+    },
+    prepareShutdown: async () => {
+      quitting = true
+      await engine?.stop()
+      services?.db.close()
+      logger.log('info', 'app', 'Shutting down to install an update')
     }
   })
   desktopNotifications(s)
   mainWindow = createWindow(s)
   engine.start()
   scheduleBackups(s, backup)
+  updates.scheduleStartupCheck()
   if (s.settings.get().storage.cleanupTempFiles) {
     setTimeout(() => void cleanupTempFiles(s.paths.outputRoot()).then((n) => n && logger.log('info', 'cleanup', 'Removed stale temp files', { count: n })), 15_000)
   }
@@ -307,7 +319,6 @@ app.whenReady().then(() => {
   })
 })
 
-let quitting = false
 app.on('before-quit', (e) => {
   if (quitting) return
   e.preventDefault()

@@ -1,7 +1,7 @@
 {
   "name": "voiceforge-studio",
   "productName": "VoiceForge Studio",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs.",
   "main": "./out/main/index.js",
   "author": "Stefan Ignjatović",
@@ -17,15 +17,18 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "audit": "npm audit --omit=dev",
-    "package:win": "electron-vite build && electron-builder --win nsis portable --x64",
-    "package:win:dir": "electron-vite build && electron-builder --win dir --x64"
+    "package:win": "electron-vite build && electron-builder --win nsis portable --x64 --publish never",
+    "package:win:dir": "electron-vite build && electron-builder --win dir --x64 --publish never",
+    "release:win": "electron-vite build && electron-builder --win nsis portable --x64 --publish always"
   },
   "dependencies": {
     "@elevenlabs/elevenlabs-js": "^2.73.0",
+    "electron-updater": "^6.8.9",
     "openai": "^7.36.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
     "@types/node": "^22.19.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",

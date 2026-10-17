@@ -224,7 +224,7 @@ export function KeyValue({ items }: { items: Array<{ key: ReactNode; value: Reac
 
 export function Stat({ label, value, sub, icon, onClick }: { label: ReactNode; value: ReactNode; sub?: ReactNode; icon?: ReactNode; onClick?: () => void }): JSX.Element {
   return (
-    <Card hover={Boolean(onClick)} onClick={onClick}>
+    <Card className="card-tile" hover={Boolean(onClick)} onClick={onClick}>
       <div className="stat">
         <div className="stat-label">
           {icon}

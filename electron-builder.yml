@@ -35,4 +35,11 @@ nsis:
 portable:
   artifactName: "VoiceForge-Studio-Portable-${version}-${arch}.${ext}"
   requestExecutionLevel: user
-publish: null
+# GitHub Releases feed used by the in-app updater (electron-updater reads latest.yml +
+# the NSIS installer from the release assets). The runtime feed can be changed in
+# Settings → Updates; this build-time value only seeds app-update.yml.
+publish:
+  provider: github
+  owner: stefi421
+  repo: voiceforge-studio
+  releaseType: release

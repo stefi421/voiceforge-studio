@@ -31,7 +31,14 @@ What is verified (by code review and automated tests) versus what is claimed.
 * `setWindowOpenHandler` denies all popups (external `https` links open in the system
   browser); `will-navigate` blocks navigation away from the app.
 * All permission requests from the renderer are denied.
-* No auto-updater and no remote code loading. Updates are a new installer.
+* No remote code loading. The in-app updater (`electron-updater`, GitHub Releases)
+  only *checks* automatically; downloading and installing are explicit user actions,
+  the downloaded installer is verified against the sha512 in the published
+  `latest.yml` before it is run, and the only thing executed is the same NSIS
+  installer that ships for manual installs. The feed is a GitHub owner/repo pair
+  validated by zod (letters, digits, `-`, `_`, `.`). See `docs/UPDATES.md`.
+* `app:openPath` opens web links only for `github.com`, `platform.openai.com` and
+  `elevenlabs.io`; any other URL scheme is refused.
 
 ## Filesystem
 

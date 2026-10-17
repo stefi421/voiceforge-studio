@@ -54,7 +54,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     launchAtStartup: false,
     notifications: true,
     outputRoot: null,
-    autoOpenFolderOnBatchComplete: false
+    autoOpenFolderOnBatchComplete: false,
+    onboardingCompleted: false
   },
   openai: {
     defaultModel: 'gpt-6.1-sol',
@@ -68,7 +69,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reasoningEffort: 'low'
   },
   elevenlabs: {
-    defaultModelId: 'eleven_multilingual_v2',
+    defaultModelId: 'eleven_v4',
     defaultOutputFormat: 'mp3_44100_128',
     timeoutMs: 300000,
     maxRetries: 2,
@@ -104,6 +105,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   advanced: {
     logLevel: 'info',
     manualE2EMode: false
+  },
+  updates: {
+    checkOnStartup: true,
+    owner: 'stefi421',
+    repo: 'voiceforge-studio',
+    allowPrerelease: false
   }
 }
 
@@ -169,6 +176,35 @@ export const ELEVEN_OUTPUT_FORMATS = [
   'pcm_24000'
 ] as const
 
+/**
+ * Guidance shown next to ElevenLabs models in pickers (checked against the ElevenLabs
+ * model docs on 2026-10-17). The live `models.list()` response decides what exists and
+ * which voice-setting controls are available; this only adds human-readable advice.
+ */
+export const ELEVEN_MODEL_NOTES: Record<string, { badge: 'newest' | 'recommended' | 'fast' | 'legacy' | 'deprecated'; note: string }> = {
+  eleven_v4: { badge: 'newest', note: 'Newest, highest quality and most expressive. Best for voiceovers and long narration. Stability + similarity only; audio tags like [laughs] are understood.' },
+  eleven_v4_turbo: { badge: 'fast', note: 'v4 quality tuned for real-time use; a fine choice when you want v4 at lower cost/latency.' },
+  eleven_v3: { badge: 'legacy', note: 'Previous expressive generation (5,000 characters per request). Prefer v4 for new work.' },
+  eleven_v3_conversational: { badge: 'legacy', note: 'Realtime variant of v3; not intended for long voiceovers.' },
+  eleven_multilingual_v2: { badge: 'recommended', note: 'Proven, very stable long-form model with the full set of sliders (style, speed, speaker boost). Great fallback if a cloned voice is not yet tuned for v4.' },
+  eleven_flash_v2_5: { badge: 'fast', note: 'Fastest and cheapest (40,000 characters per request); lower expressiveness.' },
+  eleven_flash_v2: { badge: 'fast', note: 'Fast, English-only.' },
+  eleven_turbo_v2_5: { badge: 'deprecated', note: 'Deprecated by ElevenLabs — use Flash v2.5 or v4.' },
+  eleven_turbo_v2: { badge: 'deprecated', note: 'Deprecated by ElevenLabs — use Flash v2 or v4.' },
+  eleven_multilingual_v1: { badge: 'deprecated', note: 'Kept for backward compatibility only.' },
+  eleven_monolingual_v1: { badge: 'deprecated', note: 'Kept for backward compatibility only.' }
+}
+
+/** Voice categories as reported by the ElevenLabs API, in the order the picker shows them. */
+export const ELEVEN_VOICE_CATEGORY_LABELS: Record<string, string> = {
+  cloned: 'My clones (instant)',
+  professional: 'My clones (professional)',
+  generated: 'My designed voices',
+  premade: 'ElevenLabs library',
+  famous: 'Library',
+  high_quality: 'Library (HQ)'
+}
+
 /** Well-known OpenAI models offered in the picker; the live list comes from the API. */
 export const SUGGESTED_OPENAI_MODELS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5', 'gpt-5-mini', 'gpt-4.1']
 
@@ -212,7 +248,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
       pronunciationRules: [],
       elevenVoiceId: null,
       elevenVoiceName: null,
-      elevenModelId: 'eleven_multilingual_v2',
+      elevenModelId: 'eleven_v4',
       elevenVoiceSettings: DEFAULT_VOICE_SETTINGS,
       outputFormat: 'mp3_44100_128',
       outputFolder: null,
@@ -250,7 +286,7 @@ export const SEED_CHANNELS: SeedChannel[] = [
       pronunciationRules: [],
       elevenVoiceId: null,
       elevenVoiceName: null,
-      elevenModelId: 'eleven_multilingual_v2',
+      elevenModelId: 'eleven_v4',
       elevenVoiceSettings: DEFAULT_VOICE_SETTINGS,
       outputFormat: 'mp3_44100_128',
       outputFolder: null,
@@ -309,7 +345,7 @@ ${commonRules}`,
       pronunciationRules: [],
       elevenVoiceId: null,
       elevenVoiceName: null,
-      elevenModelId: 'eleven_multilingual_v2',
+      elevenModelId: 'eleven_v4',
       elevenVoiceSettings: DEFAULT_VOICE_SETTINGS,
       outputFormat: 'mp3_44100_128',
       outputFolder: null,
@@ -346,7 +382,7 @@ ${commonRules}`,
       pronunciationRules: [],
       elevenVoiceId: null,
       elevenVoiceName: null,
-      elevenModelId: 'eleven_multilingual_v2',
+      elevenModelId: 'eleven_v4',
       elevenVoiceSettings: DEFAULT_VOICE_SETTINGS,
       outputFormat: 'mp3_44100_128',
       outputFolder: null,
@@ -396,7 +432,7 @@ ${commonRules}`,
       pronunciationRules: [],
       elevenVoiceId: null,
       elevenVoiceName: null,
-      elevenModelId: 'eleven_multilingual_v2',
+      elevenModelId: 'eleven_v4',
       elevenVoiceSettings: DEFAULT_VOICE_SETTINGS,
       outputFormat: 'mp3_44100_128',
       outputFolder: null,

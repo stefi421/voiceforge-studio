@@ -1,9 +1,17 @@
-name: Build Windows installer and portable
+name: Build and release Windows app
+
+# - Push a tag like v1.2.0  → builds installer + portable on Windows, runs the tests,
+#   and publishes a GitHub Release with the assets the in-app updater needs
+#   (Setup exe, .blockmap, latest.yml, portable exe).
+# - "Run workflow" (manual)  → builds and uploads the artifacts only (no release).
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -18,11 +26,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npx electron-builder --win nsis portable --x64 --publish never
+      # Releases go to this repository by default. To keep the source private while the
+      # updater reads from a PUBLIC releases-only repository, set the repository variable
+      # RELEASE_REPO (e.g. voiceforge-studio-releases) and the secret GH_RELEASE_TOKEN (a
+      # fine-grained PAT with "Contents: write" on that repository).
+      - name: Package (and publish on tag)
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
+        run: npx electron-builder --win nsis portable --x64 --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }} -c.publish.owner=${{ github.repository_owner }} -c.publish.repo=$env:RELEASE_REPO
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceForge-Studio-windows
           path: |
             release/*.exe
             release/*.blockmap
+            release/latest.yml
           if-no-files-found: error

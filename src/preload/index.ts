@@ -15,7 +15,8 @@ const EVENT_NAMES: MainEventName[] = [
   'batch:completed',
   'notification',
   'settings:changed',
-  'secrets:changed'
+  'secrets:changed',
+  'update:status'
 ]
 
 class IpcError extends Error {

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppInfo, AppSettings, Channel, JobView, QueueStats, SecretsStatus } from '@shared/types'
+import type { AppInfo, AppSettings, Channel, JobView, QueueStats, SecretsStatus, UpdateStatus } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { api, toIpcError } from '@/lib/api'
 import { toast } from './toasts'
@@ -28,6 +28,10 @@ interface AppState {
   stats: QueueStats
   jobs: Record<string, JobView>
   sidebarCollapsed: boolean
+  /** Last known updater state; null until main reports one. */
+  updateStatus: UpdateStatus | null
+  /** True while the first-run wizard is forced open from Settings ("Run setup again"). */
+  wizardForced: boolean
 
   boot: () => Promise<void>
   refreshSettings: () => Promise<void>
@@ -40,6 +44,8 @@ interface AppState {
   setSettings: (s: AppSettings) => void
   setSidebarCollapsed: (v: boolean) => void
   updateSettings: (patch: Record<string, Record<string, unknown>>) => Promise<AppSettings>
+  setUpdateStatus: (u: UpdateStatus | null) => void
+  setWizardForced: (v: boolean) => void
 }
 
 const EMPTY_STATS: QueueStats = {
@@ -71,6 +77,8 @@ export const useApp = create<AppState>((set, get) => ({
   stats: EMPTY_STATS,
   jobs: {},
   sidebarCollapsed: readSidebarPref(),
+  updateStatus: null,
+  wizardForced: false,
 
   boot: async () => {
     if (!subscribed && window.vf && typeof window.vf.on === 'function') {
@@ -82,6 +90,9 @@ export const useApp = create<AppState>((set, get) => ({
         api.on('queue:stats', (stats) => set({ stats: { ...EMPTY_STATS, ...stats } }))
         api.on('settings:changed', (settings) => set({ settings: mergeSettings(settings) }))
         api.on('secrets:changed', (secrets) => set({ secrets: { ...EMPTY_SECRETS, ...secrets } }))
+        api.on('update:status', (u) => {
+          if (u && typeof u === 'object' && typeof u.state === 'string') set({ updateStatus: u })
+        })
         api.on('notification', (n) => {
           const level = n.level === 'success' || n.level === 'warning' || n.level === 'error' ? n.level : 'info'
           toast[level](n.title, n.message)
@@ -133,6 +144,13 @@ export const useApp = create<AppState>((set, get) => ({
     void get()
       .refreshJobs()
       .catch(() => undefined)
+    // Updater state is optional: older main builds (or the portable exe) may not answer.
+    void api
+      .invoke('updates:status', undefined)
+      .then((u) => {
+        if (u && typeof u === 'object' && typeof u.state === 'string') set({ updateStatus: u })
+      })
+      .catch(() => undefined)
   },
 
   refreshSettings: async () => {
@@ -182,7 +200,9 @@ export const useApp = create<AppState>((set, get) => ({
     const settings = mergeSettings(await api.invoke('settings:update', patch))
     set({ settings })
     return settings
-  }
+  },
+  setUpdateStatus: (updateStatus) => set({ updateStatus }),
+  setWizardForced: (wizardForced) => set({ wizardForced })
 }))
 
 function readSidebarPref(): boolean {

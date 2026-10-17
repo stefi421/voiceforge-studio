@@ -541,6 +541,8 @@ export interface AppSettings {
     notifications: boolean
     outputRoot: string | null
     autoOpenFolderOnBatchComplete: boolean
+    /** Set when the first-run setup wizard has been completed or skipped. */
+    onboardingCompleted: boolean
   }
   openai: {
     defaultModel: string
@@ -592,6 +594,33 @@ export interface AppSettings {
     logLevel: 'debug' | 'info' | 'warn' | 'error'
     manualE2EMode: boolean
   }
+  updates: {
+    /** Check GitHub Releases for a newer version shortly after launch. */
+    checkOnStartup: boolean
+    /** GitHub repository that publishes releases (electron-builder `latest.yml` + installer). */
+    owner: string
+    repo: string
+    allowPrerelease: boolean
+  }
+}
+
+export type UpdateState = 'idle' | 'checking' | 'available' | 'not_available' | 'downloading' | 'downloaded' | 'error' | 'unsupported'
+
+export interface UpdateStatus {
+  state: UpdateState
+  currentVersion: string
+  latestVersion: string | null
+  releaseNotes: string | null
+  releaseDate: string | null
+  /** 0–100 while downloading. */
+  progressPercent: number | null
+  bytesPerSecond: number | null
+  error: string | null
+  checkedAt: string | null
+  feed: { owner: string; repo: string }
+  /** Portable builds cannot self-replace; the UI offers the download page instead. */
+  portable: boolean
+  releaseUrl: string | null
 }
 
 export interface AppInfo {
@@ -687,6 +716,7 @@ export interface MainEvents {
   notification: AppNotification
   'settings:changed': AppSettings
   'secrets:changed': SecretsStatus
+  'update:status': UpdateStatus
 }
 
 export type MainEventName = keyof MainEvents

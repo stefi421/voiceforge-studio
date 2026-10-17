@@ -1,5 +1,5 @@
 import { useMemo, useState, type JSX } from 'react'
-import { AudioLines, FileText, FolderOpen, KeyRound, ListOrdered, Mic, Plus, RotateCcw, Sparkles, TriangleAlert, Tv } from 'lucide-react'
+import { AudioLines, FileText, FolderOpen, KeyRound, ListOrdered, Mic, Plus, RotateCcw, Sparkles, TriangleAlert, Tv, Wand2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAsync } from '@/lib/hooks'
 import { useApp, activeChannels } from '@/store/app'
@@ -99,7 +99,7 @@ export function DashboardPage(): JSX.Element {
       )}
 
       {setupNeeded && (
-        <Alert tone="warning" title="Finish setting up VoiceForge Studio">
+        <Alert tone="warning" title="Finish setting up VoiceForge Studio" actions={<Button size="sm" icon={<Wand2 size={13} />} onClick={() => useApp.getState().setWizardForced(true)}>Open setup assistant</Button>}>
           <div className="checklist mt-2">
             {checklist.map((c, i) => (
               <div key={i} className={`checklist-item ${c.done ? 'done' : ''}`}>

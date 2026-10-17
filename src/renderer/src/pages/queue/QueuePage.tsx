@@ -6,7 +6,7 @@ import { useAsync, useDebouncedValue, useNow } from '@/lib/hooks'
 import { ALL_JOB_STATUSES, isActiveStatus, needsUser, statusLabel } from '@/lib/jobs'
 import { formatDurationHuman } from '@/lib/format'
 import { activeChannels, useApp } from '@/store/app'
-import { useRouter } from '@/store/router'
+import { navigate, useRouter } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { Alert, Badge, Button, Card, ConfirmDialog, EmptyState, PageHeader, ProgressBar, SearchInput, Select } from '@/components/ui'
 import { ResearchReviewDialog } from '@/components/dialogs/ResearchReviewDialog'
@@ -188,7 +188,7 @@ export function QueuePage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="Generation Queue"
+        title="Queue"
         subtitle="Live status of every job. Rows update automatically."
         actions={
           <>
@@ -266,7 +266,7 @@ export function QueuePage(): JSX.Element {
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={5} style={{ padding: 0 }}>
-                  <EmptyState icon={<ListOrdered size={20} />} title={list.loading ? 'Loading…' : 'No jobs match'} description={Object.keys(jobs).length === 0 ? 'Start a generation to see jobs here.' : 'Try a different batch, channel or status filter.'} />
+                  <EmptyState icon={<ListOrdered size={20} />} title={list.loading ? 'Loading…' : 'No jobs match'} description={Object.keys(jobs).length === 0 ? 'Start a generation to see jobs here.' : 'Try a different batch, channel or status filter.'} actions={Object.keys(jobs).length === 0 && !list.loading ? <Button variant="primary" onClick={() => navigate('generate')}>Start a generation</Button> : undefined} />
                 </td>
               </tr>
             ) : (
@@ -312,9 +312,7 @@ export function QueuePage(): JSX.Element {
 function Summary({ label, value, tone }: { label: string; value: number; tone?: 'success' | 'danger' | 'warning' | 'accent' }): JSX.Element {
   return (
     <div className="col" style={{ gap: 0 }}>
-      <span className="xs muted" style={{ textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-        {label}
-      </span>
+      <span className="small muted">{label}</span>
       <span className="row">
         <span className="stat-value" style={{ fontSize: 22 }}>
           {value}

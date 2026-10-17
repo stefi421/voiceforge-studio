@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { FolderOpen } from 'lucide-react'
+import { FolderOpen, Wand2 } from 'lucide-react'
 import type { AppSettings, JobMode } from '@shared/types'
 import { JOB_MODE_LABELS } from '@shared/defaults'
 import { api } from '@/lib/api'
@@ -67,6 +67,15 @@ export function GeneralSection(): JSX.Element {
           </div>
         </Field>
         <Switch checked={g.autoOpenFolderOnBatchComplete} onChange={(v) => void set('general', 'autoOpenFolderOnBatchComplete', v)} label="Open the output folder when a batch completes" />
+      </div>
+      <div className="settings-group">
+        <div className="settings-group-title">Setup</div>
+        <div className="row-between">
+          <div className="small muted">Walk through API keys, voices per channel and the output folder again.</div>
+          <Button icon={<Wand2 size={14} />} onClick={() => useApp.getState().setWizardForced(true)}>
+            Run setup again
+          </Button>
+        </div>
       </div>
       <div className="settings-group">
         <div className="settings-group-title">System</div>

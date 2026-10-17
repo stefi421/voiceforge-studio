@@ -251,7 +251,7 @@ export function GeneratePage(): JSX.Element {
   if (live.length === 0) {
     return (
       <div className="page">
-        <PageHeader title="New Generation" subtitle="Turn a list of titles into scripts and voiceovers" />
+        <PageHeader title="New generation" subtitle="Turn a list of titles into scripts and voiceovers" />
         <Card>
           <EmptyState icon={<Sparkles size={22} />} title="Create a channel first" description="Each generation runs against a channel's writing rules, template and voice." actions={<Button variant="primary" onClick={() => navigate('channels', { edit: 'new' })}>Add channel</Button>} />
         </Card>
@@ -262,7 +262,7 @@ export function GeneratePage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="New Generation"
+        title="New generation"
         subtitle="Paste titles, pick a channel and a mode, review the estimate, go."
         actions={
           <Button variant="primary" size="lg" icon={<Sparkles size={15} />} loading={busy === 'estimate'} disabled={selectedCount === 0 || busy != null} onClick={startEstimate}>

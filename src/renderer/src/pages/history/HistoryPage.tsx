@@ -7,6 +7,7 @@ import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { statusLabel } from '@/lib/jobs'
 import { formatDateTime, formatTime, isoDay } from '@/lib/format'
+import { navigate } from '@/store/router'
 import { Alert, Badge, Button, Card, EmptyState, PageHeader, SearchInput, Select, StatusBadge } from '@/components/ui'
 
 function eventTone(e: JobEvent): 'success' | 'danger' | 'warning' | 'info' | 'neutral' {
@@ -51,7 +52,7 @@ export function HistoryPage(): JSX.Element {
   return (
     <div className="page fade-in">
       <PageHeader
-        title="Generation History"
+        title="History"
         subtitle="Every status transition, retry and error, newest first."
         actions={
           <>
@@ -80,7 +81,7 @@ export function HistoryPage(): JSX.Element {
       )}
       {rows.length === 0 ? (
         <Card>
-          <EmptyState icon={<Clock size={20} />} title={list.loading ? 'Loading…' : 'No history yet'} description="Job events are recorded as soon as a generation starts." />
+          <EmptyState icon={<Clock size={20} />} title={list.loading ? 'Loading…' : 'No history yet'} description="Job events are recorded as soon as a generation starts." actions={!list.loading && <Button variant="primary" onClick={() => navigate('generate')}>Start a generation</Button>} />
         </Card>
       ) : (
         Array.from(byDay.entries()).map(([day, events]) => (

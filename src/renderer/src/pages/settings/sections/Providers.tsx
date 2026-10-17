@@ -7,6 +7,7 @@ import { useAsync } from '@/lib/hooks'
 import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { Button, Field, ProgressBar, Select, Slider } from '@/components/ui'
+import { ElevenModelSelect } from '@/components/VoicePicker'
 import { formatNumber, formatPercent, relativeTime } from '@/lib/format'
 import { useSettingsPatch } from '../useSettingsPatch'
 import { ApiKeyCard, DeferredNumber } from './ProviderShared'
@@ -92,12 +93,6 @@ export function ElevenLabsSection(): JSX.Element {
     }
   }
 
-  const modelOptions = useMemo(() => {
-    const opts = (Array.isArray(models.data) ? models.data : []).filter((m) => m.canDoTextToSpeech).map((m) => ({ value: m.modelId, label: `${m.name} (${m.modelId})` }))
-    if (!opts.some((o) => o.value === e.defaultModelId)) opts.unshift({ value: e.defaultModelId, label: e.defaultModelId })
-    return opts
-  }, [models.data, e.defaultModelId])
-
   const s = sub.data
 
   return (
@@ -132,9 +127,7 @@ export function ElevenLabsSection(): JSX.Element {
       <div className="settings-group">
         <div className="settings-group-title">Defaults for new channels</div>
         <div className="form-grid">
-          <Field label="Default model">
-            <Select value={e.defaultModelId} onChange={(v) => void set('elevenlabs', 'defaultModelId', v)} options={modelOptions} />
-          </Field>
+          <ElevenModelSelect value={e.defaultModelId} onChange={(v) => void set('elevenlabs', 'defaultModelId', v)} models={Array.isArray(models.data) ? models.data : null} hint="Used when you create a new channel. Each channel can pick its own model." />
           <Field label="Default output format">
             <Select value={e.defaultOutputFormat} onChange={(v) => void set('elevenlabs', 'defaultOutputFormat', v)} options={ELEVEN_OUTPUT_FORMATS.map((f) => ({ value: f, label: f }))} />
           </Field>

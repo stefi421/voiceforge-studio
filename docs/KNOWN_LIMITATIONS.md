@@ -1,4 +1,4 @@
-# Known limitations (v1.0.1)
+# Known limitations (v1.1.0)
 
 Honest list of what is not done, partially done, or unverified.
 
@@ -53,6 +53,15 @@ Honest list of what is not done, partially done, or unverified.
   while the app is closed.
 * The queue runs in the main process event loop; it is I/O-bound and tested with 100
   queued jobs, but it is not a multi-process worker pool.
+
+## Updates
+
+* In-app updates need a GitHub repository with published releases; until the first
+  release is published, *Check for updates* reports that no release was found. The
+  updater code path (electron-updater, GitHub provider) is exercised only through its
+  error handling here — the first real update must be verified once a release exists
+  (see `UPDATES.md`).
+* The portable build cannot update itself (by design of single-file portables).
 
 ## Sync & accounts
 

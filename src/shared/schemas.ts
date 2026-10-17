@@ -160,7 +160,8 @@ export const appSettingsSchema = z.object({
     launchAtStartup: z.boolean(),
     notifications: z.boolean(),
     outputRoot: z.string().max(1024).nullable(),
-    autoOpenFolderOnBatchComplete: z.boolean()
+    autoOpenFolderOnBatchComplete: z.boolean(),
+    onboardingCompleted: z.boolean()
   }),
   openai: z.object({
     defaultModel: z.string().min(1).max(120),
@@ -210,6 +211,12 @@ export const appSettingsSchema = z.object({
   advanced: z.object({
     logLevel: z.enum(['debug', 'info', 'warn', 'error']),
     manualE2EMode: z.boolean()
+  }),
+  updates: z.object({
+    checkOnStartup: z.boolean(),
+    owner: z.string().max(100).regex(/^[A-Za-z0-9-]*$/),
+    repo: z.string().max(100).regex(/^[A-Za-z0-9_.-]*$/),
+    allowPrerelease: z.boolean()
   })
 })
 
@@ -221,7 +228,8 @@ export const settingsPatchSchema = z.object({
   spending: appSettingsSchema.shape.spending.partial().optional(),
   storage: appSettingsSchema.shape.storage.partial().optional(),
   sync: appSettingsSchema.shape.sync.partial().optional(),
-  advanced: appSettingsSchema.shape.advanced.partial().optional()
+  advanced: appSettingsSchema.shape.advanced.partial().optional(),
+  updates: appSettingsSchema.shape.updates.partial().optional()
 })
 
 export const providerSchema = z.enum(['openai', 'elevenlabs'])

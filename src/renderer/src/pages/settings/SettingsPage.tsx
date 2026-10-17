@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from 'react'
-import { Bot, Cloud, Coins, HardDrive, KeyRound, Mic, Settings2, Wrench } from 'lucide-react'
+import { Bot, Cloud, Coins, Download, HardDrive, KeyRound, Mic, Settings2, Wrench } from 'lucide-react'
 import { useRouter } from '@/store/router'
 import { Card, PageHeader, Tabs, type TabItem } from '@/components/ui'
 import { GeneralSection, GenerationSection } from './sections/GeneralAndGeneration'
@@ -7,8 +7,9 @@ import { ElevenLabsSection, OpenAISection } from './sections/Providers'
 import { SpendingSection } from './sections/Spending'
 import { StorageSection } from './sections/Storage'
 import { AdvancedSection, SyncSection } from './sections/AdvancedAndSync'
+import { UpdatesSection } from './sections/Updates'
 
-type SettingsTab = 'general' | 'openai' | 'elevenlabs' | 'generation' | 'spending' | 'storage' | 'sync' | 'advanced'
+type SettingsTab = 'general' | 'openai' | 'elevenlabs' | 'generation' | 'spending' | 'storage' | 'updates' | 'sync' | 'advanced'
 
 const TABS: TabItem<SettingsTab>[] = [
   { id: 'general', label: 'General', icon: <Settings2 size={14} /> },
@@ -17,6 +18,7 @@ const TABS: TabItem<SettingsTab>[] = [
   { id: 'generation', label: 'Generation', icon: <Bot size={14} /> },
   { id: 'spending', label: 'Spending', icon: <Coins size={14} /> },
   { id: 'storage', label: 'Storage', icon: <HardDrive size={14} /> },
+  { id: 'updates', label: 'Updates', icon: <Download size={14} /> },
   { id: 'sync', label: 'Synchronization', icon: <Cloud size={14} /> },
   { id: 'advanced', label: 'Advanced', icon: <Wrench size={14} /> }
 ]
@@ -35,7 +37,7 @@ export function SettingsPage(): JSX.Element {
 
   return (
     <div className="page fade-in">
-      <PageHeader title="Settings" subtitle="Changes are saved immediately." />
+      <PageHeader title="Settings" subtitle="Every change is saved as you make it." />
       <div className="settings-layout">
         <Tabs variant="vertical" tabs={TABS} value={tab} onChange={setTab} />
         <Card padded>
@@ -45,6 +47,7 @@ export function SettingsPage(): JSX.Element {
           {tab === 'generation' && <GenerationSection />}
           {tab === 'spending' && <SpendingSection />}
           {tab === 'storage' && <StorageSection />}
+          {tab === 'updates' && <UpdatesSection />}
           {tab === 'sync' && <SyncSection />}
           {tab === 'advanced' && <AdvancedSection />}
         </Card>

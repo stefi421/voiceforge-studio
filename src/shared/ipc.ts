@@ -27,6 +27,7 @@ import type {
   TemplateAnalysis,
   TemplateVersion,
   TemplateVersionInput,
+  UpdateStatus,
   UsageSummary,
   ValidationReport
 } from './types'
@@ -53,6 +54,12 @@ export interface IpcContract {
   'app:readRecentLogs': { req: { lines?: number }; res: string[] }
   'app:dbIntegrityCheck': { req: void; res: { ok: boolean; details: string } }
   'app:resetSettings': { req: void; res: AppSettings }
+
+  // Updates (electron-updater, GitHub Releases, user-initiated download + install)
+  'updates:status': { req: void; res: UpdateStatus }
+  'updates:check': { req: void; res: UpdateStatus }
+  'updates:download': { req: void; res: UpdateStatus }
+  'updates:install': { req: void; res: { ok: boolean; message?: string } }
 
   // Settings & secrets
   'settings:get': { req: void; res: AppSettings }

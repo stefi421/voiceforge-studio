@@ -11,6 +11,10 @@
 Windows 10 (1809+) and Windows 11, 64-bit. The executables are not code-signed, so
 SmartScreen shows "Windows protected your PC" on first run → *More info → Run anyway*.
 
+On first launch a setup wizard walks through steps 2–4 below (keys → voices per
+channel → output folder). You can skip it and come back via *Settings → General → Run
+setup again*.
+
 ## 2. Enter API keys (once per PC)
 
 1. **Settings → OpenAI** — paste the key from <https://platform.openai.com/api-keys>,
@@ -19,7 +23,13 @@ SmartScreen shows "Windows protected your PC" on first run → *More info → Ru
    writing and `gpt-6-luna` for the review pass — `gpt-6-astra` is the flagship if
    you want maximum quality at ~5× the price).
 2. **Settings → ElevenLabs** — paste the key from the ElevenLabs profile page, *Save*,
-   *Test connection*, then *Refresh voices*.
+   *Test connection*, then *Refresh voices*. Your own voices (instant and
+   professional clones, designed voices) are listed under **My voices**; the public
+   library is a separate tab. The default model is **Eleven v4** (newest, most
+   expressive; stability + similarity only, understands audio tags such as
+   `[laughs]`). If a professional clone has not been tuned for v4 in your ElevenLabs
+   account, pick `eleven_multilingual_v2` for that channel instead — it has every
+   slider and is the most stable long-form model.
 
 Keys are encrypted with Windows DPAPI for your user account and never leave the PC.
 

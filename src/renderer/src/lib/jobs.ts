@@ -25,8 +25,10 @@ export function statusTone(status: JobStatus): BadgeTone {
   }
 }
 
+/** Sentence-case status label ("Awaiting approval", not "Awaiting Approval"). */
 export function statusLabel(status: JobStatus): string {
-  return JOB_STATUS_LABELS[status] ?? status
+  const raw = JOB_STATUS_LABELS[status] ?? status.replace(/_/g, ' ')
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()
 }
 
 export function isActiveStatus(status: JobStatus): boolean {
