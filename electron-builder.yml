@@ -1,0 +1,35 @@
+appId: com.voiceforge.studio
+productName: VoiceForge Studio
+copyright: Copyright © 2026 Stefan Ignjatović
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+asar: true
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: "${productName}-${version}-${arch}-${os}.${ext}"
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VoiceForge Studio
+  artifactName: "VoiceForge-Studio-Setup-${version}-${arch}.${ext}"
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: "VoiceForge-Studio-Portable-${version}-${arch}.${ext}"
+  requestExecutionLevel: user
+publish: null

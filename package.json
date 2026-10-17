@@ -1,0 +1,44 @@
+{
+  "name": "voiceforge-studio",
+  "productName": "VoiceForge Studio",
+  "version": "1.0.0",
+  "description": "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs.",
+  "main": "./out/main/index.js",
+  "author": "Stefan Ignjatović",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "audit": "npm audit --omit=dev",
+    "package:win": "electron-vite build && electron-builder --win nsis portable --x64",
+    "package:win:dir": "electron-vite build && electron-builder --win dir --x64"
+  },
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.73.0",
+    "openai": "^7.36.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "44.9.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "lucide-react": "^1.59.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5",
+    "zustand": "^5.0.15"
+  }
+}

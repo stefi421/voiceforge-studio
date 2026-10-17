@@ -1,0 +1,178 @@
+import type { JobMode, JobStatus, JobView } from '@shared/types'
+import { JOB_STATUS_LABELS } from '@shared/defaults'
+
+export type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent'
+
+export function statusTone(status: JobStatus): BadgeTone {
+  switch (status) {
+    case 'completed':
+      return 'success'
+    case 'failed':
+      return 'danger'
+    case 'cancelled':
+      return 'neutral'
+    case 'paused':
+      return 'warning'
+    case 'research_review_required':
+    case 'awaiting_approval':
+      return 'warning'
+    case 'pending':
+      return 'neutral'
+    case 'script_ready':
+      return 'info'
+    default:
+      return 'accent'
+  }
+}
+
+export function statusLabel(status: JobStatus): string {
+  return JOB_STATUS_LABELS[status] ?? status
+}
+
+export function isActiveStatus(status: JobStatus): boolean {
+  return (
+    status === 'researching' ||
+    status === 'writing_script' ||
+    status === 'validating_script' ||
+    status === 'generating_audio' ||
+    status === 'saving_files'
+  )
+}
+
+export function needsUser(status: JobStatus): boolean {
+  return status === 'research_review_required' || status === 'awaiting_approval'
+}
+
+export function isFinished(status: JobStatus): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
+
+/** Pipeline steps shown in the UI (approval is skipped visually for auto mode). */
+export const PIPELINE_STEPS = ['research', 'script', 'validate', 'approval', 'audio', 'save'] as const
+export type PipelineStep = (typeof PIPELINE_STEPS)[number]
+
+export const PIPELINE_LABELS: Record<PipelineStep, string> = {
+  research: 'Research',
+  script: 'Script',
+  validate: 'Validate',
+  approval: 'Approval',
+  audio: 'Audio',
+  save: 'Save'
+}
+
+export type StepState = 'done' | 'current' | 'failed' | 'waiting' | 'todo' | 'skipped'
+
+function stepIndexForStatus(status: JobStatus, resume: JobStatus | null): number {
+  const s = status === 'paused' && resume ? resume : status
+  switch (s) {
+    case 'pending':
+      return -1
+    case 'researching':
+    case 'research_review_required':
+      return 0
+    case 'writing_script':
+      return 1
+    case 'validating_script':
+      return 2
+    case 'script_ready':
+    case 'awaiting_approval':
+      return 3
+    case 'generating_audio':
+      return 4
+    case 'saving_files':
+      return 5
+    case 'completed':
+      return 6
+    case 'failed':
+    case 'cancelled':
+    case 'paused':
+      return -1
+    default:
+      return -1
+  }
+}
+
+function stageIndex(stage: JobView['stage']): number {
+  switch (stage) {
+    case 'research':
+      return 0
+    case 'script':
+      return 1
+    case 'approval':
+      return 3
+    case 'audio':
+      return 4
+    case 'save':
+      return 5
+    case 'done':
+      return 6
+    default:
+      return -1
+  }
+}
+
+export function pipelineStates(job: Pick<JobView, 'status' | 'stage' | 'mode' | 'resumeStatus'>): StepState[] {
+  const states: StepState[] = PIPELINE_STEPS.map(() => 'todo')
+  const mode: JobMode = job.mode
+  const skipApproval = mode === 'auto'
+  const audioSkipped = mode === 'scripts_only'
+  const effective = job.status === 'paused' && job.resumeStatus ? job.resumeStatus : job.status
+
+  let idx = stepIndexForStatus(job.status, job.resumeStatus)
+  if (idx < 0 && (job.status === 'failed' || job.status === 'cancelled' || job.status === 'paused')) {
+    idx = stageIndex(job.stage)
+  }
+
+  if (job.status === 'completed') {
+    for (let i = 0; i < states.length; i++) states[i] = 'done'
+  } else {
+    for (let i = 0; i < states.length; i++) {
+      if (i < idx) states[i] = 'done'
+      else if (i === idx) {
+        if (job.status === 'failed') states[i] = 'failed'
+        else if (job.status === 'cancelled') states[i] = 'skipped'
+        else if (job.status === 'paused') states[i] = 'waiting'
+        else if (effective === 'research_review_required' || effective === 'awaiting_approval') states[i] = 'waiting'
+        else if (effective === 'script_ready') states[i] = 'done'
+        else states[i] = 'current'
+      }
+    }
+  }
+  if (skipApproval && states[3] !== 'failed' && states[3] !== 'waiting') states[3] = idx > 3 || job.status === 'completed' ? 'done' : 'skipped'
+  if (audioSkipped) {
+    if (states[4] !== 'failed') states[4] = 'skipped'
+    if (job.status === 'completed') states[5] = 'done'
+  }
+  return states
+}
+
+export function jobAttempts(job: JobView): string {
+  const parts: string[] = []
+  if (job.researchAttempts) parts.push(`R${job.researchAttempts}`)
+  if (job.scriptAttempts) parts.push(`S${job.scriptAttempts}`)
+  if (job.audioAttempts) parts.push(`A${job.audioAttempts}`)
+  return parts.length ? parts.join(' · ') : '—'
+}
+
+export const ALL_JOB_STATUSES: JobStatus[] = [
+  'pending',
+  'researching',
+  'research_review_required',
+  'writing_script',
+  'validating_script',
+  'script_ready',
+  'awaiting_approval',
+  'generating_audio',
+  'saving_files',
+  'completed',
+  'failed',
+  'paused',
+  'cancelled'
+]
+
+export const MODE_DESCRIPTIONS: Record<JobMode, string> = {
+  auto: 'Research → write script → validate → generate audio → save. No stops unless the title is ambiguous or validation keeps failing.',
+  review_before_voice:
+    'Research → write script → validate → wait for your approval → generate audio → save. You read and edit every script before ElevenLabs characters are spent.',
+  scripts_only: 'Research → write script → validate → save the script file. No audio is generated; you can voice any script later from the Scripts Library.'
+}

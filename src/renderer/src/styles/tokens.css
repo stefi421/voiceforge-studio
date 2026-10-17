@@ -1,0 +1,133 @@
+/* ---------------------------------------------------------------------------
+   Design tokens. Dark is the default; light overrides via [data-theme="light"].
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Typography */
+  --font-sans: Inter, 'Segoe UI Variable', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, 'SF Mono', Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12.5px;
+  --fs-md: 13.5px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+  --fs-3xl: 28px;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* Radii */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-full: 999px;
+
+  /* Motion */
+  --t-fast: 150ms cubic-bezier(0.2, 0, 0, 1);
+  --t-med: 200ms cubic-bezier(0.2, 0, 0, 1);
+
+  /* Layout */
+  --sidebar-w: 240px;
+  --sidebar-rail-w: 64px;
+  --topbar-h: 56px;
+
+  /* Accent (shared) */
+  --accent: #7c5cff;
+  --accent-hover: #8d72ff;
+  --accent-active: #6b4de8;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(124, 92, 255, 0.14);
+  --accent-ring: rgba(124, 92, 255, 0.45);
+
+  /* Semantic (shared hues; surfaces differ per theme) */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #38bdf8;
+  --violet: #a78bfa;
+  --teal: #2dd4bf;
+  --pink: #f472b6;
+  --amber: #fbbf24;
+
+  /* Dark surfaces */
+  --bg: #0f1014;
+  --bg-sidebar: #121318;
+  --bg-elev-1: #16171d;
+  --bg-elev-2: #1c1d25;
+  --bg-elev-3: #23242e;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-active: rgba(255, 255, 255, 0.07);
+  --bg-input: #121318;
+  --bg-overlay: rgba(6, 7, 10, 0.64);
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --border-focus: var(--accent);
+
+  --fg: #ececf1;
+  --fg-muted: #a0a3ad;
+  --fg-subtle: #6c6f7b;
+  --fg-inverse: #0f1014;
+
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --warning-soft: rgba(245, 158, 11, 0.14);
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --info-soft: rgba(56, 189, 248, 0.14);
+  --neutral-soft: rgba(255, 255, 255, 0.07);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+
+  --diff-add: rgba(34, 197, 94, 0.16);
+  --diff-del: rgba(239, 68, 68, 0.16);
+
+  --scrollbar: rgba(255, 255, 255, 0.14);
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f6f6f9;
+  --bg-sidebar: #f0f0f5;
+  --bg-elev-1: #ffffff;
+  --bg-elev-2: #fafafd;
+  --bg-elev-3: #f1f1f6;
+  --bg-hover: rgba(15, 16, 20, 0.04);
+  --bg-active: rgba(15, 16, 20, 0.07);
+  --bg-input: #ffffff;
+  --bg-overlay: rgba(20, 20, 30, 0.42);
+
+  --border: rgba(15, 16, 20, 0.09);
+  --border-strong: rgba(15, 16, 20, 0.16);
+
+  --fg: #17181d;
+  --fg-muted: #5c5f6b;
+  --fg-subtle: #8a8d99;
+  --fg-inverse: #ffffff;
+
+  --accent-soft: rgba(124, 92, 255, 0.12);
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --warning-soft: rgba(245, 158, 11, 0.16);
+  --danger-soft: rgba(239, 68, 68, 0.12);
+  --info-soft: rgba(56, 189, 248, 0.16);
+  --neutral-soft: rgba(15, 16, 20, 0.06);
+
+  --shadow-sm: 0 1px 2px rgba(15, 16, 20, 0.06);
+  --shadow-md: 0 6px 20px rgba(15, 16, 20, 0.08), 0 1px 2px rgba(15, 16, 20, 0.06);
+  --shadow-lg: 0 24px 60px rgba(15, 16, 20, 0.18), 0 2px 6px rgba(15, 16, 20, 0.08);
+
+  --diff-add: rgba(34, 197, 94, 0.18);
+  --diff-del: rgba(239, 68, 68, 0.16);
+
+  --scrollbar: rgba(15, 16, 20, 0.18);
+  color-scheme: light;
+}
