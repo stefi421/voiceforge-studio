@@ -1,0 +1,372 @@
+  • electron-builder  version=26.15.3 os=10.0.26100
+  • loaded configuration  file=D:\a\voiceforge-studio\voiceforge-studio\electron-builder.yml
+  • effective config  config=directories:
+  output: release
+  buildResources: build
+appId: com.voiceforge.studio
+productName: VoiceForge Studio
+copyright: Copyright © 2026 Stefan Ignjatović
+files:
+  - filter:
+      - out/**/*
+      - package.json
+      - '!**/*.map'
+asar: true
+npmRebuild: false
+extraResources:
+  - from: build/icon.ico
+    to: icon.ico
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: ${productName}-${version}-${arch}-${os}.${ext}
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: VoiceForge Studio
+  artifactName: VoiceForge-Studio-Setup-${version}-${arch}.${ext}
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: VoiceForge-Studio-Portable-${version}-${arch}.${ext}
+  requestExecutionLevel: user
+publish:
+  provider: github
+  owner: stefi421
+  repo: voiceforge-studio
+  releaseType: release
+
+  • spawning        command=npm prefix -w cwd=D:\a\voiceforge-studio\voiceforge-studio
+  • exited          command=npm code=1 pid=3460
+  • no event listeners found  event=beforePack
+  • skipped dependencies rebuild  reason=npmRebuild is set to false
+  • packaging       platform=win32 arch=x64 electron=44.9.0 appOutDir=release\win-unpacked
+  • no custom electronDist provided, unpacking default Electron distribution
+  • downloaded      label=electron progress=100%
+  • downloaded electron zip extracted successfully  output=D:\a\voiceforge-studio\voiceforge-studio\release\win-unpacked
+  • no event listeners found  event=afterExtract
+  • searching for node modules  pm=npm searchDir=D:\a\voiceforge-studio\voiceforge-studio
+  • node modules collection complete  packageName=voiceforge-studio depCount=25
+  • collected node modules  pm=npm nodeModules=[{"name":"@elevenlabs/elevenlabs-js","version":"2.73.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\@elevenlabs\\elevenlabs-js"},{"name":"argparse","version":"2.0.1","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\argparse"},{"name":"builder-util-runtime","version":"9.7.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\builder-util-runtime"},{"name":"command-exists","version":"1.2.9","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\command-exists"},{"name":"debug","version":"4.4.3","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\debug"},{"name":"electron-updater","version":"6.8.9","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\electron-updater"},{"name":"fs-extra","version":"10.1.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\fs-extra"},{"name":"graceful-fs","version":"4.2.11","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\graceful-fs"},{"name":"js-yaml","version":"4.3.2","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\js-yaml"},{"name":"jsonfile","version":"6.2.1","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\jsonfile"},{"name":"lazy-val","version":"1.0.5","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\lazy-val"},{"name":"lodash.escaperegexp","version":"4.1.2","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\lodash.escaperegexp"},{"name":"lodash.isequal","version":"4.5.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\lodash.isequal"},{"name":"ms","version":"2.1.3","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\ms"},{"name":"node-fetch","version":"2.7.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\node-fetch"},{"name":"openai","version":"7.36.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\openai"},{"name":"sax","version":"1.6.1","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\sax"},{"name":"semver","version":"7.7.4","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\electron-updater\\node_modules\\semver"},{"name":"tiny-typed-emitter","version":"2.1.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\tiny-typed-emitter"},{"name":"tr46","version":"0.0.3","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\tr46"},{"name":"universalify","version":"2.0.1","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\universalify"},{"name":"webidl-conversions","version":"3.0.1","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\webidl-conversions"},{"name":"whatwg-url","version":"5.0.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\whatwg-url"},{"name":"ws","version":"8.22.0","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\ws"},{"name":"zod","version":"4.6.7","dir":"D:\\a\\voiceforge-studio\\voiceforge-studio\\node_modules\\zod"}]
+  • identified module  dep=@elevenlabs/elevenlabs-js from=node_modules\@elevenlabs\elevenlabs-js to=release\win-unpacked\resources\app\node_modules\@elevenlabs\elevenlabs-js filesCount=11771
+  • identified module  dep=argparse from=node_modules\argparse to=release\win-unpacked\resources\app\node_modules\argparse filesCount=5
+  • identified module  dep=builder-util-runtime from=node_modules\builder-util-runtime to=release\win-unpacked\resources\app\node_modules\builder-util-runtime filesCount=16
+  • identified module  dep=command-exists from=node_modules\command-exists to=release\win-unpacked\resources\app\node_modules\command-exists filesCount=4
+  • identified module  dep=debug from=node_modules\debug to=release\win-unpacked\resources\app\node_modules\debug filesCount=6
+  • identified module  dep=electron-updater from=node_modules\electron-updater to=release\win-unpacked\resources\app\node_modules\electron-updater filesCount=34
+  • identified module  dep=fs-extra from=node_modules\fs-extra to=release\win-unpacked\resources\app\node_modules\fs-extra filesCount=30
+  • identified module  dep=graceful-fs from=node_modules\graceful-fs to=release\win-unpacked\resources\app\node_modules\graceful-fs filesCount=6
+  • identified module  dep=js-yaml from=node_modules\js-yaml to=release\win-unpacked\resources\app\node_modules\js-yaml filesCount=32
+  • identified module  dep=jsonfile from=node_modules\jsonfile to=release\win-unpacked\resources\app\node_modules\jsonfile filesCount=4
+  • identified module  dep=lazy-val from=node_modules\lazy-val to=release\win-unpacked\resources\app\node_modules\lazy-val filesCount=2
+  • identified module  dep=lodash.escaperegexp from=node_modules\lodash.escaperegexp to=release\win-unpacked\resources\app\node_modules\lodash.escaperegexp filesCount=3
+  • identified module  dep=lodash.isequal from=node_modules\lodash.isequal to=release\win-unpacked\resources\app\node_modules\lodash.isequal filesCount=3
+  • identified module  dep=ms from=node_modules\ms to=release\win-unpacked\resources\app\node_modules\ms filesCount=3
+  • identified module  dep=node-fetch from=node_modules\node-fetch to=release\win-unpacked\resources\app\node_modules\node-fetch filesCount=6
+  • identified module  dep=openai from=node_modules\openai to=release\win-unpacked\resources\app\node_modules\openai filesCount=1776
+  • identified module  dep=sax from=node_modules\sax to=release\win-unpacked\resources\app\node_modules\sax filesCount=3
+  • identified module  dep=semver from=node_modules\electron-updater\node_modules\semver to=release\win-unpacked\resources\app\node_modules\semver filesCount=51
+  • identified module  dep=tiny-typed-emitter from=node_modules\tiny-typed-emitter to=release\win-unpacked\resources\app\node_modules\tiny-typed-emitter filesCount=3
+  • identified module  dep=tr46 from=node_modules\tr46 to=release\win-unpacked\resources\app\node_modules\tr46 filesCount=3
+  • identified module  dep=universalify from=node_modules\universalify to=release\win-unpacked\resources\app\node_modules\universalify filesCount=3
+  • identified module  dep=webidl-conversions from=node_modules\webidl-conversions to=release\win-unpacked\resources\app\node_modules\webidl-conversions filesCount=3
+  • identified module  dep=whatwg-url from=node_modules\whatwg-url to=release\win-unpacked\resources\app\node_modules\whatwg-url filesCount=7
+  • identified module  dep=ws from=node_modules\ws to=release\win-unpacked\resources\app\node_modules\ws filesCount=18
+  • identified module  dep=zod from=node_modules\zod to=release\win-unpacked\resources\app\node_modules\zod filesCount=715
+  • updating asar integrity executable resource  executablePath=release\win-unpacked\VoiceForge Studio.exe
+  • signing with signtool.exe  path=release\win-unpacked\VoiceForge Studio.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+resource-edit&sign: 0s 261ms
+  • no event listeners found  event=afterSign
+  • building        target=nsis file=release\VoiceForge-Studio-Setup-1.1.1-x64.exe archs=x64 oneClick=false perMachine=false
+  • no event listeners found  event=artifactBuildStarted
+  • downloading     file=nsis-3.0.4.1.7z
+  • downloaded      label=nsis-3.0.4.1.7z progress=100%
+  • downloading     file=7zip-win-x64.tar.gz
+  • downloaded      label=7zip-win-x64.tar.gz progress=100%
+  • executing       file=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe args=x -bd C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3b42a86add36a87dd480358d9be45adedd964ac4dd3b1cc01787c737be65a863\nsis-3.0.4.1.7z -oC:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n.tmp -y
+  • executed        file=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe stdout=
+7-Zip (a) 24.09 (x86) : Copyright (c) 1999-2024 Igor Pavlov : 2024-11-29
+                      Scanning the drive for archives:
+1 file, 1287512 bytes (1258 KiB)
+                      Extracting archive: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3b42a86add36a87dd480358d9be45adedd964ac4dd3b1cc01787c737be65a863\nsis-3.0.4.1.7z
+--
+Path = C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3b42a86add36a87dd480358d9be45adedd964ac4dd3b1cc01787c737be65a863\nsis-3.0.4.1.7z
+Type = 7z
+Physical Size = 1287512
+Headers Size = 4285
+Method = LZMA2:23 LZMA:20 BCJ2
+Solid = +
+Blocks = 2
+                      Everything is Ok
+                      Folders: 23
+Files: 343
+Size:       7280179
+Compressed: 1287512
+
+  • signing with signtool.exe  path=release\win-unpacked\resources\elevate.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • executing       file=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe args=a -bd -mx=9 -md=1m -mtc=off -ms=off -mtm=off -mta=off D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z . -xr!*.avi -xr!*.mov -xr!*.m4v -xr!*.mp4 -xr!*.m4p -xr!*.qt -xr!*.mkv -xr!*.webm -xr!*.vmdk cwd=D:\a\voiceforge-studio\voiceforge-studio\release\win-unpacked
+nsis package, x64: 27s 745ms
+  • downloading     file=nsis-resources-3.4.1.7z
+  • downloaded      label=nsis-resources-3.4.1.7z progress=100%
+  • executing       file=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe args=x -bd C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3e60dc68ed9a10cd610cacaebc815013a691eb4cc87b7b3a07af429b945c4a01\nsis-resources-3.4.1.7z -oC:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-resources-3.4.1\nsis-resources-3.4.1-2jx2y.tmp -y
+  • executed        file=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\7zip@1.0.0\7zip-win-x64-a34pt\bin\7za.exe stdout=
+7-Zip (a) 24.09 (x86) : Copyright (c) 1999-2024 Igor Pavlov : 2024-11-29
+                      Scanning the drive for archives:
+1 file, 730800 bytes (714 KiB)
+                      Extracting archive: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3e60dc68ed9a10cd610cacaebc815013a691eb4cc87b7b3a07af429b945c4a01\nsis-resources-3.4.1.7z
+--
+Path = C:\Users\runneradmin\AppData\Local\electron-builder\Cache\downloads\3e60dc68ed9a10cd610cacaebc815013a691eb4cc87b7b3a07af429b945c4a01\nsis-resources-3.4.1.7z
+Type = 7z
+Physical Size = 730800
+Headers Size = 650
+Method = LZMA2:3m LZMA:20 BCJ2
+Solid = +
+Blocks = 2
+                      Everything is Ok
+                      Folders: 5
+Files: 22
+Size:       2998788
+Compressed: 730800
+
+  • spawning        command=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\Bin\makensis.exe -WX -INPUTCHARSET UTF8 -DAPP_ID=com.voiceforge.studio -DAPP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DUNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DPRODUCT_NAME=VoiceForge Studio -DPRODUCT_FILENAME=VoiceForge Studio -DAPP_FILENAME=VoiceForge Studio -DAPP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs. -DVERSION=1.1.1 -DPROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio -DBUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build -DAPP_PACKAGE_NAME=voiceforge-studio -DMUI_ICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico -DMUI_UNICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico -DAPP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39 -DAPP_64_UNPACKED_SIZE=422043 -DCOMPANY_NAME=Stefan Ignjatović -DAPP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe -DCOMPRESSION_METHOD=7z -DMULTIUSER_INSTALLMODE_ALLOW_ELEVATION -DINSTALL_MODE_PER_ALL_USERS_REQUIRED -DallowToChangeInstallationDirectory -DSHORTCUT_NAME=VoiceForge Studio -DUNINSTALL_DISPLAY_NAME=VoiceForge Studio 1.1.1 -DMUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp -DMUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp -DESTIMATED_SIZE=422042 -DCOMPRESS=auto -DBUILD_UNINSTALLER -DUNINSTALLER_OUT_FILE=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.__uninstaller.exe -XOutFile "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe" -XVIProductVersion 1.1.1.0 -XVIAddVersionKey /LANG=1033 ProductName "VoiceForge Studio" -XVIAddVersionKey /LANG=1033 ProductVersion "1.1.1" -XVIAddVersionKey /LANG=1033 LegalCopyright "Copyright © 2026 Stefan Ignjatović" -XVIAddVersionKey /LANG=1033 FileDescription "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs." -XVIAddVersionKey /LANG=1033 FileVersion "1.1.1" -XVIAddVersionKey /LANG=1033 CompanyName "Stefan Ignjatović" -XUnicode true -XSetCompressor zlib - cwd=D:\a\voiceforge-studio\voiceforge-studio\node_modules\app-builder-lib\templates\nsis
+Command line defined: "APP_ID=com.voiceforge.studio"
+Command line defined: "APP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "UNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "PRODUCT_NAME=VoiceForge Studio"
+Command line defined: "PRODUCT_FILENAME=VoiceForge Studio"
+Command line defined: "APP_FILENAME=VoiceForge Studio"
+Command line defined: "APP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs."
+Command line defined: "VERSION=1.1.1"
+Command line defined: "PROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio"
+Command line defined: "BUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build"
+Command line defined: "APP_PACKAGE_NAME=voiceforge-studio"
+Command line defined: "MUI_ICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico"
+Command line defined: "MUI_UNICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico"
+Command line defined: "APP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39"
+Command line defined: "APP_64_UNPACKED_SIZE=422043"
+Command line defined: "COMPANY_NAME=Stefan Ignjatovic"
+Command line defined: "APP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe"
+Command line defined: "COMPRESSION_METHOD=7z"
+Command line defined: "MULTIUSER_INSTALLMODE_ALLOW_ELEVATION"
+Command line defined: "INSTALL_MODE_PER_ALL_USERS_REQUIRED"
+Command line defined: "allowToChangeInstallationDirectory"
+Command line defined: "SHORTCUT_NAME=VoiceForge Studio"
+Command line defined: "UNINSTALL_DISPLAY_NAME=VoiceForge Studio 1.1.1"
+Command line defined: "MUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "MUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "ESTIMATED_SIZE=422042"
+Command line defined: "COMPRESS=auto"
+Command line defined: "BUILD_UNINSTALLER"
+Command line defined: "UNINSTALLER_OUT_FILE=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.__uninstaller.exe"
+Processing config: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\nsisconf.nsh
+Processing script file: "<stdin>" (UTF8)
+
+Processed 1 file, 10 command line commands, writing output (x86-unicode):
+
+Output: "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe"
+Install: 0 pages (0 bytes), 1 section (16408 bytes), 31 instructions (868 bytes), 2930 strings (24128 bytes), 26 language tables (4316 bytes).
+Uninstall: 4 pages (320 bytes), 1 section (16408 bytes), 2105 instructions (58940 bytes), 8569 strings (111120 bytes), 26 language tables (8788 bytes).
+
+Using zlib compression.
+
+EXE header size:              124928 / 39424 bytes
+Install code:                   9817 / 46120 bytes
+Install data:                      0 / 8 bytes
+Uninstall code+data:          193090 / 194374 bytes
+CRC (0x3E86D15F):                  4 / 4 bytes
+
+Total size:                   327839 / 279930 bytes (117.1%)
+  • executing       file=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe args= env={
+  "__COMPAT_LAYER": "RunAsInvoker"
+}
+  • executed        file=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe
+  • signing with signtool.exe  path=release\VoiceForge-Studio-Setup-1.1.1-x64.__uninstaller.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • spawning        command=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\Bin\makensis.exe -WX -INPUTCHARSET UTF8 -DAPP_ID=com.voiceforge.studio -DAPP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DUNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DPRODUCT_NAME=VoiceForge Studio -DPRODUCT_FILENAME=VoiceForge Studio -DAPP_FILENAME=VoiceForge Studio -DAPP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs. -DVERSION=1.1.1 -DPROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio -DBUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build -DAPP_PACKAGE_NAME=voiceforge-studio -DMUI_ICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico -DMUI_UNICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico -DAPP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39 -DAPP_64_UNPACKED_SIZE=422043 -DCOMPANY_NAME=Stefan Ignjatović -DAPP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe -DCOMPRESSION_METHOD=7z -DMULTIUSER_INSTALLMODE_ALLOW_ELEVATION -DINSTALL_MODE_PER_ALL_USERS_REQUIRED -DallowToChangeInstallationDirectory -DSHORTCUT_NAME=VoiceForge Studio -DUNINSTALL_DISPLAY_NAME=VoiceForge Studio 1.1.1 -DMUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp -DMUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp -DESTIMATED_SIZE=422042 -DCOMPRESS=auto -DUNINSTALLER_OUT_FILE=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.__uninstaller.exe -XOutFile "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe" -XVIProductVersion 1.1.1.0 -XVIAddVersionKey /LANG=1033 ProductName "VoiceForge Studio" -XVIAddVersionKey /LANG=1033 ProductVersion "1.1.1" -XVIAddVersionKey /LANG=1033 LegalCopyright "Copyright © 2026 Stefan Ignjatović" -XVIAddVersionKey /LANG=1033 FileDescription "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs." -XVIAddVersionKey /LANG=1033 FileVersion "1.1.1" -XVIAddVersionKey /LANG=1033 CompanyName "Stefan Ignjatović" -XUnicode true -XSetCompressor zlib - cwd=D:\a\voiceforge-studio\voiceforge-studio\node_modules\app-builder-lib\templates\nsis
+Command line defined: "APP_ID=com.voiceforge.studio"
+Command line defined: "APP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "UNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "PRODUCT_NAME=VoiceForge Studio"
+Command line defined: "PRODUCT_FILENAME=VoiceForge Studio"
+Command line defined: "APP_FILENAME=VoiceForge Studio"
+Command line defined: "APP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs."
+Command line defined: "VERSION=1.1.1"
+Command line defined: "PROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio"
+Command line defined: "BUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build"
+Command line defined: "APP_PACKAGE_NAME=voiceforge-studio"
+Command line defined: "MUI_ICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico"
+Command line defined: "MUI_UNICON=D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico"
+Command line defined: "APP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39"
+Command line defined: "APP_64_UNPACKED_SIZE=422043"
+Command line defined: "COMPANY_NAME=Stefan Ignjatovic"
+Command line defined: "APP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe"
+Command line defined: "COMPRESSION_METHOD=7z"
+Command line defined: "MULTIUSER_INSTALLMODE_ALLOW_ELEVATION"
+Command line defined: "INSTALL_MODE_PER_ALL_USERS_REQUIRED"
+Command line defined: "allowToChangeInstallationDirectory"
+Command line defined: "SHORTCUT_NAME=VoiceForge Studio"
+Command line defined: "UNINSTALL_DISPLAY_NAME=VoiceForge Studio 1.1.1"
+Command line defined: "MUI_WELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "MUI_UNWELCOMEFINISHPAGE_BITMAP=${NSISDIR}\Contrib\Graphics\Wizard\nsis3-metro.bmp"
+Command line defined: "ESTIMATED_SIZE=422042"
+Command line defined: "COMPRESS=auto"
+Command line defined: "UNINSTALLER_OUT_FILE=D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.__uninstaller.exe"
+Processing config: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\nsisconf.nsh
+Processing script file: "<stdin>" (UTF8)
+
+Processed 1 file, 10 command line commands, writing output (x86-unicode):
+
+Output: "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Setup-1.1.1-x64.exe"
+Install: 4 pages (256 bytes), 1 section (16408 bytes), 2282 instructions (63896 bytes), 10278 strings (124520 bytes), 26 language tables (9412 bytes).
+
+Using zlib compression.
+
+EXE header size:              126976 / 39424 bytes
+Install code:                  48210 / 214956 bytes
+Install data:              115889406 / 116333997 bytes
+CRC (0xE7F6D2C4):                  4 / 4 bytes
+
+Total size:                116064596 / 116588381 bytes (99.5%)
+  • signing with signtool.exe  path=release\VoiceForge-Studio-Setup-1.1.1-x64.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • building block map  blockMapFile=release\VoiceForge-Studio-Setup-1.1.1-x64.exe.blockmap
+  • no event listeners found  event=artifactBuildCompleted
+  • no event listeners found  event=artifactBuildCompleted
+  • building        target=portable file=release\VoiceForge-Studio-Portable-1.1.1-x64.exe archs=x64
+  • no event listeners found  event=artifactBuildStarted
+  • publishing      publisher=Github (owner: stefi421, project: voiceforge-studio, version: 1.1.1)
+  • publishing      publisher=Github (owner: stefi421, project: voiceforge-studio, version: 1.1.1)
+  • uploading       file=VoiceForge-Studio-Setup-1.1.1-x64.exe.blockmap provider=github
+2026-10-17T22:49:54.910Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "api.github.com",
+  "port": null,
+  "path": "/repos/stefi421/voiceforge-studio/releases"
+}
+  • uploading       file=VoiceForge-Studio-Setup-1.1.1-x64.exe provider=github
+2026-10-17T22:49:54.914Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "api.github.com",
+  "port": null,
+  "path": "/repos/stefi421/voiceforge-studio/releases"
+}
+  • spawning        command=C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\Bin\makensis.exe -WX -INPUTCHARSET UTF8 -DAPP_ID=com.voiceforge.studio -DAPP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DUNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297 -DPRODUCT_NAME=VoiceForge Studio -DPRODUCT_FILENAME=VoiceForge Studio -DAPP_FILENAME=voiceforge-studio -DAPP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs. -DVERSION=1.1.1 -DPROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio -DBUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build -DAPP_PACKAGE_NAME=voiceforge-studio -DAPP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z -DAPP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39 -DAPP_64_UNPACKED_SIZE=422043 -DCOMPANY_NAME=Stefan Ignjatović -DAPP_PRODUCT_FILENAME=VoiceForge Studio -DAPP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe -DCOMPRESSION_METHOD=7z -DREQUEST_EXECUTION_LEVEL=user -DUNPACK_DIR_NAME=3KqFs6VyyTgVzGQjj66lkKVZez0 -DESTIMATED_SIZE=422042 -DCOMPRESS=auto -DUNINSTALLER_OUT_FILE -XOutFile "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Portable-1.1.1-x64.exe" -XVIProductVersion 1.1.1.0 -XVIAddVersionKey /LANG=1033 ProductName "VoiceForge Studio" -XVIAddVersionKey /LANG=1033 ProductVersion "1.1.1" -XVIAddVersionKey /LANG=1033 LegalCopyright "Copyright © 2026 Stefan Ignjatović" -XVIAddVersionKey /LANG=1033 FileDescription "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs." -XVIAddVersionKey /LANG=1033 FileVersion "1.1.1" -XVIAddVersionKey /LANG=1033 CompanyName "Stefan Ignjatović" -XUnicode true -XIcon "D:\a\voiceforge-studio\voiceforge-studio\build\icon.ico" -XSetCompressor zlib - cwd=D:\a\voiceforge-studio\voiceforge-studio\node_modules\app-builder-lib\templates\nsis
+Command line defined: "APP_ID=com.voiceforge.studio"
+Command line defined: "APP_GUID=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "UNINSTALL_APP_KEY=cb71a00e-8ec2-5c2b-ae94-3e95895f9297"
+Command line defined: "PRODUCT_NAME=VoiceForge Studio"
+Command line defined: "PRODUCT_FILENAME=VoiceForge Studio"
+Command line defined: "APP_FILENAME=voiceforge-studio"
+Command line defined: "APP_DESCRIPTION=YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs."
+Command line defined: "VERSION=1.1.1"
+Command line defined: "PROJECT_DIR=D:\a\voiceforge-studio\voiceforge-studio"
+Command line defined: "BUILD_RESOURCES_DIR=D:\a\voiceforge-studio\voiceforge-studio\build"
+Command line defined: "APP_PACKAGE_NAME=voiceforge-studio"
+Command line defined: "APP_64=D:\a\voiceforge-studio\voiceforge-studio\release\voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_NAME=voiceforge-studio-1.1.1-x64.nsis.7z"
+Command line defined: "APP_64_HASH=B35C4E23D287390FED8FE7823D6C3173AA0ABA9204BD6068C0E73B3293B9F28F96FC19C8324D2B6A646AD0A6A9B93E5FE0DD9E95E03573A6CAB85DB801C71D39"
+Command line defined: "APP_64_UNPACKED_SIZE=422043"
+Command line defined: "COMPANY_NAME=Stefan Ignjatovic"
+Command line defined: "APP_PRODUCT_FILENAME=VoiceForge Studio"
+Command line defined: "APP_INSTALLER_STORE_FILE=voiceforge-studio-updater\installer.exe"
+Command line defined: "COMPRESSION_METHOD=7z"
+Command line defined: "REQUEST_EXECUTION_LEVEL=user"
+Command line defined: "UNPACK_DIR_NAME=3KqFs6VyyTgVzGQjj66lkKVZez0"
+Command line defined: "ESTIMATED_SIZE=422042"
+Command line defined: "COMPRESS=auto"
+Command line defined: "UNINSTALLER_OUT_FILE"
+Processing config: C:\Users\runneradmin\AppData\Local\electron-builder\Cache\nsis-3.0.4.1\nsis-3.0.4.1-1mx3n\nsisconf.nsh
+Processing script file: "<stdin>" (UTF8)
+
+Processed 1 file, 11 command line commands, writing output (x86-unicode):
+
+Output: "D:\a\voiceforge-studio\voiceforge-studio\release\VoiceForge-Studio-Portable-1.1.1-x64.exe"
+Install: 1 page (64 bytes), 1 section (16408 bytes), 259 instructions (7252 bytes), 863 strings (10676 bytes), 26 language tables (5460 bytes).
+
+Using zlib compression.
+
+EXE header size:              118784 / 39424 bytes
+Install code:                   5185 / 40252 bytes
+Install data:              115652763 / 115906706 bytes
+2026-10-17T22:49:55.336Z electron-builder Response: 200 OK, request options: {
+  "protocol": "https:",
+  "hostname": "api.github.com",
+  "port": null,
+  "path": "/repos/stefi421/voiceforge-studio/releases"
+}
+2026-10-17T22:49:55.337Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Setup-1.1.1-x64.exe",
+  "method": "POST"
+}
+2026-10-17T22:49:55.382Z electron-builder Response: 200 OK, request options: {
+  "protocol": "https:",
+  "hostname": "api.github.com",
+  "port": null,
+  "path": "/repos/stefi421/voiceforge-studio/releases"
+}
+2026-10-17T22:49:55.382Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Setup-1.1.1-x64.exe.blockmap",
+  "method": "POST"
+}
+
+Total size:                115776732 / 115986382 bytes (99.8%)
+  • signing with signtool.exe  path=release\VoiceForge-Studio-Portable-1.1.1-x64.exe
+  • no signing info identified, signing is skipped  signHook=false cscInfo=null
+  • no event listeners found  event=artifactBuildCompleted
+  • uploading       file=VoiceForge-Studio-Portable-1.1.1-x64.exe provider=github
+2026-10-17T22:49:55.757Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Portable-1.1.1-x64.exe",
+  "method": "POST"
+}
+2026-10-17T22:49:55.976Z electron-builder Response: 201 Created, request options: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Setup-1.1.1-x64.exe.blockmap",
+  "method": "POST"
+}
+2026-10-17T22:50:00.521Z electron-builder Response: 201 Created, request options: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Setup-1.1.1-x64.exe",
+  "method": "POST"
+}
+2026-10-17T22:50:00.979Z electron-builder Response: 201 Created, request options: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=VoiceForge-Studio-Portable-1.1.1-x64.exe",
+  "method": "POST"
+}
+2026-10-17T22:50:00.982Z electron-builder Request: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=latest.yml",
+  "method": "POST"
+}
+2026-10-17T22:50:01.503Z electron-builder Response: 201 Created, request options: {
+  "protocol": "https:",
+  "hostname": "uploads.github.com",
+  "path": "/repos/stefi421/voiceforge-studio/releases/416114768/assets?name=latest.yml",
+  "method": "POST"
+}
