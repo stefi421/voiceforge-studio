@@ -37,7 +37,10 @@ jobs:
       # updater reads from a PUBLIC releases-only repository, set the repository variable
       # RELEASE_REPO (e.g. voiceforge-studio-releases) and the secret GH_RELEASE_TOKEN (a
       # fine-grained PAT with "Contents: write" on that repository).
-      - name: Remove a half-published release with the same version (publish runs only)
+      - name: Prepare the GitHub release (publish runs only)
+        # electron-builder races when it has to create the release itself (two uploads can each
+        # create one), so the tag and the release are created here first; electron-builder then
+        # only uploads assets. A previous half-published release for the same version is removed.
         if: ${{ startsWith(github.ref, 'refs/tags/v') || inputs.publish }}
         shell: bash
         env:
@@ -46,36 +49,29 @@ jobs:
           RELEASE_OWNER: ${{ github.repository_owner }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if gh release view "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" >/dev/null 2>&1; then
-            ASSETS=$(gh release view "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" --json assets --jq '.assets[].name')
-            if echo "$ASSETS" | grep -q '^latest.yml$'; then
-              echo "Release v$VERSION is complete (latest.yml present); leaving it alone."
-              echo "SKIP_PUBLISH=1" >> "$GITHUB_ENV"
-            else
-              echo "Release v$VERSION exists without latest.yml — deleting it so it can be published cleanly."
-              gh release delete "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" -y --cleanup-tag || true
-            fi
+          TAG="v$VERSION"; REPO="$RELEASE_OWNER/$RELEASE_REPO"
+          REQUIRED="latest.yml VoiceForge-Studio-Setup-$VERSION-x64.exe VoiceForge-Studio-Setup-$VERSION-x64.exe.blockmap VoiceForge-Studio-Portable-$VERSION-x64.exe"
+          COMPLETE_ID=""
+          for ID in $(gh api "repos/$REPO/releases?per_page=100" --jq ".[] | select(.tag_name==\"$TAG\") | .id"); do
+            NAMES=$(gh api "repos/$REPO/releases/$ID" --jq '.assets[].name')
+            OK=1; for N in $REQUIRED; do echo "$NAMES" | grep -qx "$N" || OK=0; done
+            if [ "$OK" = "1" ] && [ -z "$COMPLETE_ID" ]; then COMPLETE_ID=$ID; else
+              echo "Deleting incomplete/duplicate release $ID for $TAG"; gh api -X DELETE "repos/$REPO/releases/$ID"; fi
+          done
+          if [ -n "$COMPLETE_ID" ]; then
+            echo "Release $TAG is already complete (id $COMPLETE_ID); nothing to publish."
+            echo "SKIP_PUBLISH=1" >> "$GITHUB_ENV"; exit 0
           fi
-      - name: Make sure the release tag exists (GitHub refuses a published release without one)
-        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && env.SKIP_PUBLISH != '1' }}
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
-          RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
-          RELEASE_OWNER: ${{ github.repository_owner }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [ "$RELEASE_OWNER/$RELEASE_REPO" = "$GITHUB_REPOSITORY" ]; then
-            if ! git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+          if [ "$REPO" = "$GITHUB_REPOSITORY" ]; then
+            if ! git ls-remote --tags origin "refs/tags/$TAG" | grep -q .; then
               git config user.name "github-actions" && git config user.email "actions@github.com"
-              git tag -a "v$VERSION" -m "VoiceForge Studio $VERSION" "$GITHUB_SHA"
-              git push origin "refs/tags/v$VERSION"
+              git tag -a "$TAG" -m "VoiceForge Studio $VERSION" "$GITHUB_SHA" && git push origin "refs/tags/$TAG"
             fi
           else
-            # Releases-only repository: tag its default branch head via the API.
-            SHA=$(gh api "repos/$RELEASE_OWNER/$RELEASE_REPO/git/ref/heads/$(gh api repos/$RELEASE_OWNER/$RELEASE_REPO --jq .default_branch)" --jq .object.sha)
-            gh api -X POST "repos/$RELEASE_OWNER/$RELEASE_REPO/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$SHA" >/dev/null 2>&1 || true
+            SHA=$(gh api "repos/$REPO/git/ref/heads/$(gh api repos/$REPO --jq .default_branch)" --jq .object.sha)
+            gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SHA" >/dev/null 2>&1 || true
           fi
+          gh release create "$TAG" --repo "$REPO" --title "VoiceForge Studio $VERSION" --generate-notes --verify-tag
       - name: Package (and publish on tag)
         shell: bash
         env:
