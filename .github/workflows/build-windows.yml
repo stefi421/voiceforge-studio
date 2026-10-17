@@ -38,10 +38,22 @@ jobs:
       # RELEASE_REPO (e.g. voiceforge-studio-releases) and the secret GH_RELEASE_TOKEN (a
       # fine-grained PAT with "Contents: write" on that repository).
       - name: Package (and publish on tag)
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
-        run: npx electron-builder --win nsis portable --x64 --publish ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && 'always' || 'never' }} -c.publish.owner=${{ github.repository_owner }} -c.publish.repo=$env:RELEASE_REPO
+          RELEASE_OWNER: ${{ github.repository_owner }}
+          PUBLISH: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && 'always' || 'never' }}
+        run: |
+          set -o pipefail
+          echo "publish=$PUBLISH owner=$RELEASE_OWNER repo=$RELEASE_REPO"
+          if npx electron-builder --win nsis portable --x64 --publish "$PUBLISH" \
+               -c.publish.owner="$RELEASE_OWNER" -c.publish.repo="$RELEASE_REPO" 2>&1 | tee build.log; then
+            { echo "### electron-builder succeeded"; echo '```'; tail -n 40 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          else
+            { echo "### electron-builder failed"; echo '```'; tail -n 150 build.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceForge-Studio-windows
