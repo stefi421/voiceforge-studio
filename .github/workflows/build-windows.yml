@@ -3,12 +3,19 @@ name: Build and release Windows app
 # - Push a tag like v1.2.0  → builds installer + portable on Windows, runs the tests,
 #   and publishes a GitHub Release with the assets the in-app updater needs
 #   (Setup exe, .blockmap, latest.yml, portable exe).
-# - "Run workflow" (manual)  → builds and uploads the artifacts only (no release).
+# - "Run workflow" (manual)  → builds and uploads the artifacts; with "publish" ticked it
+#   also publishes the release for the version in package.json (useful when tags cannot
+#   be pushed from the environment that made the commit).
 
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish a GitHub Release (tag v<package.json version>) with the installer and latest.yml'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,7 +41,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
-        run: npx electron-builder --win nsis portable --x64 --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }} -c.publish.owner=${{ github.repository_owner }} -c.publish.repo=$env:RELEASE_REPO
+        run: npx electron-builder --win nsis portable --x64 --publish ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && 'always' || 'never' }} -c.publish.owner=${{ github.repository_owner }} -c.publish.repo=$env:RELEASE_REPO
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceForge-Studio-windows
