@@ -93,7 +93,7 @@ export function SpendingSection(): JSX.Element {
           </table>
         </div>
         <div className="row">
-          <Input value={newModel} onChange={(e) => setNewModel(e.target.value)} placeholder="Add model id, e.g. gpt-5.1" style={{ maxWidth: 260 }} onKeyDown={(e) => { if (e.key === 'Enter') addModel() }} />
+          <Input value={newModel} onChange={(e) => setNewModel(e.target.value)} placeholder="Add model id, e.g. gpt-6.2-sol" style={{ maxWidth: 260 }} onKeyDown={(e) => { if (e.key === 'Enter') addModel() }} />
           <Button size="sm" onClick={addModel} disabled={!newModel.trim()}>
             Add model
           </Button>

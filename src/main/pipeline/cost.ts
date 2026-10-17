@@ -11,7 +11,9 @@ export function bestModelKey(pricing: PricingConfig, model: string): string {
   let best = 'default'
   for (const key of Object.keys(pricing.openai)) {
     if (key === 'default') continue
-    if (model === key || model.startsWith(key + '-') || model.startsWith(key)) {
+    // Boundary-aware: "gpt-5" must not price "gpt-5.5" or "gpt-50"; "gpt-5.5" may price "gpt-5.5-2026-01-01".
+    const next = model.startsWith(key) ? model.charAt(key.length) : null
+    if (next !== null && (next === '' || next === '-' || next === '_')) {
       if (key.length > best.length || best === 'default') best = key
     }
   }

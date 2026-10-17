@@ -18,7 +18,22 @@ export const APP_NAME = 'VoiceForge Studio'
  */
 export const DEFAULT_PRICING: PricingConfig = {
   openai: {
-    default: { input: 2.5, output: 10 },
+    default: { input: 2, output: 10 },
+    // Current flagship family (OpenAI price list, checked 2026-10-17).
+    'gpt-6-astra': { input: 10, output: 50 },
+    'gpt-6.1-sol': { input: 2, output: 10 },
+    'gpt-6-sol': { input: 2, output: 10 },
+    'gpt-6-luna': { input: 0.1, output: 0.5 },
+    // Previous generations still served by the API.
+    'gpt-5.6-sol': { input: 4, output: 20 },
+    'gpt-5.6-terra': { input: 2, output: 12 },
+    'gpt-5.6-luna': { input: 0.2, output: 1.2 },
+    'gpt-5.5': { input: 5, output: 30 },
+    'gpt-5.5-pro': { input: 30, output: 180 },
+    'gpt-5.4': { input: 2.5, output: 15 },
+    'gpt-5.4-mini': { input: 0.75, output: 4.5 },
+    'gpt-5.4-nano': { input: 0.2, output: 1.25 },
+    'gpt-5.4-pro': { input: 30, output: 180 },
     'gpt-5': { input: 1.25, output: 10 },
     'gpt-5-mini': { input: 0.25, output: 2 },
     'gpt-5-nano': { input: 0.05, output: 0.4 },
@@ -42,9 +57,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     autoOpenFolderOnBatchComplete: false
   },
   openai: {
-    defaultModel: 'gpt-5',
-    researchModel: 'gpt-5',
-    reviewModel: 'gpt-5-mini',
+    defaultModel: 'gpt-6.1-sol',
+    researchModel: 'gpt-6.1-sol',
+    reviewModel: 'gpt-6-luna',
     temperature: 0.7,
     maxOutputTokens: 8000,
     timeoutMs: 240000,
@@ -155,7 +170,7 @@ export const ELEVEN_OUTPUT_FORMATS = [
 ] as const
 
 /** Well-known OpenAI models offered in the picker; the live list comes from the API. */
-export const SUGGESTED_OPENAI_MODELS = ['gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4o', 'gpt-4o-mini']
+export const SUGGESTED_OPENAI_MODELS = ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5', 'gpt-5-mini', 'gpt-4.1']
 
 function section(key: string, label: string, guidance: string, aliases: string[] = [], required = true): ScriptSection {
   return { key, label, required, aliases, guidance }

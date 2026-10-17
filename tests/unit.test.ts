@@ -315,6 +315,13 @@ describe('provider helpers', () => {
     expect(isReasoningModel('gpt-5-mini')).toBe(true)
     expect(isReasoningModel('gpt-4.1')).toBe(false)
     expect(isReasoningModel('gpt-5-chat-latest')).toBe(false)
+    expect(isReasoningModel('gpt-6-astra')).toBe(true)
+    expect(isReasoningModel('gpt-6.1-sol')).toBe(true)
+    expect(isReasoningModel('gpt-5.5')).toBe(true)
+    expect(bestModelKey(DEFAULT_PRICING, 'gpt-5.5')).toBe('gpt-5.5')
+    expect(bestModelKey(DEFAULT_PRICING, 'gpt-5.5-2026-09-01')).toBe('gpt-5.5')
+    expect(bestModelKey(DEFAULT_PRICING, 'gpt-6-luna-2026-10-01')).toBe('gpt-6-luna')
+    expect(bestModelKey(DEFAULT_PRICING, 'gpt-50')).toBe('default')
     expect(cleanScriptText('```\nScript:\nHello world\n```')).toBe('Hello world')
   })
   it('only sends voice settings the model supports', () => {

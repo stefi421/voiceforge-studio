@@ -15,7 +15,9 @@ SmartScreen shows "Windows protected your PC" on first run → *More info → Ru
 
 1. **Settings → OpenAI** — paste the key from <https://platform.openai.com/api-keys>,
    click *Save*, then *Test connection*. Pick the default, research and review models
-   (the list comes from your account; `gpt-5` / `gpt-5-mini` are good defaults).
+   (the list comes from your account; defaults are `gpt-6.1-sol` for research and
+   writing and `gpt-6-luna` for the review pass — `gpt-6-astra` is the flagship if
+   you want maximum quality at ~5× the price).
 2. **Settings → ElevenLabs** — paste the key from the ElevenLabs profile page, *Save*,
    *Test connection*, then *Refresh voices*.
 

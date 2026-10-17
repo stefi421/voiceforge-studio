@@ -34,7 +34,9 @@ export interface OpenAIClientConfig {
 
 /** Reasoning models reject `temperature`; chat models reject `reasoning`. */
 export function isReasoningModel(model: string): boolean {
-  return /^(o\d|gpt-5(?!-chat))/i.test(model)
+  // o-series and every gpt-5+ generation (gpt-5.x, gpt-6-*) take `reasoning`; `*-chat*` variants and gpt-4* take `temperature`.
+  // If a model rejects either parameter the request is retried once without it (see `create`).
+  return /^(o\d|gpt-[5-9](?![^-]*-chat))/i.test(model)
 }
 
 export function mapOpenAIError(err: unknown): AppError {
