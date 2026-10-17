@@ -56,6 +56,26 @@ jobs:
               gh release delete "v$VERSION" --repo "$RELEASE_OWNER/$RELEASE_REPO" -y --cleanup-tag || true
             fi
           fi
+      - name: Make sure the release tag exists (GitHub refuses a published release without one)
+        if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.publish) && env.SKIP_PUBLISH != '1' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GH_RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          RELEASE_REPO: ${{ vars.RELEASE_REPO || github.event.repository.name }}
+          RELEASE_OWNER: ${{ github.repository_owner }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "$RELEASE_OWNER/$RELEASE_REPO" = "$GITHUB_REPOSITORY" ]; then
+            if ! git ls-remote --tags origin "refs/tags/v$VERSION" | grep -q .; then
+              git config user.name "github-actions" && git config user.email "actions@github.com"
+              git tag -a "v$VERSION" -m "VoiceForge Studio $VERSION" "$GITHUB_SHA"
+              git push origin "refs/tags/v$VERSION"
+            fi
+          else
+            # Releases-only repository: tag its default branch head via the API.
+            SHA=$(gh api "repos/$RELEASE_OWNER/$RELEASE_REPO/git/ref/heads/$(gh api repos/$RELEASE_OWNER/$RELEASE_REPO --jq .default_branch)" --jq .object.sha)
+            gh api -X POST "repos/$RELEASE_OWNER/$RELEASE_REPO/git/refs" -f ref="refs/tags/v$VERSION" -f sha="$SHA" >/dev/null 2>&1 || true
+          fi
       - name: Package (and publish on tag)
         shell: bash
         env:
