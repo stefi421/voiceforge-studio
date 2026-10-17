@@ -1,4 +1,4 @@
-# Known limitations (v1.1.0)
+# Known limitations (v1.1.1)
 
 Honest list of what is not done, partially done, or unverified.
 

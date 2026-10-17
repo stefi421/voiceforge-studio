@@ -35,14 +35,19 @@ The updater needs these files attached to a GitHub Release whose tag is `v<versi
 (electron-builder generates all three). The portable exe is attached for manual
 downloads.
 
-`.github/workflows/build-windows.yml` does this automatically:
+`.github/workflows/build-windows.yml` does this automatically. The source lives at
+<https://github.com/stefi421/voiceforge-studio> (public).
 
-1. Create the repository on GitHub and push this source (`git remote add origin …`,
-   `git push -u origin main`).
-2. Bump `version` in `package.json` (e.g. `1.2.0`), commit, then
-   `git tag v1.2.0 && git push origin v1.2.0`.
-3. The workflow builds on a Windows runner, runs the tests, and publishes the release
-   with all assets. Installed copies see it on their next check.
+1. Bump `version` in `package.json` (e.g. `1.2.0`), commit and push to `main`.
+2. Either push a tag (`git tag v1.2.0 && git push origin v1.2.0`) **or** open
+   *Actions → Build and release Windows app → Run workflow* and tick **publish**.
+3. The workflow runs the tests, builds on a Windows runner, creates the tag and the
+   release itself, uploads the installer, `.blockmap`, `latest.yml` and the portable
+   exe, and removes any half-published release for the same version. Installed copies
+   see the new version on their next check.
+
+The full electron-builder log of every run is committed to the `ci-logs` branch
+(`run-<id>.log`), so a failure can be diagnosed without signing in to GitHub.
 
 ### Public vs. private repository
 
