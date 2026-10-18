@@ -3,7 +3,7 @@ import { Ban, ExternalLink, FileText, FolderOpen, Pause, Play, RotateCcw } from 
 import type { JobView } from '@shared/types'
 import { api, audioUrl } from '@/lib/api'
 import { useAsync } from '@/lib/hooks'
-import { isFinished, needsUser, stageText } from '@/lib/jobs'
+import { fixActionFor, isFinished, needsUser, stageText } from '@/lib/jobs'
 import { formatDateTime, formatDuration, formatNumber, formatPercent, relativeTime } from '@/lib/format'
 import { useApp } from '@/store/app'
 import { Alert, AudioPlayer, Badge, Button, ChannelChip, Drawer, KeyValue, SkeletonRows, StagePipelineLarge, StatusBadge } from '@/components/ui'
@@ -43,6 +43,10 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
 
   const active = !isFinished(job.status) && job.status !== 'paused'
   const waiting = needsUser(job.status)
+  const fix = fixActionFor(job)
+  const researchReused = eventRows.some((e) => e.event === 'research_reused')
+  const audioReused = eventRows.some((e) => e.event === 'audio_reused')
+  const partsReused = eventRows.find((e) => e.event === 'audio_part_reused')
 
   return (
     <Drawer
@@ -71,7 +75,17 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
               {job.status === 'awaiting_approval' ? 'Review script' : 'Choose title'}
             </Button>
           )}
-          {(job.status === 'failed' || job.status === 'cancelled') && (
+          {(job.status === 'failed' || job.status === 'cancelled') && fix && fix.kind !== 'retry' && (
+            <>
+              <Button icon={<RotateCcw size={13} />} onClick={() => onAction('retry', job)}>
+                Retry as is
+              </Button>
+              <Button variant="primary" onClick={() => onAction('fix', job)}>
+                {fix.label}
+              </Button>
+            </>
+          )}
+          {(job.status === 'failed' || job.status === 'cancelled') && (!fix || fix.kind === 'retry') && (
             <Button variant="primary" icon={<RotateCcw size={13} />} onClick={() => onAction('retry', job)}>
               Retry from {job.stage}
             </Button>
@@ -98,6 +112,13 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
         <section className="detail-section">
           <StagePipelineLarge job={job} />
           <div className="small muted mt-2">{stageText(job, { modelId: channel?.elevenModelId })}</div>
+          {(researchReused || audioReused || partsReused) && (
+            <div className="row wrap gap-1 mt-2">
+              {researchReused && <Badge tone="success" title="Facts came from the Games library — no research request was sent">Saved research · 0 research credits</Badge>}
+              {audioReused && <Badge tone="success" title="Identical words, voice and settings were voiced before">0 characters — reused</Badge>}
+              {partsReused && !audioReused && <Badge tone="success" title={partsReused.detail ?? undefined}>Unchanged parts reused</Badge>}
+            </div>
+          )}
         </section>
 
         {job.lastError && (

@@ -118,7 +118,7 @@ export function CommandPalette(): JSX.Element | null {
     DASHBOARD_PAGES.forEach((p, i) => {
       const meta = PAGE_META[p]
       const Icon = meta.icon
-      list.push({ id: `page:${p}`, group: 'Go to', label: meta.label, icon: <Icon size={15} />, hint: `Ctrl ${i === 9 ? 0 : i + 1}`, keywords: meta.subtitle, run: close(() => navigate(p)) })
+      list.push({ id: `page:${p}`, group: 'Go to', label: meta.label, icon: <Icon size={15} />, hint: i < 10 ? `Ctrl ${i === 9 ? 0 : i + 1}` : undefined, keywords: meta.subtitle, run: close(() => navigate(p)) })
     })
     for (const c of activeChannels(channels)) {
       list.push({ id: `ch:${c.id}`, group: 'Channels', label: c.name, icon: <span>{c.icon}</span>, hint: 'Edit', keywords: `channel ${c.category}`, run: close(() => navigate('channels', { edit: c.id })) })

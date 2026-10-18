@@ -22,6 +22,7 @@ export function researchInstructions(category: Channel['category'], settings: { 
     'If several different titles could match the request (remakes, sequels with the same name, unrelated products with similar names), fill ambiguityCandidates with each option and set confidence low. If you cannot find reliable information, set insufficientReason and keep confidence low.',
     'For unreleased or early-access titles set releaseStatus accordingly so the script can be framed as a preview rather than a review.',
     'Answer ONLY with the JSON object described by the schema. Keep every string field plain text without URLs; sources are reported separately by the tool.',
+    'Be compact: the result is saved and reused for every later script about this title. Each list item is one short factual statement (at most ~25 words), at most 10 items per list, no repetition between fields, summary at most 3 sentences.',
     settings.extraInstructions ? `Additional guidance from the channel owner: ${settings.extraInstructions}` : '',
     UNTRUSTED_DATA_RULE
   ]
@@ -174,7 +175,12 @@ function formatRules(template: TemplateVersion, references: Array<Pick<Reference
  * format rules and locked text, channel profile, approved reference scripts, length and
  * hard output rules. The title and research go in the user input.
  */
-export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, references: Array<Pick<ReferenceScript, 'title' | 'text'>> = []): string {
+export function scriptSystemPrompt(
+  channel: Channel,
+  template: TemplateVersion,
+  references: Array<Pick<ReferenceScript, 'title' | 'text'>> = [],
+  skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = references
+): string {
   const forbidden = channel.validation.forbiddenPhrases.filter(Boolean)
   const refBlock = references.length
     ? `Approved reference scripts for this format (match their structure, tone, pacing, paragraphing and ending; reuse only the wording that the locked text above requires; never copy their game-specific sentences and never reuse their game facts — those belong to other games):\n${references
@@ -186,7 +192,7 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, 
   const parts = [
     GLOBAL_NARRATION_RULES,
     `CHANNEL MASTER PROMPT — ${channel.name}\n${template.systemPrompt.trim()}`,
-    formatRules(template, references),
+    formatRules(template, skeletonReferences.length ? skeletonReferences : references),
     openingRule(channel, template, references.length > 0 || !!template.exampleScript?.trim()),
     `Channel: ${channel.name} (${channel.category}). Language: ${channel.language === 'en' ? 'English' : channel.language}.`,
     channel.writingInstructions.trim() ? `Channel writing instructions:\n${channel.writingInstructions.trim()}` : '',
@@ -201,6 +207,61 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, 
     UNTRUSTED_DATA_RULE
   ]
   return parts.filter(Boolean).join('\n\n')
+}
+
+/**
+ * System prompt for targeted corrections and tighten passes (1.6.0): the draft already carries
+ * the channel's style, so the reference scripts are not sent again — only the rules needed to
+ * fix it (global rules, format with locked text and skeleton, length, hard rules).
+ */
+export function scriptCorrectionSystemPrompt(channel: Channel, template: TemplateVersion, skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = []): string {
+  const forbidden = channel.validation.forbiddenPhrases.filter(Boolean)
+  return [
+    GLOBAL_NARRATION_RULES,
+    `You are correcting a draft voiceover script for the channel ${channel.name}. Keep its wording, style and facts; change only what the violations require.`,
+    formatRules(template, skeletonReferences),
+    lengthRule(channel),
+    forbidden.length ? `Never use these words or phrases: ${forbidden.map((f) => `"${f}"`).join(', ')}.` : '',
+    'Hard rules: no URLs, no citation markers, no markdown, no bullet symbols, no headings other than the section labels, no notes to the editor, no title line, nothing after the final sentence.',
+    UNTRUSTED_DATA_RULE
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * Compact research for the writer (1.6.0): one short line per known field, lists joined, empty
+ * fields and internal bookkeeping (confidence, candidates) left out. Roughly a third of the
+ * tokens of the pretty-printed JSON with the same facts.
+ */
+export function researchFactSheet(r: ResearchData): string {
+  const lines: string[] = []
+  const add = (label: string, v: unknown): void => {
+    if (Array.isArray(v)) {
+      const items = v.map((x) => (typeof x === 'string' ? x.trim() : '')).filter(Boolean)
+      if (items.length) lines.push(`${label}: ${items.join('; ')}`)
+    } else if (typeof v === 'string' && v.trim()) lines.push(`${label}: ${v.trim()}`)
+  }
+  add('Official title', r.canonicalTitle)
+  add('Developer', r.developer)
+  add('Publisher', r.publisher)
+  add('Genre', r.genre)
+  const status = r.releaseStatus && r.releaseStatus !== 'unknown' ? r.releaseStatus.replace('_', ' ') : ''
+  add('Release', [status, r.releaseDate].filter((x) => x && x.trim()).join(', '))
+  add('Platforms', r.platforms)
+  add('Summary', r.summary)
+  add('Gameplay', r.gameplayMechanics)
+  add('Key mechanics', r.keyMechanics)
+  add('Combat', r.combatSystems)
+  add('Exploration', r.explorationSystems)
+  add('Multiplayer', r.multiplayer)
+  add('Technical', r.technicalInfo)
+  add('Specifications', r.specifications)
+  const confirmed = (r.confirmedFacts ?? []).map((f) => f.trim()).filter(Boolean)
+  if (confirmed.length) lines.push(`Confirmed facts:\n${confirmed.map((f) => `- ${f}`).join('\n')}`)
+  const uncertain = (r.uncertainFacts ?? []).map((f) => f.trim()).filter(Boolean)
+  if (uncertain.length) lines.push(`Unconfirmed (never state as fact):\n${uncertain.map((f) => `- ${f}`).join('\n')}`)
+  return lines.join('\n')
 }
 
 function lengthRule(channel: Channel): string {
@@ -220,8 +281,7 @@ function lengthRule(channel: Channel): string {
 export function scriptUserInput(title: string, research: ResearchData | null, sources: ResearchSource[], opts: { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }): string {
   const parts: string[] = [`Title: ${title}`]
   if (research) {
-    const safe = { ...research }
-    parts.push(`<research_data>\n${JSON.stringify(safe, null, 2)}\n</research_data>`)
+    parts.push(`<research_data>\n${researchFactSheet(research)}\n</research_data>`)
     if (research.releaseStatus === 'unreleased' || research.releaseStatus === 'early_access') {
       parts.push(`Note: the title is ${research.releaseStatus === 'unreleased' ? 'not released yet' : 'in early access'}. Frame the script as a preview/first look of what has been officially shown, not as a finished review.`)
     }
@@ -409,3 +469,28 @@ export const STYLE_COMPARE_JSON_SCHEMA = {
   },
   required: ['styleDeviations', 'unsupportedClaims']
 } as const
+
+/**
+ * The exact instructions/input pair sent for a script request. First drafts get the full
+ * stable prefix (identical for every title of a format version → provider prompt caching);
+ * corrections and tighten passes get the lighter correction prompt.
+ */
+export function buildScriptPrompt(req: {
+  channel: Channel
+  template: TemplateVersion
+  title: string
+  research: ResearchData | null
+  researchSources: ResearchSource[]
+  references?: Array<Pick<ReferenceScript, 'title' | 'text'>>
+  skeletonReferences?: Array<Pick<ReferenceScript, 'text'>>
+  previousScript?: string
+  issues?: string
+  feedback?: string
+  tighten?: { cut: number; target: number; max: number }
+}): { instructions: string; input: string; correction: boolean } {
+  const correction = !!req.previousScript
+  const skeleton = req.skeletonReferences ?? req.references ?? []
+  const instructions = correction ? scriptCorrectionSystemPrompt(req.channel, req.template, skeleton) : scriptSystemPrompt(req.channel, req.template, req.references ?? [], skeleton)
+  const input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
+  return { instructions, input, correction }
+}

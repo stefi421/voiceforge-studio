@@ -38,6 +38,7 @@ export function RegenerateAudioDialog({ target, onClose, onDone }: RegenerateAud
   const [vs, setVs] = useState<VoiceSettings>(DEFAULT_VOICE_SETTINGS)
   const [confirmed, setConfirmed] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [freshTake, setFreshTake] = useState(false)
 
   useEffect(() => {
     if (target) {
@@ -47,6 +48,7 @@ export function RegenerateAudioDialog({ target, onClose, onDone }: RegenerateAud
       setVs(channel?.elevenVoiceSettings ?? DEFAULT_VOICE_SETTINGS)
       setConfirmed(!settings.generation.confirmExpensiveRegeneration)
       setBusy(false)
+      setFreshTake(false)
     }
   }, [target, channel, settings])
 
@@ -68,6 +70,7 @@ export function RegenerateAudioDialog({ target, onClose, onDone }: RegenerateAud
     try {
       const payload: Record<string, unknown> = { projectId: target.projectId, confirmedCost: confirmed }
       if (target.scriptId) payload.scriptId = target.scriptId
+      if (freshTake) payload.freshTake = true
       if (override && voice) {
         payload.voiceId = voice.voiceId
         payload.voiceName = voice.name
@@ -114,9 +117,17 @@ export function RegenerateAudioDialog({ target, onClose, onDone }: RegenerateAud
       </div>
       {estCost != null && (
         <Alert tone="info">
-          About {target?.characters?.toLocaleString()} characters will be sent to ElevenLabs — roughly ${estCost.toFixed(3)} (estimate based on your pricing table).
+          {freshTake || override
+            ? `About ${target?.characters?.toLocaleString()} characters will be sent to ElevenLabs — roughly $${estCost.toFixed(3)} (estimate based on your pricing table).`
+            : `At most ${target?.characters?.toLocaleString()} characters (about $${estCost.toFixed(3)}). If these exact words were already voiced with these settings the file is reused for 0 characters, and after a small edit only the changed parts are voiced again.`}
         </Alert>
       )}
+      <Switch
+        checked={freshTake}
+        onChange={setFreshTake}
+        label="New take (uses characters)"
+        description="Voice everything again even when an identical voiceover already exists — for a different delivery of the same words."
+      />
       <Switch checked={override} onChange={setOverride} label="Use a different voice for this generation" />
       {override && (
         <>

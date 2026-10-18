@@ -153,6 +153,8 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
   }
 
   const interactive = job?.status === 'awaiting_approval'
+  // A job that failed validation can still be edited and approved on purpose (the "Approve anyway…" fix).
+  const failedValidation = job?.status === 'failed' && job.lastError?.kind === 'validation'
 
   return (
     <>
@@ -160,7 +162,7 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
         open={Boolean(job)}
         onClose={onClose}
         size="xl"
-        title={interactive ? 'Review script before voice' : 'Script'}
+        title={interactive ? 'Review script before voice' : failedValidation ? 'Script did not pass validation' : 'Script'}
         description={job ? `"${job.title}" · ${job.channelName}${script.data ? ` · version ${script.data.version}` : ''}` : undefined}
         footer={
           <>
@@ -190,6 +192,19 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
                 <Button variant="primary" onClick={() => void approve(false)} loading={busy === 'approve'} disabled={busy != null || !script.data}>
                   {dirty ? 'Save & approve' : 'Approve'} → voice
                 </Button>
+              </>
+            )}
+            {failedValidation && (
+              <>
+                <div className="grow" />
+                <Button variant={hasErrors ? 'primary' : 'secondary'} onClick={() => setConfirmForce(true)} disabled={busy != null || !script.data || !hasErrors} title="Continue with this script even though validation reported errors">
+                  Approve anyway
+                </Button>
+                {!hasErrors && (
+                  <Button variant="primary" onClick={() => void approve(false)} loading={busy === 'approve'} disabled={busy != null || !script.data}>
+                    {dirty ? 'Save & approve' : 'Approve'}
+                  </Button>
+                )}
               </>
             )}
           </>

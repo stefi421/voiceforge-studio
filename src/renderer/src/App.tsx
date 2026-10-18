@@ -16,6 +16,7 @@ import { ScriptsPage } from '@/pages/scripts/ScriptsPage'
 import { AudioPage } from '@/pages/audio/AudioPage'
 import { ProjectsPage } from '@/pages/projects/ProjectsPage'
 import { HistoryPage } from '@/pages/history/HistoryPage'
+import { GamesPage } from '@/pages/games/GamesPage'
 import { UsagePage } from '@/pages/usage/UsagePage'
 import { SettingsPage } from '@/pages/settings/SettingsPage'
 import { OnboardingWizard } from '@/pages/onboarding/OnboardingWizard'
@@ -31,7 +32,8 @@ const PAGES: Record<PageId, () => JSX.Element> = {
   projects: ProjectsPage,
   history: HistoryPage,
   usage: UsagePage,
-  settings: SettingsPage
+  settings: SettingsPage,
+  games: GamesPage
 }
 
 class PageErrorBoundary extends Component<{ children: ReactNode; resetKey: string }, { error: Error | null }> {

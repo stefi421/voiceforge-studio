@@ -39,6 +39,8 @@ export function UsagePage(): JSX.Element {
   const [custom, setCustom] = useState({ from: '', to: '' })
   const range = useMemo(() => rangeFor(preset, custom), [preset, custom])
   const usage = useAsync(() => api.invoke('usage:summary', range), [range.from, range.to])
+  const savings = useAsync(() => api.invoke('usage:savings', range), [range.from, range.to])
+  const sv = savings.data
   const timing = useAsync(() => api.invoke('queue:timingSummary', { limit: 50 }), [])
   const u = usage.data
 
@@ -57,7 +59,14 @@ export function UsagePage(): JSX.Element {
             <Button icon={<Settings size={14} />} onClick={() => navigate('settings', { tab: 'spending' })}>
               Pricing & limits
             </Button>
-            <Button icon={<RefreshCw size={14} />} loading={usage.loading} onClick={() => void usage.reload()}>
+            <Button
+              icon={<RefreshCw size={14} />}
+              loading={usage.loading}
+              onClick={() => {
+                void usage.reload()
+                void savings.reload()
+              }}
+            >
               Refresh
             </Button>
           </>
@@ -126,6 +135,32 @@ export function UsagePage(): JSX.Element {
           </div>
         </Card>
       </div>
+
+      <Card title="Saved by reuse" actions={<Badge tone="success">not spent</Badge>}>
+        <div className="card-body col gap-3">
+          {!sv ? (
+            savings.error ? (
+              <span className="small muted">{savings.error.message}</span>
+            ) : (
+              <SkeletonRows rows={2} />
+            )
+          ) : (
+            <>
+              <div className="grid grid-4" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
+                <Mini label="Research requests avoided" value={formatNumber(sv.researchCallsAvoided)} />
+                <Mini label="OpenAI tokens saved" value={formatCompact(sv.estimatedTokensSaved)} />
+                <Mini label="ElevenLabs characters saved" value={formatNumber(sv.elevenCharactersSaved)} />
+                <Mini label="Est. saved" value={<CostLabel usd={sv.estimatedUsdSaved} />} />
+              </div>
+              <div className="xs subtle">
+                {sv.researchCallsAvoided + sv.audioFilesReused + sv.audioPartsReused === 0
+                  ? 'Nothing reused in this period yet. Research is saved in Games the first time a title is generated; identical voiceovers and unchanged parts are never paid for twice.'
+                  : `Saved research reused ${formatNumber(sv.researchCallsAvoided)} ${sv.researchCallsAvoided === 1 ? 'time' : 'times'} · ${formatNumber(sv.audioFilesReused)} identical ${sv.audioFilesReused === 1 ? 'voiceover' : 'voiceovers'} and ${formatNumber(sv.audioPartsReused)} unchanged ${sv.audioPartsReused === 1 ? 'part' : 'parts'} reused. ${sv.estimatesLabel}`}
+              </div>
+            </>
+          )}
+        </div>
+      </Card>
 
       <Card title="Where time goes" actions={<Badge>last 50 titles</Badge>}>
         <div className="card-body">

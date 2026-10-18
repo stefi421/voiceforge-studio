@@ -215,9 +215,11 @@ describe('exact format reproduction', () => {
     const ok = gen.createBatch({ channelId: channel.id, mode: 'auto', entries: [{ title: 'Hollow Bastion', channelId: null }], skipExisting: false })
     await waitFor(() => ['completed', 'failed'].includes(env.s.jobs.get(ok.jobIds[0]!)!.status), 15000)
     expect(env.s.jobs.get(ok.jobIds[0]!)!.status).toBe('completed')
-    const req = env.openai.calls.filter((c) => c.kind === 'script').pop()!.req as { template: TemplateVersion; references: unknown[] }
+    const req = env.openai.calls.filter((c) => c.kind === 'script').pop()!.req as { template: TemplateVersion; references: unknown[]; skeletonReferences?: unknown[] }
     expect(req.template.id).toBe(v.id)
-    expect(req.references).toHaveLength(2)
+    // 1.6.0: a format with ≥3 locked elements sends ONE full reference; the skeleton still uses all of them.
+    expect(req.references).toHaveLength(1)
+    expect((req.skeletonReferences ?? []).length).toBeGreaterThanOrEqual(2)
 
     env.openai.scriptImpl = (req) => ({ text: skeletonScript(req.template, refs, req.title).replace('Thanks for watching VELIX. See you in the next review.', 'Bye for now.'), usage: { inputTokens: 100, outputTokens: 100 }, model: 'gpt-test' })
     const bad = gen.createBatch({ channelId: channel.id, mode: 'auto', entries: [{ title: 'Iron Coast', channelId: null }], skipExisting: false })

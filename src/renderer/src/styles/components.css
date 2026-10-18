@@ -1906,3 +1906,95 @@
 .wizard-summary span.ok {
   color: var(--success);
 }
+
+/* ---- Game Library (1.6.0) ------------------------------------------------ */
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.chip-remove:hover,
+.chip-remove:focus-visible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.game-facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 340px;
+  overflow: auto;
+}
+.game-fact {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.game-fact:hover {
+  background: var(--bg-hover);
+}
+.game-fact .btn {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+.game-fact:hover .btn,
+.game-fact .btn:focus-visible {
+  opacity: 1;
+}
+.game-fact.removed .grow {
+  text-decoration: line-through;
+  color: var(--fg-subtle);
+}
+.research-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.research-tag.saved {
+  color: var(--success);
+}
+.research-tag.new {
+  color: var(--fg-muted);
+}
+.research-tag.ask {
+  color: var(--warning);
+}
+.title-research-list {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+}
+.title-research-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  min-width: 0;
+}
+.title-research-list li:nth-child(odd) {
+  background: var(--bg-hover);
+}

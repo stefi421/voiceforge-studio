@@ -99,7 +99,14 @@ function isHeadingParagraph(p: string): boolean {
  * pieces are chunked again with `splitIntoChunks`). Joining the pieces with blank lines
  * reproduces the text; `chunksCoverText` verifies it.
  */
-export function splitForParallel(text: string, parts: number, maxChars: number, opts: { minChars?: number; contextChars?: number } = {}): TextChunk[] {
+const ANCHOR_CHARS = 80
+
+/** Identifies where each part after the first starts (first characters of its first paragraph). */
+export function partAnchors(chunks: TextChunk[]): string[] {
+  return chunks.slice(1).map((c) => (c.text.split(/\n{2,}/)[0] ?? '').trim().slice(0, ANCHOR_CHARS))
+}
+
+export function splitForParallel(text: string, parts: number, maxChars: number, opts: { minChars?: number; contextChars?: number; anchors?: string[] } = {}): TextChunk[] {
   const normalized = text.replace(/\r\n/g, '\n').trim()
   const minChars = opts.minChars ?? 1800
   const contextChars = opts.contextChars ?? 300
@@ -115,7 +122,11 @@ export function splitForParallel(text: string, parts: number, maxChars: number, 
     cumBefore.push(cum)
     cum += p.length + 2
   }
-  for (let k = 1; k < parts; k++) {
+  // 1.6.0: keep the split points of the previous voiceover when they still exist, so after a small
+  // edit only the part that changed has new text (and only that part is voiced again).
+  const anchored = opts.anchors?.length === parts - 1 ? anchoredCuts(paragraphs, opts.anchors, total, maxChars) : null
+  if (anchored) cuts.push(...anchored)
+  for (let k = 1; k < parts && !anchored; k++) {
     const target = (total * k) / parts
     let best = -1
     let bestScore = Infinity
@@ -132,6 +143,38 @@ export function splitForParallel(text: string, parts: number, maxChars: number, 
     if (best > 0) cuts.push(best)
   }
   if (!cuts.length) return base
+  return piecesFromCuts(paragraphs, cuts, maxChars, contextChars)
+}
+
+function anchoredCuts(paragraphs: string[], anchors: string[], total: number, maxChars: number): number[] | null {
+  const cuts: number[] = []
+  let from = 1
+  for (const a of anchors) {
+    if (!a) return null
+    let found = -1
+    for (let i = from; i < paragraphs.length; i++) {
+      if (paragraphs[i]!.slice(0, ANCHOR_CHARS) === a) {
+        found = i
+        break
+      }
+    }
+    if (found < 0) return null
+    cuts.push(found)
+    from = found + 1
+  }
+  // Only reuse boundaries that still give reasonably balanced parts within the request limit.
+  const sizes: number[] = []
+  let start = 0
+  for (const c of [...cuts, paragraphs.length]) {
+    sizes.push(paragraphs.slice(start, c).reduce((n, p) => n + p.length + 2, 0))
+    start = c
+  }
+  const avg = total / sizes.length
+  if (sizes.some((n) => n > maxChars || n < avg * 0.4)) return null
+  return cuts
+}
+
+function piecesFromCuts(paragraphs: string[], cuts: number[], maxChars: number, contextChars: number): TextChunk[] {
   const pieces: string[] = []
   let start = 0
   for (const c of [...cuts, paragraphs.length]) {

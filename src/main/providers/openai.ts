@@ -16,8 +16,8 @@ import {
   researchInstructions,
   researchUserInput,
   reviewInstructions,
-  scriptSystemPrompt,
-  scriptUserInput
+  buildScriptPrompt,
+  researchFactSheet
 } from './prompts'
 import type {
   AnalyzeStyleRequest,
@@ -269,9 +269,10 @@ export class OpenAIClientProvider implements OpenAIProvider {
 
   async writeScript(req: ScriptRequest): Promise<ScriptResponse> {
     const params = this.baseParams(req.model, { temperature: req.temperature, reasoningEffort: req.reasoningEffort, maxOutputTokens: req.maxOutputTokens })
-    params.instructions = scriptSystemPrompt(req.channel, req.template, req.references ?? [])
-    params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
-    if (req.promptCacheKey) params.prompt_cache_key = req.promptCacheKey
+    const prompt = buildScriptPrompt(req)
+    params.instructions = prompt.instructions
+    params.input = prompt.input
+    if (req.promptCacheKey) params.prompt_cache_key = prompt.correction ? `${req.promptCacheKey}:fix` : req.promptCacheKey
     const res = await this.create(params, req.signal, req.timeoutMs)
     if (res.status === 'incomplete') {
       const reason = res.incomplete_details?.reason ?? 'unknown'
@@ -291,7 +292,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.instructions = reviewInstructions()
     params.input = [
       `Title: ${req.title}`,
-      req.research ? `<research_data>\n${JSON.stringify(req.research, null, 2)}\n</research_data>` : 'No research data available; flag any specific unsupported claim as a warning.',
+      req.research ? `<research_data>\n${researchFactSheet(req.research)}\n</research_data>` : 'No research data available; flag any specific unsupported claim as a warning.',
       `<script>\n${req.script}\n</script>`
     ].join('\n\n')
     params.text = { format: { type: 'json_schema', name: 'review_result', schema: REVIEW_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
@@ -365,7 +366,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.input = [
       `Channel: ${req.channel.name}. Title: ${req.title}`,
       ...req.references.map((r, i) => `<reference_script index="${i + 1}">\n${r.text.trim()}\n</reference_script>`),
-      req.research ? `<research_data>\n${JSON.stringify(req.research, null, 2)}\n</research_data>` : 'No research data was available.',
+      req.research ? `<research_data>\n${researchFactSheet(req.research)}\n</research_data>` : 'No research data was available.',
       `<script>\n${req.script}\n</script>`
     ].join('\n\n')
     params.text = { format: { type: 'json_schema', name: 'style_compare', schema: STYLE_COMPARE_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }

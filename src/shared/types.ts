@@ -394,6 +394,14 @@ export interface JobOverrides {
   useScriptId?: string
   /** Template (content type / format) chosen for this job; defaults to the channel's default format. */
   templateId?: string
+  /** Game Library entry chosen by the user for this job (research is reused, no OpenAI call). */
+  libraryGameId?: string
+  /** The user rejected the library's near matches for this title: research it as a new game. */
+  skipLibraryNear?: boolean
+  /** Titles the user typed before choosing a candidate; stored as aliases of the confirmed game. */
+  aliasTitles?: string[]
+  /** Audio regeneration: always voice again, even when an identical voiceover/part exists. */
+  freshTake?: boolean
 }
 
 export interface JobView extends Job {
@@ -536,6 +544,8 @@ export interface ResearchCandidate {
   developer: string
   year: string
   note: string
+  /** Set when the candidate is an entry of the Game Library (choosing it reuses that research — no credits). */
+  gameId?: string
 }
 
 export interface ResearchSource {
@@ -750,8 +760,81 @@ export interface UsageSummary {
   estimatesLabel: string
 }
 
+// ---------------------------------------------------------------------------
+// Game Library (permanent research reuse, 1.6.0)
+// ---------------------------------------------------------------------------
+
+export type GameSubject = 'game' | 'product'
+
+/** A researched game or product. Research is reused for every later script on any channel. */
+export interface GameRecord {
+  id: string
+  subjectType: GameSubject
+  canonicalTitle: string
+  /** Other spellings that resolve to this entry, as they were typed (matched after normalisation). */
+  aliases: string[]
+  developer: string
+  publisher: string
+  genre: string
+  releaseStatus: ReleaseStatus
+  releaseDate: string
+  platforms: string[]
+  /** Compact research data used for prompts (facts the user marked wrong are excluded). */
+  data: ResearchData
+  sources: ResearchSource[]
+  /** Facts the user added by hand (always treated as confirmed). */
+  userFacts: string[]
+  /** Facts the user marked as wrong; they are removed from every prompt. */
+  removedFacts: string[]
+  userNotes: string
+  /** Pinned entries are never refreshed automatically. */
+  pinned: boolean
+  researchedAt: string
+  researchModel: string | null
+  /** Tokens the original research cost (used to report savings on reuse). */
+  researchTokens: number
+  lastUsedAt: string | null
+  useCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GameView extends GameRecord {
+  /** Distinct channels whose scripts used this entry. */
+  channels: Array<{ channelId: string; channelName: string }>
+  scriptCount: number
+  /** Unreleased/early-access at research time and the release date has passed (or refresh window elapsed). */
+  mayBeOutdated: boolean
+}
+
+export type GameMatchKind = 'exact' | 'auto' | 'near' | 'none'
+
+export interface GameMatch {
+  title: string
+  kind: GameMatchKind
+  gameId: string | null
+  canonicalTitle: string | null
+  /** For `near`: every plausible saved entry (the user chooses once). */
+  candidates: Array<{ gameId: string; canonicalTitle: string }>
+}
+
+export interface ReuseSavings {
+  range: { from: string; to: string }
+  researchCallsAvoided: number
+  estimatedTokensSaved: number
+  elevenCharactersSaved: number
+  audioFilesReused: number
+  audioPartsReused: number
+  estimatedUsdSaved: number
+  estimatesLabel: string
+}
+
 export interface BatchEstimate {
   jobs: number
+  /** Titles that will reuse saved research (no research call). */
+  savedResearch: number
+  /** Titles that need a new research call. */
+  newResearch: number
   estimatedOpenAICost: number
   estimatedElevenCost: number
   estimatedTotal: number
@@ -854,6 +937,16 @@ export interface AppSettings {
   advanced: {
     logLevel: 'debug' | 'info' | 'warn' | 'error'
     manualE2EMode: boolean
+  }
+  research: {
+    /** Re-research a saved game after this many days (0 = never; saved research is reused forever). */
+    refreshAfterDays: number
+  }
+  /** Remembered choices so the daily flow needs as few clicks as possible. */
+  ui: {
+    lastChannelId: string | null
+    lastTemplateId: string | null
+    lastMode: JobMode | null
   }
   updates: {
     /** Check GitHub Releases for a newer version shortly after launch. */
@@ -977,7 +1070,8 @@ export type AppNotification = {
 export interface MainEvents {
   'job:changed': JobView
   'queue:stats': QueueStats
-  'batch:completed': { batchId: string; name: string; completed: number; failed: number }
+  /** `folder`: the folder holding the batch's finished files (common parent), when there is one. */
+  'batch:completed': { batchId: string; name: string; completed: number; failed: number; folder: string | null }
   notification: AppNotification
   'settings:changed': AppSettings
   'secrets:changed': SecretsStatus

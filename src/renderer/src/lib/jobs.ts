@@ -205,7 +205,7 @@ export function stageText(job: JobView, extra: { modelId?: string | null; queueP
     case 'completed':
       return job.mode === 'scripts_only' ? 'Script saved' : 'Script and voice saved'
     case 'failed':
-      return job.lastError ? `Failed at ${job.stage}: ${job.lastError.message}` : `Failed at ${job.stage}`
+      return job.lastError ? firstSentence(job.lastError.message) : `Failed at ${job.stage}`
     case 'paused':
       return job.resumeStatus ? `Paused before ${statusLabel(job.resumeStatus).toLowerCase()}` : 'Paused'
     case 'cancelled':
@@ -236,5 +236,52 @@ export function modeLabel(mode: string): string {
       return 'Scripts only'
     default:
       return mode.replace(/_/g, ' ')
+  }
+}
+
+/** The first sentence of an error message (the row shows one clear sentence; details live in the drawer). */
+export function firstSentence(text: string): string {
+  const t = text.trim().replace(/\s+/g, ' ')
+  const m = t.match(/^(.+?[.!?])(\s|$)/)
+  return (m ? m[1]! : t).slice(0, 220)
+}
+
+export type FixKind = 'retry' | 'fix_key' | 'open_billing' | 'choose_game' | 'review_script' | 'raise_limit' | 'open_channel' | 'open_storage'
+
+export interface FixAction {
+  kind: FixKind
+  label: string
+  /** Settings tab / page parameters the fix opens, when it navigates. */
+  provider?: 'openai' | 'elevenlabs'
+}
+
+/** The single primary fix for a failed job — every error kind gets exactly one obvious next step. */
+export function fixActionFor(job: Pick<JobView, 'status' | 'stage' | 'lastError'>): FixAction | null {
+  if (job.status !== 'failed' && job.status !== 'cancelled') return null
+  const e = job.lastError
+  if (!e || job.status === 'cancelled') return { kind: 'retry', label: 'Retry' }
+  const text = `${e.message} ${e.action}`.toLowerCase()
+  const provider: 'openai' | 'elevenlabs' = /elevenlabs|voice|character/.test(text) || job.stage === 'audio' ? 'elevenlabs' : 'openai'
+  switch (e.kind) {
+    case 'auth':
+      return { kind: 'fix_key', label: 'Fix key', provider }
+    case 'quota':
+      return { kind: 'open_billing', label: provider === 'elevenlabs' ? 'Check ElevenLabs plan' : 'Check OpenAI billing', provider }
+    case 'ambiguous':
+    case 'insufficient_info':
+      return { kind: 'choose_game', label: 'Choose game' }
+    case 'validation':
+      return { kind: 'review_script', label: 'Approve anyway…' }
+    case 'spending_limit':
+      return { kind: 'raise_limit', label: 'Raise limit' }
+    case 'config':
+      if (/voice/.test(text)) return { kind: 'open_channel', label: 'Pick a voice' }
+      if (/format|template|reference/.test(text)) return { kind: 'open_channel', label: 'Open format' }
+      if (/api key|key is missing/.test(text)) return { kind: 'fix_key', label: 'Fix key', provider }
+      return e.retryable ? { kind: 'retry', label: 'Retry' } : { kind: 'open_channel', label: 'Open channel' }
+    case 'filesystem':
+      return e.retryable ? { kind: 'retry', label: 'Retry' } : { kind: 'open_storage', label: 'Choose folder' }
+    default:
+      return { kind: 'retry', label: 'Retry' }
   }
 }

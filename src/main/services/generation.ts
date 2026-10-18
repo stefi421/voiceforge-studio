@@ -68,17 +68,28 @@ export class GenerationService {
     let openai = 0
     let eleven = 0
     let characters = 0
+    let savedResearch = 0
+    let newResearch = 0
     const seen = new Set<string>()
+    const library = this.engine.pipeline?.library
     input.entries.forEach((e, i) => {
       const ch = perEntry[i]!
       const key = `${ch.id}:${normalizeTitle(e.title)}`
       if (seen.has(key)) return
       seen.add(key)
       const expectedChars = Math.round((ch.minChars + ch.maxChars) / 2) || 4000
+      const researches = ch.research.enabled && ch.research.mode !== 'manual'
+      // Saved research (Game Library) costs nothing; near matches are counted as new (the user may say "different game").
+      const m = researches && library ? library.match(e.title, ch.category) : null
+      const reused = !!m && (m.kind === 'exact' || m.kind === 'auto')
+      if (researches) {
+        if (reused) savedResearch++
+        else newResearch++
+      }
       const est = estimateJobCost(settings.spending.pricing, {
         model: ch.openaiModel || settings.openai.defaultModel,
         expectedChars,
-        research: ch.research.enabled && ch.research.mode !== 'manual',
+        research: researches && !reused,
         reviewPass: settings.generation.aiReviewPass && ch.validation.aiReviewPass,
         audio: input.mode !== 'scripts_only'
       })
@@ -106,7 +117,17 @@ export class GenerationService {
       const today = this.s.usage.spendSince(startOfDay.toISOString())
       if (today + total > limits.dailyLimitUsd) warnings.push(`This batch (~$${total.toFixed(2)}) would exceed today's spending limit ($${limits.dailyLimitUsd.toFixed(2)}); the queue will pause when the limit is reached.`)
     }
-    return { jobs, estimatedOpenAICost: openai, estimatedElevenCost: eleven, estimatedTotal: total, estimatedCharacters: characters, estimatedSeconds: this.estimateSeconds(jobs, input.mode), warnings }
+    return {
+      jobs,
+      savedResearch,
+      newResearch,
+      estimatedOpenAICost: openai,
+      estimatedElevenCost: eleven,
+      estimatedTotal: total,
+      estimatedCharacters: characters,
+      estimatedSeconds: this.estimateSeconds(jobs, input.mode, newResearch),
+      warnings
+    }
   }
 
   /**
@@ -114,11 +135,13 @@ export class GenerationService {
    * stage (OpenAI stages share the OpenAI concurrency, audio the ElevenLabs concurrency).
    * Uses the engine's per-stage medians from history (defaults until data exists).
    */
-  estimateSeconds(jobs: number, mode: CreateBatchInput['mode']): number {
+  estimateSeconds(jobs: number, mode: CreateBatchInput['mode'], researchJobs = jobs): number {
     if (jobs <= 0) return 0
     const st = this.s.settings.get()
     const secs = this.engine.stageSeconds()
-    const textStages = secs.research + secs.script
+    // Titles with saved research skip the research stage entirely.
+    const researchShare = jobs > 0 ? Math.min(1, Math.max(0, researchJobs / jobs)) : 1
+    const textStages = secs.research * researchShare + secs.script
     const audio = mode === 'scripts_only' ? 0 : secs.audio
     const perJob = textStages + audio + secs.save
     // Live slots (automatic tuning) when available, else the manual values.
@@ -180,6 +203,13 @@ export class GenerationService {
     })
     if (!jobIds.length) {
       this.s.jobs.listByStatus([]) // no-op to keep the batch; nothing queued
+    }
+    // Remember the choice so the next batch (and "Paste & generate") needs no clicks.
+    try {
+      const next = this.s.settings.update({ ui: { lastChannelId: base.id, lastTemplateId: input.templateId ?? null, lastMode: input.mode } })
+      this.s.events.emit('settings:changed', next)
+    } catch {
+      /* best effort */
     }
     this.s.logger.child('generation').info('Batch created', { batchId: batch.id, jobs: jobIds.length, skipped: skipped.length })
     for (const id of jobIds) {

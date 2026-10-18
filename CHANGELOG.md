@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.6.0
+
+**Research once, reuse forever (Games)**
+- Every game or product is researched once; its facts are saved in the new **Games** page
+  (sidebar → Library) and reused for every later script on every channel — no research request,
+  no research wait. "Civilization 6" = "Civilization VI", "The Witcher 3" = "Witcher 3", ™/®,
+  punctuation and capitals don't matter; a close-but-unsure title ("Hollow Knight: Silksong" vs
+  "Hollow Knight") is asked once and the answer is remembered as an alias.
+- Research saved by earlier versions is imported automatically on first start.
+- Games page: search, details, your notes (sent with the facts), add a fact, mark a fact wrong
+  (never sent again), sources, aliases, Refresh (one research), Delete, Import/Export JSON.
+  Backups include the library. "May be outdated" for games researched before release.
+- New generation shows per title "Saved research" / "New research" / "you'll confirm once", and
+  the estimate only counts new research.
+
+**Fewer credits** (mock measurement per script, VELIX / Game Vault formats with the reference pack)
+- First draft prompt ~23,000 → ~16,000 characters (−30%): compact fact sheet instead of JSON
+  research (−32%), one full reference instead of two for strict formats.
+- Rewrites ~28,000 → ~15,000 characters (−47%): a short correction prompt without references.
+- URLs, citations, markdown, a title line or an "Intro:" label are fixed locally instead of
+  costing a rewrite.
+- Reused research: one research request (~9,000 tokens with web search) saved per script.
+- ElevenLabs: an identical voiceover (same words, voice, model and settings) is never paid for
+  twice ("0 characters — reused"); after a small edit only the changed parts are voiced again
+  (parts cached 30 days). "New take (uses characters)" forces a fresh voiceover.
+- Usage page: new "Saved by reuse" card.
+
+**Faster and easier**
+- Second run of the same 10 titles (mock benchmark): 2.4 → 1.2 min, first file 85 → 59 s.
+- Dashboard **Paste & generate**: titles from the clipboard, last channel / format / mode, straight
+  to the start dialog (2 clicks). New generation remembers your last choices; Ctrl+Enter starts,
+  and Ctrl+Enter again in the dialog confirms.
+- Batch finished toast: **Open finished folder**. Queue: **Copy all scripts** per batch (title above
+  each script).
+- Failed jobs show one sentence and one fix button: Retry, Fix key, Check billing, Choose game,
+  Approve anyway…, Raise limit, Pick a voice / Open format, Choose folder.
+
+**Fixes**
+- Ctrl+Enter on New generation could start a batch with the previously selected format.
+- A job that failed validation could not be approved anyway from the Queue (only via Scripts).
+- "™" in a title turned into the letters "TM" during matching.
+
 ## 1.5.0
 
 **Much faster batches** (mock benchmark, same work: 10 titles 3.7 → 2.4 min, 30 titles 9.9 → 4.5 min, 1 title 1.6 → 1.4 min)

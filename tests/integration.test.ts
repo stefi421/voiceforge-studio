@@ -231,17 +231,17 @@ describe('batch creation and generation pipeline', () => {
     let n = 0
     env.openai.scriptImpl = (req) => {
       n++
-      return { text: n === 1 ? goodScript(req.title).replace('Cons\n', 'Cons\nVisit https://example.com for more.\n') : goodScript(req.title), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' }
+      return { text: n === 1 ? goodScript(req.title).replace('Cons\n', 'Cons\nAs an AI language model, I cannot verify this.\n') : goodScript(req.title), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' }
     }
     const { jobIds } = await runBatch(['Rewrite Me'], gv.id, 'scripts_only')
     await settle(jobIds, ['completed', 'failed'])
     expect(env.s.jobs.get(jobIds[0]!)!.status).toBe('completed')
     expect(n).toBe(2)
-    expect(env.openai.calls.filter((c) => c.kind === 'script')[1]!.req).toMatchObject({ issues: expect.stringMatching(/URL/) })
+    expect(env.openai.calls.filter((c) => c.kind === 'script')[1]!.req).toMatchObject({ issues: expect.stringMatching(/AI instructions/) })
     expect(env.s.scripts.versions(env.s.jobs.get(jobIds[0]!)!.projectId)).toHaveLength(2)
 
     // Now always bad → job fails, no audio, script kept as invalid for manual editing
-    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nVisit https://example.com for more.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nAs an AI language model, I cannot verify this.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
     const r2 = await runBatch(['Always Bad'], gv.id)
     await settle(r2.jobIds, ['completed', 'failed'])
     const job = env.s.jobs.get(r2.jobIds[0]!)!
@@ -253,7 +253,7 @@ describe('batch creation and generation pipeline', () => {
 
   it('never sends a failed/invalid script to ElevenLabs even when approved manually', async () => {
     const gv = env.s.channels.getByName('Game Vault')!
-    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nSee https://example.com.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nAs an AI language model, I cannot verify this.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
     const { jobIds } = await runBatch(['Bad Script'], gv.id)
     await settle(jobIds, ['failed'])
     expect(() => engine.approveScript(jobIds[0]!)).toThrow(/fails validation/)
@@ -305,7 +305,7 @@ describe('batch creation and generation pipeline', () => {
 
   it('lets the user approve a failed script anyway (force) and records it; audio regeneration accepts it', async () => {
     const gv = env.s.channels.getByName('Game Vault')!
-    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nSee https://example.com.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nAs an AI language model, I cannot verify this.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
     const { jobIds } = await runBatch(['Force Me'], gv.id)
     await settle(jobIds, ['failed'])
     const jobId = jobIds[0]!
@@ -330,7 +330,12 @@ describe('batch creation and generation pipeline', () => {
     expect(report.ok).toBe(false)
     expect(env.s.scripts.get(script.id)!.status).toBe('approved')
     // Audio-only regeneration of the force-approved script is allowed.
-    const regen = engine.regenerateAudio({ projectId: job.projectId, scriptId: script.id })
+    // Identical words + voice → reused (0 characters); a new take calls ElevenLabs again.
+    const reuse = engine.regenerateAudio({ projectId: job.projectId, scriptId: script.id })
+    await settle([reuse.id], ['completed', 'failed'])
+    expect(env.s.jobs.get(reuse.id)!.status).toBe('completed')
+    expect(env.eleven.calls).toHaveLength(1)
+    const regen = engine.regenerateAudio({ projectId: job.projectId, scriptId: script.id, freshTake: true })
     await settle([regen.id], ['completed', 'failed'])
     expect(env.s.jobs.get(regen.id)!.status).toBe('completed')
     expect(env.eleven.calls).toHaveLength(2)
@@ -352,7 +357,7 @@ describe('batch creation and generation pipeline', () => {
     expect(engine.stats().progressPercent).toBe(100)
     // ETA: defaults give a number immediately; after one completed job the medians come from history.
     env.openai.delayMs = 0
-    const r2 = await runBatch(['Progress 2'], gv.id)
+    const r2 = await runBatch(['Second Unrelated Title'], gv.id)
     const st = engine.stats()
     expect(st.estimatedSecondsRemaining).not.toBeNull()
     expect(st.estimatedSecondsRemaining!).toBeGreaterThan(0)

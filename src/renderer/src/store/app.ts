@@ -109,10 +109,17 @@ export const useApp = create<AppState>((set, get) => ({
         })
         api.on('batch:completed', (b) => {
           const level = b.failed > 0 ? 'warning' : 'success'
-          toast.withAction(level, `Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`, {
-            label: 'View',
-            onClick: () => useRouter.getState().navigate('queue', { batchId: b.batchId })
-          })
+          const folder = typeof b.folder === 'string' && b.folder ? b.folder : null
+          toast.withAction(level, `Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`, folder && b.completed > 0
+            ? {
+                label: 'Open finished folder',
+                onClick: () => {
+                  void api.invoke('app:openPath', { path: folder }).then((r) => {
+                    if (!r.ok) toast.error('Could not open the folder', r.message)
+                  })
+                }
+              }
+            : { label: 'View', onClick: () => useRouter.getState().navigate('queue', { batchId: b.batchId }) })
         })
       } catch (err) {
         toast.warning('Live updates unavailable', toIpcError(err).message)

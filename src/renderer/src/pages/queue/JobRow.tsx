@@ -1,11 +1,11 @@
 import { memo, type JSX, type MouseEvent } from 'react'
 import { Ban, FolderOpen, Pause, Play, RotateCcw, Trash } from 'lucide-react'
 import type { JobView } from '@shared/types'
-import { jobAttempts, isActiveStatus, isFinished, needsUser, stageText } from '@/lib/jobs'
+import { fixActionFor, jobAttempts, isActiveStatus, isFinished, needsUser, stageText } from '@/lib/jobs'
 import { relativeTime } from '@/lib/format'
 import { Button, ChannelChip, StagePipeline, StatusBadge } from '@/components/ui'
 
-export type JobAction = 'pause' | 'resume' | 'retry' | 'cancel' | 'remove' | 'openFolder' | 'viewScript' | 'viewResearch' | 'review' | 'details'
+export type JobAction = 'pause' | 'resume' | 'retry' | 'fix' | 'cancel' | 'remove' | 'openFolder' | 'viewScript' | 'viewResearch' | 'review' | 'details'
 
 export interface JobRowProps {
   job: JobView
@@ -23,6 +23,7 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, selected, n
   const canPause = job.status === 'pending' || active
   const canResume = job.status === 'paused'
   const canRetry = job.status === 'failed' || job.status === 'cancelled'
+  const fix = fixActionFor(job)
   const canCancel = !isFinished(job.status)
   const canRemove = isFinished(job.status) || job.status === 'paused'
   const waiting = needsUser(job.status)
@@ -63,11 +64,19 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, selected, n
               {job.status === 'awaiting_approval' ? 'Review' : 'Choose title'}
             </Button>
           )}
-          {canRetry && (
-            <Button size="sm" onClick={() => onAction('retry', job)} disabled={busy} icon={<RotateCcw size={13} />}>
-              Retry
+          {canRetry && fix && fix.kind !== 'retry' && (
+            <Button size="sm" variant="primary" onClick={() => onAction('fix', job)} disabled={busy}>
+              {fix.label}
             </Button>
           )}
+          {canRetry &&
+            (fix?.kind === 'retry' ? (
+              <Button size="sm" variant="primary" onClick={() => onAction('retry', job)} disabled={busy} icon={<RotateCcw size={13} />}>
+                Retry
+              </Button>
+            ) : (
+              <Button size="sm" variant="ghost" iconOnly icon={<RotateCcw size={13} />} title="Retry as is" disabled={busy} onClick={() => onAction('retry', job)} />
+            ))}
           {canPause && <Button size="sm" variant="ghost" iconOnly icon={<Pause size={13} />} title="Pause" disabled={busy} onClick={() => onAction('pause', job)} />}
           {canResume && <Button size="sm" variant="ghost" iconOnly icon={<Play size={13} />} title="Resume" disabled={busy} onClick={() => onAction('resume', job)} />}
           {job.projectFolder && <Button size="sm" variant="ghost" iconOnly icon={<FolderOpen size={13} />} title="Open project folder" onClick={() => onAction('openFolder', job)} />}

@@ -12,17 +12,24 @@ import { ConcurrencyGovernor } from '../queue/governor'
 import { PRIORITY } from '../queue/limits'
 import { countWords, estimateDurationSec, normalizeTitle, nowIso } from '../util/common'
 import { elevenCost, openaiCost } from './cost'
-import { chunksCoverText, splitForParallel } from './chunker'
+import { chunksCoverText, partAnchors, splitForParallel } from './chunker'
 import crypto from 'node:crypto'
 import { concatMp3, isMp3Format, parseMp3, pcmDuration } from './mp3'
 import { applyPronunciation, describeIssuesForRewrite, onlyLengthErrors, stripSectionHeadings, targetChars, validateScript } from './validator'
 import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenlabs'
 import { StyleService } from '../services/style'
 import { buildNarrationText, normalizeLockedText } from './style'
+import { compactResearch, GameLibrary, subjectFor, TYPICAL_RESEARCH_TOKENS } from '../services/gameLibrary'
+import { localScriptFixes } from './localFixes'
 
-/** Research is reused across channels (same category) for 30 days — facts don't change per channel. */
-const RESEARCH_CACHE_MS = 30 * 24 * 60 * 60 * 1000
 const LEASE_MS = 120_000
+/** Voice parts are kept this long so a resume or a regeneration after a small edit can reuse them. */
+const TTS_CACHE_MS = 30 * 24 * 60 * 60 * 1000
+
+/** What a voiceover is made of; identical hashes produce identical audio requests. */
+export function audioContentHash(text: string, voiceId: string, modelId: string, outputFormat: string, voiceSettings: unknown): string {
+  return crypto.createHash('sha256').update(JSON.stringify({ t: text, v: voiceId, m: modelId, f: outputFormat, s: voiceSettings ?? null })).digest('hex')
+}
 /** Per-call timeouts (v1.5); the Settings timeout still applies when it is lower. */
 const CALL_TIMEOUT_MS = { research: 120_000, script: 180_000, ttsPart: 120_000 }
 /** Models that rejected previous_text/next_text continuity hints (remembered for this run). */
@@ -50,6 +57,8 @@ export class Pipeline {
   }
   /** Provider slots, adaptive concurrency and circuit breakers (v1.5). */
   readonly governor: ConcurrencyGovernor
+  /** Permanent research reuse (1.6.0). */
+  readonly library: GameLibrary
 
   constructor(
     private s: Services,
@@ -58,6 +67,7 @@ export class Pipeline {
     this.projectsSvc = new ProjectService(s)
     this.style = new StyleService(s)
     this.governor = new ConcurrencyGovernor(s, log)
+    this.library = new GameLibrary(s, log)
   }
 
   private timeout(kind: keyof typeof CALL_TIMEOUT_MS, provider: 'openai' | 'elevenlabs'): number {
@@ -203,18 +213,9 @@ export class Pipeline {
       return 'continue'
     }
 
-    // Cache: identical title + category + mode within 30 days, unless the user added notes.
-    const cacheKey = `${channel.category}:${research.mode}:${normalizeTitle(job.title)}`
-    if (!job.manualResearchNotes?.trim()) {
-      const cached = this.s.research.cacheGet(cacheKey, RESEARCH_CACHE_MS)
-      if (cached && cached.status === 'confirmed') {
-        const copy = this.s.research.create({ jobId: job.id, projectId: job.projectId, status: 'confirmed', data: cached.data, sources: cached.sources, model: cached.model, mode: cached.mode })
-        this.s.jobs.update(job.id, { researchId: copy.id, stage: 'script' })
-        this.s.jobs.addEvent(job.id, 'research_cached', null, null, `Reused research from ${cached.createdAt}`)
-        this.log.info('Research cache hit', { jobId: job.id, title: job.title })
-        return 'continue'
-      }
-    }
+    // Game Library (1.6.0): a game researched once is reused for every later script on any channel.
+    const reuse = this.reuseFromLibrary(job, channel)
+    if (reuse !== 'research') return reuse
 
     this.checkSpending()
     this.setStatus(job.id, 'researching')
@@ -245,7 +246,22 @@ export class Pipeline {
     const row = this.s.research.create({ jobId: job.id, projectId: job.projectId, status, data, sources: result.sources, model: result.model, mode: research.mode })
     this.s.jobs.update(job.id, { researchId: row.id })
     if (status === 'confirmed') {
-      this.s.research.cacheSet(cacheKey, row.id)
+      try {
+        const game = this.library.record({
+          typedTitle: job.title,
+          aliases: job.overrides?.aliasTitles ?? [],
+          subject: subjectFor(channel.category),
+          data,
+          sources: result.sources,
+          model: result.model,
+          tokens: result.usage.inputTokens + result.usage.outputTokens
+        })
+        this.s.research.setGame(row.id, game.id)
+        this.s.games.markUsed(game.id)
+      } catch (err) {
+        // The library is an optimisation: a failure to save never fails the job.
+        this.log.warn('Could not save research to the Game Library', { jobId: job.id, error: toAppError(err).message })
+      }
       this.s.jobs.update(job.id, { stage: 'script' })
       // The official title is kept alongside the user's title; it never renames the project/folder.
       const canonical = data.canonicalTitle?.trim()
@@ -256,6 +272,69 @@ export class Pipeline {
     this.setStatus(job.id, 'research_review_required', { event: ambiguous ? 'research_ambiguous' : 'research_insufficient', detail })
     this.s.events.notify('warning', ambiguous ? 'Which game did you mean?' : 'Not enough reliable information', `${job.title}: ${detail}`)
     return 'wait'
+  }
+
+  /**
+   * Game Library lookup (1.6.0). Returns `continue` when saved research was attached (no OpenAI
+   * call), `wait` when the user must pick between saved entries once, or `research` when the
+   * title has to be researched.
+   */
+  private reuseFromLibrary(job: Job, channel: Channel): StageOutcome | 'research' {
+    const chosenId = job.overrides?.libraryGameId
+    // Notes typed by the user ask for fresh research with their input (unless they picked a saved game).
+    if (job.manualResearchNotes?.trim() && !chosenId) return 'research'
+    let game = chosenId ? this.s.games.get(chosenId) : undefined
+    let how = 'the saved research you chose'
+    if (!game) {
+      const m = this.library.match(job.title, channel.category)
+      if ((m.kind === 'exact' || m.kind === 'auto') && m.gameId) {
+        game = this.s.games.get(m.gameId)
+        how = m.kind === 'exact' ? 'saved research' : `saved research for "${m.canonicalTitle}"`
+      } else if (m.kind === 'near' && !job.overrides?.skipLibraryNear && channel.research.askOnAmbiguity) {
+        const candidates = m.candidates.map((c) => {
+          const g = this.s.games.get(c.gameId)
+          return { title: c.canonicalTitle, developer: g?.developer ?? '', year: (g?.releaseDate ?? '').slice(0, 4), note: 'Saved research — reusing it uses no credits.', gameId: c.gameId }
+        })
+        const r = this.s.research.create({
+          jobId: job.id,
+          projectId: job.projectId,
+          status: 'ambiguous',
+          data: { ...emptyResearch(job.title, channel.category, ''), confidence: 0, ambiguityCandidates: candidates },
+          sources: [],
+          model: 'library',
+          mode: channel.research.mode
+        })
+        this.s.jobs.update(job.id, { researchId: r.id })
+        this.setStatus(job.id, 'research_review_required', { event: 'research_library_choice', detail: `Saved research may match: ${candidates.map((c) => c.title).join(' / ')}` })
+        this.s.events.notify('info', 'Is this a game you already researched?', `${job.title}: pick the saved game (no credits) or research it as a new one.`)
+        return 'wait'
+      }
+    }
+    if (!game) return 'research'
+    if (!chosenId && this.library.isStale(game)) {
+      this.s.jobs.addEvent(job.id, 'research_stale', null, null, `Saved research for ${game.canonicalTitle} is older than the refresh window; researching again.`)
+      return 'research'
+    }
+    const data = this.library.researchData(game)
+    const row = this.s.research.create({ jobId: job.id, projectId: job.projectId, status: 'confirmed', data, sources: game.sources, model: 'library', mode: channel.research.mode })
+    this.s.research.setGame(row.id, game.id)
+    this.s.games.markUsed(game.id)
+    // A choice the user made once is never asked again.
+    if (chosenId) this.s.games.addAlias(game.id, job.title)
+    this.s.jobs.update(job.id, { researchId: row.id, stage: 'script' })
+    this.s.reuse.record({
+      kind: 'research',
+      jobId: job.id,
+      channelId: job.channelId,
+      projectId: job.projectId,
+      tokensSaved: game.researchTokens || TYPICAL_RESEARCH_TOKENS,
+      usdSaved: this.library.savedResearchUsd(game),
+      detail: game.canonicalTitle
+    })
+    this.s.jobs.addEvent(job.id, 'research_reused', null, null, `Reused ${how}: ${game.canonicalTitle} (researched ${game.researchedAt.slice(0, 10)}) — no research credits used`)
+    if (normalizeTitle(game.canonicalTitle) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: game.canonicalTitle })
+    this.log.info('Research reused from the Game Library', { jobId: job.id, title: job.title, gameId: game.id })
+    return 'continue'
   }
 
   // ---------------------------------------------------------------------------
@@ -299,10 +378,15 @@ export class Pipeline {
     }
     const loaded = this.loadTemplate(channel, job)
     const template = loaded.version
-    const references = this.style.promptReferences(loaded.templateId)
+    // 1.6.0, fewer tokens: one reference script is enough when the format is pinned down by locked
+    // text and required labels; the skeleton still counts paragraphs over every reference.
+    const lockedElements = template.fixedBlocks.filter((b) => b.locked && b.text.trim()).length + template.structure.filter((sec) => sec.required).length
+    const references = this.style.promptReferences(loaded.templateId, lockedElements >= 3 ? 1 : 2)
+    const skeletonReferences = this.s.channels.listReferences(loaded.templateId).map((r) => ({ text: r.text }))
     const provenance = { templateId: loaded.templateId, contentType: loaded.contentType, referenceSetVersion: this.s.channels.referenceSetVersion(loaded.templateId), researchId: job.researchId ?? null }
     const research = job.researchId ? this.s.research.get(job.researchId) : undefined
-    const researchData = research && research.status !== 'insufficient' ? research.data : null
+    // Compact research (1.6.0): fewer prompt tokens, same facts; user-corrected library facts apply.
+    const researchData = research && research.status !== 'insufficient' ? (research.mode === 'manual' ? research.data : compactResearch(research.data)) : null
     const researchSources: ResearchSource[] = research?.sources ?? []
     const settings = this.s.settings.get()
     const model = channel.openaiModel || settings.openai.defaultModel
@@ -336,6 +420,7 @@ export class Pipeline {
         feedback: opts.feedback,
         tighten: opts.tighten,
         references,
+        skeletonReferences,
         // Same stable prefix for every title of this format → provider-side prompt caching.
         promptCacheKey: `vf:${template.id}`,
         signal: ctx.signal,
@@ -369,7 +454,11 @@ export class Pipeline {
       this.recordOpenAIUsage(job, kind, out.model, out.usage)
       // Presentation-only fixes (label case, quote/dash style, a locked intro/outro merged into a
       // neighbouring paragraph) so they don't cost a rewrite. Reworded text is left for the validator.
-      return { ...out, text: normalizeLockedText(out.text, template) }
+      // 1.6.0: fixable slips (links, citations, markdown, a title line, an "Intro" label) are repaired
+      // locally instead of costing a rewrite.
+      const local = localScriptFixes(out.text, { titles: [job.title, researchData?.canonicalTitle ?? ''], structure: template.structure })
+      if (local.fixes.length) this.s.jobs.addEvent(job.id, 'local_fixes', null, null, `Fixed without a rewrite: ${local.fixes.join(', ')}`)
+      return { ...out, text: normalizeLockedText(local.text, template) }
     }
 
     /** Deterministic checks + optional AI review. `finalVerdict` applies the length tolerance. */
@@ -630,10 +719,19 @@ export class Pipeline {
     // v1.5: long narration is split into up to N similar parts (paragraph boundaries, headings kept
     // with their text) that are voiced at the same time and joined frame by frame.
     const parts = Math.max(1, Math.min(4, settings.elevenlabs.parallelParts ?? 1))
-    const chunks = splitForParallel(narration, parts, safeLimit)
+    const freshTake = job.overrides?.freshTake === true
+    // Keep the previous split points of this project when possible (only changed parts are voiced again).
+    const chunks = splitForParallel(narration, parts, safeLimit, { anchors: freshTake ? undefined : this.s.audio.latestPartAnchors(job.projectId) ?? undefined })
     if (!chunks.length) throw new AppError('validation', 'The narration text is empty after processing.', { retryable: false })
     if (!chunksCoverText(narration, chunks)) throw new AppError('unknown', 'Internal error: chunking changed the narration text.', { retryable: false })
     const voiceSettings = voiceSettingsForModel(modelId, baseVoiceSettings, live ? { modelId, name: '', description: '', canDoTextToSpeech: true, canUseStyle: live.canUseStyle, canUseSpeakerBoost: live.canUseSpeakerBoost, maxCharacters: live.maxCharacters, languages: [] } : null)
+
+    // 1.6.0: identical narration + voice + model + format + settings is never voiced twice.
+    const contentHash = audioContentHash(narration, voiceId, modelId, outputFormat, voiceSettings)
+    if (!freshTake) {
+      const same = this.s.audio.findReadyByHash(contentHash, (p) => fs.existsSync(p))
+      if (same) return this.reuseIdenticalAudio(job, same, narration.length, resumeRow)
+    }
 
     const project = this.s.projects.get(job.projectId)!
     // Audio is generated in app data and moved into the output folder when the job completes.
@@ -674,15 +772,18 @@ export class Pipeline {
     // request is written once, directly as the final file. Part names carry a hash of their text,
     // so a part is only reused for exactly the same words.
     const multi = chunks.length > 1
-    const partPathOf = (text: string, index: number): string => `${finalPath}.p${index}-${crypto.createHash('sha1').update(text).digest('hex').slice(0, 10)}.part`
+    // Parts are cached by their exact text + voice settings for 30 days (app data), so a resume after
+    // a crash, or a regeneration after a small edit, only pays for parts whose words changed.
+    const partPathOf = (text: string, _index: number): string => this.ttsCachePath(audioContentHash(text, voiceId, modelId, outputFormat, voiceSettings), outputFormat)
     let singleInfo: ReturnType<typeof parseMp3> | null = null
     const ttsTimeout = this.timeout('ttsPart', 'elevenlabs')
     const synthPart = async (chunk: (typeof chunks)[number]): Promise<Buffer> => {
       const partPath = partPathOf(chunk.text, chunk.index)
-      if (multi && fs.existsSync(partPath)) {
-        const buf = await fsp.readFile(partPath)
+      if (multi && !freshTake && fs.existsSync(partPath)) {
+        const buf = await fsp.readFile(partPath).catch(() => Buffer.alloc(0))
         if (buf.length > 0 && (!isMp3Format(outputFormat) || parseMp3(buf).valid)) {
-          this.s.jobs.addEvent(job.id, 'audio_part_reused', null, null, `Part ${chunk.index + 1}/${chunks.length} reused from before the interruption`)
+          this.s.jobs.addEvent(job.id, 'audio_part_reused', null, null, `Part ${chunk.index + 1}/${chunks.length} reused (identical text) — 0 characters`)
+          this.s.reuse.record({ kind: 'tts_part', jobId: job.id, channelId: job.channelId, projectId: job.projectId, charactersSaved: chunk.text.length, usdSaved: elevenCost(this.s.settings.get().spending.pricing, chunk.text.length) })
           return buf
         }
       }
@@ -762,15 +863,88 @@ export class Pipeline {
       const d = describeFsError(err, 'saving the voiceover')
       throw new AppError('filesystem', d.message, { action: d.action, retryable: false })
     }
-    for (const chunk of chunks) await fsp.unlink(partPathOf(chunk.text, chunk.index)).catch(() => undefined)
+    // Cached parts stay in app data for 30 days; only legacy (≤1.5) part files next to the audio are removed.
     for (const f of await fsp.readdir(path.dirname(finalPath)).catch(() => [] as string[])) {
       if (f.startsWith(path.basename(finalPath) + '.') && f.endsWith('.part')) await fsp.unlink(path.join(path.dirname(finalPath), f)).catch(() => undefined)
     }
     const sha = sha256Buffer(combined)
     this.s.audio.update(audioRow.id, { status: 'ready', bytes: combined.length, durationSec: durationSec ?? null, sha256: sha })
+    this.s.audio.setContent(audioRow.id, contentHash, multi ? partAnchors(chunks) : null)
     this.s.jobs.update(job.id, { stage: 'save' })
     this.s.jobs.addEvent(job.id, 'audio_ready', null, null, `${path.basename(finalPath)} (${(combined.length / 1024).toFixed(0)} KB, ${durationSec ? durationSec.toFixed(1) + 's' : 'duration n/a'})`)
     return 'continue'
+  }
+
+  /** Uses an already generated identical voiceover (0 ElevenLabs characters). */
+  private async reuseIdenticalAudio(job: Job, same: NonNullable<ReturnType<Services['audio']['get']>>, characters: number, resumeRow: ReturnType<Services['audio']['get']> | undefined): Promise<StageOutcome> {
+    if (resumeRow && resumeRow.id !== same.id) this.s.audio.update(resumeRow.id, { status: 'failed' })
+    const pricing = this.s.settings.get().spending.pricing
+    if (same.projectId === job.projectId) {
+      // This project already has exactly this voiceover: point the job at it instead of making a duplicate version.
+      this.s.jobs.update(job.id, { audioId: same.id, stage: 'save' })
+      this.s.jobs.addEvent(job.id, 'audio_reused', null, null, `Identical voiceover already exists (v${same.version}) — 0 characters used`)
+    } else {
+      const project = this.s.projects.get(job.projectId)!
+      const dir = this.projectsSvc.workDir(project)
+      const version = this.s.audio.nextVersion(job.projectId)
+      let dest = path.join(dir, this.projectsSvc.audioFileName(version, same.outputFormat))
+      if (fs.existsSync(dest)) dest = path.join(dir, `Voice_v${version}_${Date.now()}.${path.extname(dest).slice(1)}`)
+      try {
+        await fsp.mkdir(dir, { recursive: true })
+        await fsp.copyFile(same.filePath, dest)
+      } catch (err) {
+        const d = describeFsError(err, 'copying the identical voiceover')
+        throw new AppError('filesystem', d.message, { action: d.action, retryable: true })
+      }
+      const row = this.s.audio.create({
+        projectId: job.projectId,
+        scriptId: job.scriptId!,
+        jobId: job.id,
+        filePath: dest,
+        voiceId: same.voiceId,
+        voiceName: same.voiceName,
+        modelId: same.modelId,
+        voiceSettings: same.voiceSettings,
+        outputFormat: same.outputFormat,
+        bytes: same.bytes,
+        durationSec: same.durationSec,
+        sha256: same.sha256,
+        characters,
+        chunkCount: same.chunkCount,
+        status: 'ready'
+      })
+      const hash = this.s.db.get<{ content_hash: string | null }>('SELECT content_hash FROM audio_files WHERE id = ?', same.id)?.content_hash
+      if (hash) this.s.audio.setContent(row.id, hash, null)
+      this.s.jobs.update(job.id, { audioId: row.id, stage: 'save' })
+      this.s.jobs.addEvent(job.id, 'audio_reused', null, null, 'Identical narration and voice settings were voiced before — copied, 0 characters used')
+    }
+    this.s.reuse.record({ kind: 'tts_full', jobId: job.id, channelId: job.channelId, projectId: job.projectId, charactersSaved: characters, usdSaved: elevenCost(pricing, characters) })
+    return 'continue'
+  }
+
+  private ttsCacheDir(): string {
+    return path.join(this.s.paths.userData, 'tts-cache')
+  }
+
+  private ttsCachePath(hash: string, outputFormat: string): string {
+    const ext = isMp3Format(outputFormat) ? 'mp3' : outputFormat.startsWith('pcm') ? 'pcm' : 'bin'
+    return path.join(this.ttsCacheDir(), `${hash}.${ext}`)
+  }
+
+  /** Removes cached voice parts older than 30 days. */
+  async cleanTtsCache(maxAgeMs = TTS_CACHE_MS): Promise<number> {
+    let removed = 0
+    const dir = this.ttsCacheDir()
+    const files = await fsp.readdir(dir).catch(() => [] as string[])
+    for (const f of files) {
+      const full = path.join(dir, f)
+      const st = await fsp.stat(full).catch(() => null)
+      if (st && st.isFile() && Date.now() - st.mtimeMs > maxAgeMs) {
+        await fsp.unlink(full).catch(() => undefined)
+        removed++
+      }
+    }
+    return removed
   }
 
   private async tryAdoptCompleteFile(filePath: string, outputFormat: string): Promise<{ bytes: number; durationSec: number | null; sha256: string } | null> {

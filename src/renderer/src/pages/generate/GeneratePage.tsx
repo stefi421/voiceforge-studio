@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
-import { ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, ListChecks, RefreshCw, Sparkles, TriangleAlert, Zap } from 'lucide-react'
-import type { BatchEstimate, CreateBatchInput, JobMode, PreflightResult } from '@shared/types'
+import { BookmarkCheck, ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, HelpCircle, ListChecks, RefreshCw, Search, Sparkles, TriangleAlert, Zap } from 'lucide-react'
+import type { BatchEstimate, CreateBatchInput, GameMatch, JobMode, PreflightResult } from '@shared/types'
 import { PreflightChecklist } from '@/components/SpeedViews'
 import { modeLabel } from '@/lib/jobs'
 import { allowsAuto, allowsMode, allowsSupervised, blockReason, contentTypeLabel, loadFormats } from '@/lib/formats'
@@ -28,10 +28,13 @@ export function GeneratePage(): JSX.Element {
   const params = useRouter((s) => s.params)
   const live = useMemo(() => activeChannels(channels), [channels])
 
-  const [channelId, setChannelId] = useState<string>(params.channelId ?? live[0]?.id ?? '')
+  // 1.6.0: start from the last channel / format / mode used (unless a link chose a channel).
+  const remembered = settings.ui
+  const rememberedChannel = remembered?.lastChannelId && live.some((c) => c.id === remembered.lastChannelId) ? remembered.lastChannelId : null
+  const [channelId, setChannelId] = useState<string>(params.channelId ?? rememberedChannel ?? live[0]?.id ?? '')
   const [text, setText] = useState('')
   const [rows, setRows] = useState<TitleRow[]>([])
-  const [mode, setMode] = useState<JobMode>(settings.generation.defaultMode)
+  const [mode, setMode] = useState<JobMode>(remembered?.lastMode ?? settings.generation.defaultMode)
   const [skipExisting, setSkipExisting] = useState(true)
   const [batchName, setBatchName] = useState('')
   const [showNotes, setShowNotes] = useState(false)
@@ -56,7 +59,7 @@ export function GeneratePage(): JSX.Element {
   const formatsKey = live.map((c) => `${c.id}:${c.activeTemplateVersionId}:${c.updatedAt}`).join('|')
   const formats = useAsync(() => loadFormats(live), [formatsKey], { fallback: {} })
   const channelFormats = useMemo(() => formats.data?.[channelId] ?? [], [formats.data, channelId])
-  const [templateId, setTemplateId] = useState<string | null>(params.templateId ?? null)
+  const [templateId, setTemplateId] = useState<string | null>(params.templateId ?? (!params.channelId && rememberedChannel ? (remembered?.lastTemplateId ?? null) : null))
 
   // Keep the chosen format valid for the chosen channel (default format otherwise).
   useEffect(() => {
@@ -192,6 +195,42 @@ export function GeneratePage(): JSX.Element {
 
   const selectedCount = rows.filter((r) => r.selected && r.title.trim()).length
 
+  // Game Library: which titles reuse saved research (no research credits) — debounced, never blocks.
+  const [matches, setMatches] = useState<Record<string, GameMatch>>({})
+  const matchKey = useDebouncedValue(`${channelId}|${rows.filter((r) => r.selected).map((r) => `${r.title}@${r.channelId ?? ''}`).join('\n')}`, 350)
+  useEffect(() => {
+    let cancelled = false
+    const groups = new Map<string, string[]>()
+    for (const r of rows) {
+      if (!r.selected || !r.title.trim()) continue
+      const ch = r.channelId ?? channelId
+      if (!ch) continue
+      groups.set(ch, [...(groups.get(ch) ?? []), r.title.trim()])
+    }
+    if (groups.size === 0) {
+      setMatches({})
+      return
+    }
+    Promise.all([...groups.entries()].map(([ch, titles]) => api.invoke('games:match', { titles, channelId: ch }).then((res) => res.map((m) => [`${ch}|${m.title}`, m] as const))))
+      .then((all) => {
+        if (!cancelled) setMatches(Object.fromEntries(all.flat()))
+      })
+      .catch(() => {
+        if (!cancelled) setMatches({})
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchKey])
+  const matchOf = (r: TitleRow): GameMatch | undefined => matches[`${r.channelId ?? channelId}|${r.title.trim()}`]
+  const selectedRows = rows.filter((r) => r.selected && r.title.trim())
+  const savedCount = selectedRows.filter((r) => {
+    const k = matchOf(r)?.kind
+    return k === 'exact' || k === 'auto'
+  }).length
+  const askCount = selectedRows.filter((r) => matchOf(r)?.kind === 'near').length
+
   // Live estimate line under the titles box (debounced, never blocks).
   const estimateKey = useDebouncedValue(`${channelId}|${templateId ?? ''}|${mode}|${rows.filter((r) => r.selected).map((r) => `${r.title}@${r.channelId ?? ''}`).join('\n')}`, 500)
   useEffect(() => {
@@ -281,18 +320,57 @@ export function GeneratePage(): JSX.Element {
     }
   }
 
-  // Ctrl+Enter = Generate
+  // Ctrl+Enter = Generate; in the confirmation dialog Ctrl+Enter = Start generation.
+  const blockedNow = blockers.length > 0
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        e.preventDefault()
-        if (!confirmOpen && busy == null && selectedCount > 0) void startEstimate()
-      }
+      if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return
+      e.preventDefault()
+      if (busy != null) return
+      if (confirmOpen) {
+        if (!preflightLoading && preflight && preflight.canStart && !preflight.needsOverride) void createBatch(false)
+      } else if (selectedCount > 0 && !blockedNow) void startEstimate()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirmOpen, busy, selectedCount, rows, channelId, mode, skipExisting, batchName, notes])
+  }, [confirmOpen, busy, selectedCount, rows, channelId, templateId, mode, skipExisting, batchName, notes, preflight, preflightLoading, blockedNow])
+
+  // Titles handed over in a link (e.g. "generate?titles=A%0AB") pre-fill the list.
+  useEffect(() => {
+    if (params.titles?.trim()) applyTitles(params.titles.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.titles])
+
+  // "Paste & generate" from the Dashboard: titles from the clipboard, then straight to the confirmation.
+  const [autoStart, setAutoStart] = useState(false)
+  const pasteNonce = useRouter((st) => st.nonce)
+  useEffect(() => {
+    if (params.paste !== '1') return
+    let cancelled = false
+    void api
+      .invoke('app:readClipboard', undefined)
+      .then((clip) => {
+        if (cancelled) return
+        if (!clip.trim()) {
+          toast.warning('Clipboard is empty', 'Copy your list of titles first, one per line.')
+          return
+        }
+        applyTitles(clip.split(/\r?\n/).map((l) => l.trim()).filter(Boolean))
+        setAutoStart(true)
+      })
+      .catch((err) => toast.error('Could not read clipboard', err))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.paste, pasteNonce])
+  useEffect(() => {
+    if (!autoStart || !formatsReady || selectedCount === 0) return
+    setAutoStart(false)
+    if (!blockedNow) void startEstimate()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, formatsReady, selectedCount, blockedNow])
 
   const needsConfirm = Boolean(estimate && (estimate.warnings.length > 0 || estimate.jobs >= settings.generation.largeBatchWarningThreshold))
   const blocked = blockers.length > 0
@@ -453,11 +531,19 @@ export function GeneratePage(): JSX.Element {
             <span className="tnum">
               {selectedCount} {selectedCount === 1 ? 'title' : 'titles'}
             </span>
+            {selectedCount > 0 && Object.keys(matches).length > 0 && (
+              <>
+                <span className="muted">·</span>
+                <span className="tnum" title="Saved research is reused — no research credits and no research wait">
+                  {savedCount} saved research · {selectedCount - savedCount} new{askCount ? ` (${askCount} to confirm)` : ''}
+                </span>
+              </>
+            )}
             {liveEstimate && selectedCount > 0 && (
               <>
                 <span className="muted">·</span>
                 <span className="tnum" title="Estimated from your pricing table and average script length">
-                  ~{formatCost(liveEstimate.estimatedTotal)} est.
+                  ~{formatCost(liveEstimate.estimatedTotal)}
                 </span>
                 {(liveEstimate.estimatedSeconds ?? 0) > 0 && (
                   <>
@@ -482,6 +568,21 @@ export function GeneratePage(): JSX.Element {
               </>
             )}
           </div>
+          {selectedRows.length > 0 && Object.keys(matches).length > 0 && (
+            <ul className="title-research-list" aria-label="Research per title">
+              {selectedRows.slice(0, 12).map((r) => (
+                <li key={r.id}>
+                  <span className="truncate">{r.title}</span>
+                  <ResearchTag match={matchOf(r)} />
+                </li>
+              ))}
+              {selectedRows.length > 12 && (
+                <li className="muted">
+                  …and {selectedRows.length - 12} more{savedCount ? ` (${savedCount} with saved research in total)` : ''}
+                </li>
+              )}
+            </ul>
+          )}
         </section>
 
         {/* Mode */}
@@ -595,6 +696,11 @@ export function GeneratePage(): JSX.Element {
                 {(estimate.estimatedSeconds ?? 0) > 0 && <span className="stat-sub">{batchTime(estimate.estimatedSeconds)}</span>}
               </div>
             </div>
+            {(estimate.savedResearch ?? 0) > 0 && (
+              <Alert tone="success" title={`${estimate.savedResearch} of ${estimate.jobs} ${estimate.jobs === 1 ? 'title uses' : 'titles use'} saved research`}>
+                No research credits and no research wait for {estimate.savedResearch === 1 ? 'it' : 'them'} — only {estimate.newResearch ?? 0} new {(estimate.newResearch ?? 0) === 1 ? 'title is' : 'titles are'} researched (already included in the estimate).
+              </Alert>
+            )}
             <div className="xs subtle">Estimates from your pricing table and average script length. ElevenLabs characters come out of your subscription; OpenAI is billed per token.</div>
             {estimate.jobs >= settings.generation.largeBatchWarningThreshold && (
               <Alert tone="warning" title="Large batch">
@@ -610,6 +716,27 @@ export function GeneratePage(): JSX.Element {
         )}
       </Dialog>
     </div>
+  )
+}
+
+function ResearchTag({ match }: { match: GameMatch | undefined }): JSX.Element | null {
+  if (!match) return null
+  if (match.kind === 'exact' || match.kind === 'auto')
+    return (
+      <span className="research-tag saved" title={match.kind === 'auto' && match.canonicalTitle ? `Matches saved research for "${match.canonicalTitle}"` : 'Researched before — reused, no credits'}>
+        <BookmarkCheck size={12} /> Saved research{match.kind === 'auto' && match.canonicalTitle ? ` · ${match.canonicalTitle}` : ''}
+      </span>
+    )
+  if (match.kind === 'near')
+    return (
+      <span className="research-tag ask" title={`Might be: ${match.candidates.map((c) => c.canonicalTitle).join(' / ')}. You'll be asked once.`}>
+        <HelpCircle size={12} /> Similar saved game — you'll confirm once
+      </span>
+    )
+  return (
+    <span className="research-tag new" title="Researched once, then saved for next time">
+      <Search size={12} /> New research
+    </span>
   )
 }
 

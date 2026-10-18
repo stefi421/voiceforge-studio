@@ -155,6 +155,14 @@ export function GenerationSection(): JSX.Element {
         />
       </div>
       <div className="settings-group">
+        <div className="settings-group-title">Saved research (Games)</div>
+        <div className="form-grid">
+          <Field label="Research again after" hint="0 = never: a game is researched once and reused forever (you can refresh it on the Games page). Pinned games are never refreshed automatically.">
+            <DeferredNumber value={settings.research.refreshAfterDays} onCommit={(v) => void set('research', 'refreshAfterDays', v ?? 0)} min={0} max={3650} suffix="days" />
+          </Field>
+        </div>
+      </div>
+      <div className="settings-group">
         <div className="settings-group-title">Retries</div>
         <div className="form-grid">
           <Field label="Max rewrite attempts" hint="Automatic rewrites when validation fails (channel setting overrides).">

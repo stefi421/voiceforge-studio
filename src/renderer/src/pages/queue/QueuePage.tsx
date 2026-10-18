@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState, type JSX } from 'react'
-import { ChevronDown, ChevronRight, Eraser, ListOrdered, Pause, Play, RefreshCw, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronRight, Copy, Eraser, ListOrdered, Pause, Play, RefreshCw, RotateCcw } from 'lucide-react'
 import type { JobStatus, JobView } from '@shared/types'
 import { api } from '@/lib/api'
 import { useAsync, useDebouncedValue, useLocalStorage, useNow } from '@/lib/hooks'
-import { ALL_JOB_STATUSES, isActiveStatus, isFinished, needsUser, pipelineStates, stageOrdinal, statusLabel, modeLabel } from '@/lib/jobs'
+import { ALL_JOB_STATUSES, fixActionFor, isActiveStatus, isFinished, needsUser, pipelineStates, stageOrdinal, statusLabel, modeLabel } from '@/lib/jobs'
 import { formatDurationHuman, relativeTime } from '@/lib/format'
 import { activeChannels, useApp } from '@/store/app'
 import { navigate, useRouter } from '@/store/router'
@@ -176,6 +176,28 @@ export function QueuePage(): JSX.Element {
         return run(async () => upsert(await api.invoke('queue:resumeJob', { id: job.id })))
       case 'retry':
         return run(async () => upsert(await api.invoke('queue:retryJob', { id: job.id })), 'Job re-queued')
+      case 'fix': {
+        const fix = fixActionFor(job)
+        switch (fix?.kind) {
+          case 'fix_key':
+          case 'open_billing':
+            return navigate('settings', { tab: fix.provider ?? 'openai' })
+          case 'raise_limit':
+            return navigate('settings', { tab: 'spending' })
+          case 'open_storage':
+            return navigate('settings', { tab: 'storage' })
+          case 'open_channel':
+            return navigate('channels', { edit: job.channelId, tab: /voice/i.test(fix.label) ? 'voice' : 'formats' })
+          case 'choose_game':
+            setResearchJob({ job, readOnly: false })
+            return
+          case 'review_script':
+            setReviewJob(job)
+            return
+          default:
+            return run(async () => upsert(await api.invoke('queue:retryJob', { id: job.id })), 'Job re-queued')
+        }
+      }
       case 'cancel':
         return run(async () => upsert(await api.invoke('queue:cancelJob', { id: job.id })))
       case 'remove':
@@ -214,6 +236,18 @@ export function QueuePage(): JSX.Element {
       toast.success(msg)
     } catch (err) {
       toast.error('Queue action failed', err)
+    } finally {
+      setGlobalBusy(null)
+    }
+  }
+
+  const copyScripts = async (g: BatchGroup): Promise<void> => {
+    setGlobalBusy(`copy:${g.id}`)
+    try {
+      const r = await api.invoke('queue:copyScripts', { batchId: g.id })
+      toast.success(`Copied ${r.count} ${r.count === 1 ? 'script' : 'scripts'}`, 'Each title is above its script, one below another — paste anywhere.')
+    } catch (err) {
+      toast.error('Could not copy the scripts', err)
     } finally {
       setGlobalBusy(null)
     }
@@ -435,6 +469,11 @@ export function QueuePage(): JSX.Element {
                 </div>
                 <div className="row gap-1" onClick={(e) => e.stopPropagation()}>
                   {gNeeds > 0 && <Badge tone="warning">{gNeeds} need you</Badge>}
+                  {gDone > 0 && (
+                    <Button size="sm" variant="ghost" icon={<Copy size={12} />} loading={globalBusy === `copy:${g.id}`} onClick={() => void copyScripts(g)} title="Copy every finished script of this batch, each with its title above it">
+                      Copy all scripts
+                    </Button>
+                  )}
                   {gFailed > 0 && (
                     <Button size="sm" variant="ghost" icon={<RotateCcw size={12} />} loading={globalBusy === `retry:${g.id}`} onClick={() => void batchAction(g, 'retry')}>
                       Retry failed

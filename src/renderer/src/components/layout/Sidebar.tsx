@@ -4,6 +4,7 @@ import {
   ChartColumn,
   Clock,
   Download,
+  Gamepad2,
   FileText,
   FolderOpen,
   LayoutDashboard,
@@ -32,6 +33,7 @@ export const PAGE_META: Record<PageId, { label: string; icon: LucideIcon; subtit
   audio: { label: 'Audio', icon: AudioLines, subtitle: 'Generated voiceovers' },
   projects: { label: 'Projects', icon: FolderOpen, subtitle: 'One project per title, grouped by channel' },
   history: { label: 'History', icon: Clock, subtitle: 'Timeline of job events' },
+  games: { label: 'Games', icon: Gamepad2, subtitle: 'Saved research — researched once, reused for every script' },
   usage: { label: 'Usage & costs', icon: ChartColumn, subtitle: 'Estimated provider spend' },
   settings: { label: 'Settings', icon: Settings, subtitle: 'Providers, generation defaults, storage' }
 }
@@ -39,7 +41,7 @@ export const PAGE_META: Record<PageId, { label: string; icon: LucideIcon; subtit
 /** Navigation groups; keyboard shortcuts still follow DASHBOARD_PAGES order (Ctrl+1 … Ctrl+0). */
 const GROUPS: Array<{ label: string | null; pages: PageId[] }> = [
   { label: null, pages: ['dashboard', 'generate', 'queue'] },
-  { label: 'Library', pages: ['channels', 'scripts', 'audio', 'projects', 'history'] },
+  { label: 'Library', pages: ['channels', 'games', 'scripts', 'audio', 'projects', 'history'] },
   { label: 'System', pages: ['usage', 'settings'] }
 ]
 
@@ -98,7 +100,7 @@ export function Sidebar(): JSX.Element {
               const meta = PAGE_META[id]
               const Icon = meta.icon
               const i = DASHBOARD_PAGES.indexOf(id)
-              const key = i === 9 ? '0' : String(i + 1)
+              const key = i === 9 ? '0' : i < 9 ? String(i + 1) : null
               const badge = id === 'queue' && stats.awaitingUser > 0 ? stats.awaitingUser : null
               return (
                 <button
@@ -106,7 +108,7 @@ export function Sidebar(): JSX.Element {
                   type="button"
                   className={`nav-item ${page === id ? 'active' : ''}`}
                   onClick={() => navigate(id)}
-                  title={collapsed ? `${meta.label} (Ctrl+${key})` : undefined}
+                  title={collapsed ? (key ? `${meta.label} (Ctrl+${key})` : meta.label) : undefined}
                   aria-current={page === id ? 'page' : undefined}
                 >
                   <Icon size={16} />
@@ -116,7 +118,7 @@ export function Sidebar(): JSX.Element {
                       {badge}
                     </span>
                   )}
-                  <span className="nav-kbd">⌃{key}</span>
+                  {key && <span className="nav-kbd">⌃{key}</span>}
                 </button>
               )
             })}

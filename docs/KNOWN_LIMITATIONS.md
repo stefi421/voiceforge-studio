@@ -1,6 +1,28 @@
-# Known limitations (v1.5.0)
+# Known limitations (v1.6.0)
 
 Honest list of what is not done, partially done, or unverified.
+
+## Game Library and reuse (1.6.0)
+
+* **Title matching is rule-based**, not semantic. Exact spellings, punctuation, "The", roman
+  numerals and learned aliases match automatically; single typos in longer titles are accepted;
+  anything else that looks close (a subtitle, an edition, a missing sequel number) is asked once in
+  the research dialog. Two different games with the same normalised name (e.g. a 2018 remake that
+  shares the original's title) are treated as one entry — rename one in Games, or choose
+  "It's a different game" when asked.
+* **Saved research never expires by default.** Patches, DLC and price changes after the research
+  date are not picked up unless you click Refresh (or set Settings → Generation → Research again
+  after). "May be outdated" is only shown for games that were unreleased / early access when
+  researched and whose release date has passed.
+* **Savings figures are estimates**: a reused research counts the tokens the original research
+  used (or ~9,000 tokens for research imported from 1.5), priced with your pricing table.
+* **Voice reuse is by exact text + voice + model + format + settings.** Any change in a part
+  (even one comma) voices that part again. Cached parts live in app data for 30 days.
+  ElevenLabs output is not deterministic, so a reused file is the *previous take*; use
+  "New take (uses characters)" when you want a different delivery.
+* **One reference script** is sent to the writer for formats with three or more locked elements
+  (fixed intro/outro or required sections); the skeleton still uses all references. Whether this
+  changes style fidelity on real models is not measured — the validator still enforces the format.
 
 ## Speed features (1.5.0) — unverified against the live APIs
 

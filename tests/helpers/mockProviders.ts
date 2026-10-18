@@ -63,9 +63,9 @@ export function researchFor(title: string, overrides: Partial<ResearchData> = {}
 export function goodScript(title: string, sections: string[] = ['Gameplay', 'Combat', 'Pros', 'Cons', 'Conclusion'], padTo = 3600): string {
   const intro = `Welcome back to Game Vault, where we mine the hidden gems and dive into the big releases—breaking down the mechanics that matter. Today we look at ${title}.`
   const filler = 'The game keeps a steady rhythm as you move between quiet planning moments and quick bursts of action, and every system feeds back into the next decision you make. '
-  const body = sections.map((s) => `${s}\n${filler.repeat(5)}`).join('\n\n')
+  const body = sections.map((s) => `${s}\n${filler.repeat(5).trimEnd()}`).join('\n\n')
   let text = `${intro}\n\n${body}`
-  while (text.length < padTo) text += `\n\n${filler}`
+  while (text.length < padTo) text += `\n\n${filler.trimEnd()}`
   return text
 }
 

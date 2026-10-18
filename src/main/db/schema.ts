@@ -322,5 +322,71 @@ CREATE INDEX IF NOT EXISTS idx_style_tests_template ON style_tests(template_id, 
     sql: `
 ALTER TABLE projects ADD COLUMN layout TEXT NOT NULL DEFAULT 'folders';
 `
+  },
+  {
+    id: 5,
+    name: 'game_library_and_reuse',
+    // 1.6.0: permanent Game Library (research is reused for every later script on any channel),
+    // audio reuse by content hash, and a ledger of what reuse saved. Existing research is imported
+    // into the library by GameLibrary.importLegacyResearch() on first start.
+    sql: `
+CREATE TABLE IF NOT EXISTS games (
+  id TEXT PRIMARY KEY,
+  subject_type TEXT NOT NULL DEFAULT 'game',
+  canonical_title TEXT NOT NULL,
+  canonical_key TEXT NOT NULL,
+  developer TEXT NOT NULL DEFAULT '',
+  publisher TEXT NOT NULL DEFAULT '',
+  genre TEXT NOT NULL DEFAULT '',
+  release_status TEXT NOT NULL DEFAULT 'unknown',
+  release_date TEXT NOT NULL DEFAULT '',
+  platforms_json TEXT NOT NULL DEFAULT '[]',
+  data_json TEXT NOT NULL,
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  user_facts_json TEXT NOT NULL DEFAULT '[]',
+  removed_facts_json TEXT NOT NULL DEFAULT '[]',
+  user_notes TEXT NOT NULL DEFAULT '',
+  pinned INTEGER NOT NULL DEFAULT 0,
+  researched_at TEXT NOT NULL,
+  research_model TEXT,
+  research_tokens INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_games_key ON games(subject_type, canonical_key);
+
+CREATE TABLE IF NOT EXISTS game_aliases (
+  alias_key TEXT NOT NULL,
+  subject_type TEXT NOT NULL DEFAULT 'game',
+  game_id TEXT NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+  alias TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (subject_type, alias_key)
+);
+CREATE INDEX IF NOT EXISTS idx_game_aliases_game ON game_aliases(game_id);
+
+ALTER TABLE research_results ADD COLUMN game_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_research_game ON research_results(game_id);
+
+ALTER TABLE audio_files ADD COLUMN content_hash TEXT;
+ALTER TABLE audio_files ADD COLUMN part_anchors_json TEXT;
+CREATE INDEX IF NOT EXISTS idx_audio_hash ON audio_files(content_hash);
+
+CREATE TABLE IF NOT EXISTS reuse_events (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  job_id TEXT,
+  channel_id TEXT,
+  project_id TEXT,
+  tokens_saved INTEGER NOT NULL DEFAULT 0,
+  characters_saved INTEGER NOT NULL DEFAULT 0,
+  usd_saved REAL NOT NULL DEFAULT 0,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reuse_created ON reuse_events(created_at);
+`
   }
 ]

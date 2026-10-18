@@ -110,8 +110,12 @@ describe('clean output folder', () => {
     expect(fs.readdirSync(job.projectFolder!).sort()).toEqual(['Script.txt', 'Voice.mp3'])
     const script = fs.readFileSync(path.join(job.projectFolder!, 'Script.txt'), 'utf8')
     expect(script.startsWith('Welcome back to Game Vault')).toBe(true)
-    // Explicit audio regeneration adds Voice_v2.mp3 next to the original.
-    const regen = engine.regenerateAudio({ projectId: job.projectId })
+    // Regenerating with identical words + voice + settings reuses the voiceover (1.6.0): no new file.
+    const same = engine.regenerateAudio({ projectId: job.projectId })
+    await settle([same.id])
+    expect(fs.readdirSync(job.projectFolder!).sort()).toEqual(['Script.txt', 'Voice.mp3'])
+    // An explicit "new take" adds Voice_v2.mp3 next to the original.
+    const regen = engine.regenerateAudio({ projectId: job.projectId, freshTake: true })
     await settle([regen.id])
     expect(env.s.jobs.get(regen.id)!.status).toBe('completed')
     expect(fs.readdirSync(job.projectFolder!).sort()).toEqual(['Script.txt', 'Voice.mp3', 'Voice_v2.mp3'])

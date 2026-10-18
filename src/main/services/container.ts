@@ -3,6 +3,7 @@ import type { Database } from '../db/database'
 import { ChannelRepo } from '../db/repos/channelRepo'
 import { AudioRepo, ProjectRepo, ResearchRepo, ScriptRepo } from '../db/repos/contentRepo'
 import { JobRepo } from '../db/repos/jobRepo'
+import { GameRepo, ReuseRepo } from '../db/repos/gameRepo'
 import { BackupRepo, ProviderCacheRepo, SettingsRepo, UsageRepo } from '../db/repos/miscRepo'
 import type { ElevenLabsProvider, OpenAIProvider } from '../providers/types'
 import { Logger } from './logger'
@@ -70,6 +71,8 @@ export interface Services {
   jobs: JobRepo
   projects: ProjectRepo
   research: ResearchRepo
+  games: GameRepo
+  reuse: ReuseRepo
   scripts: ScriptRepo
   audio: AudioRepo
   usage: UsageRepo
@@ -85,13 +88,15 @@ export interface Services {
   appVersion: string
 }
 
-export function buildRepos(db: Database): Pick<Services, 'channels' | 'jobs' | 'projects' | 'research' | 'scripts' | 'audio' | 'usage' | 'cache' | 'backups' | 'settingsRepo' | 'settings'> {
+export function buildRepos(db: Database): Pick<Services, 'channels' | 'jobs' | 'projects' | 'research' | 'games' | 'reuse' | 'scripts' | 'audio' | 'usage' | 'cache' | 'backups' | 'settingsRepo' | 'settings'> {
   const settingsRepo = new SettingsRepo(db)
   return {
     channels: new ChannelRepo(db),
     jobs: new JobRepo(db),
     projects: new ProjectRepo(db),
     research: new ResearchRepo(db),
+    games: new GameRepo(db),
+    reuse: new ReuseRepo(db),
     scripts: new ScriptRepo(db),
     audio: new AudioRepo(db),
     usage: new UsageRepo(db),

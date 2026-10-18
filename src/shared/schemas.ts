@@ -178,7 +178,9 @@ export const regenerateAudioSchema = z.object({
   voiceName: z.string().max(200).optional(),
   modelId: z.string().max(120).optional(),
   voiceSettings: voiceSettingsSchema.optional(),
-  confirmedCost: z.boolean().optional()
+  confirmedCost: z.boolean().optional(),
+  /** Generate a new take even when an identical voiceover exists (uses characters). */
+  freshTake: z.boolean().optional()
 })
 
 export const pricingSchema = z.object({
@@ -251,6 +253,14 @@ export const appSettingsSchema = z.object({
     logLevel: z.enum(['debug', 'info', 'warn', 'error']),
     manualE2EMode: z.boolean()
   }),
+  research: z.object({
+    refreshAfterDays: z.number().int().min(0).max(3650)
+  }),
+  ui: z.object({
+    lastChannelId: z.string().max(100).nullable(),
+    lastTemplateId: z.string().max(100).nullable(),
+    lastMode: jobModeSchema.nullable()
+  }),
   updates: z.object({
     checkOnStartup: z.boolean(),
     owner: z.string().max(100).regex(/^[A-Za-z0-9-]*$/),
@@ -268,6 +278,8 @@ export const settingsPatchSchema = z.object({
   storage: appSettingsSchema.shape.storage.partial().optional(),
   sync: appSettingsSchema.shape.sync.partial().optional(),
   advanced: appSettingsSchema.shape.advanced.partial().optional(),
+  research: appSettingsSchema.shape.research.partial().optional(),
+  ui: appSettingsSchema.shape.ui.partial().optional(),
   updates: appSettingsSchema.shape.updates.partial().optional()
 })
 

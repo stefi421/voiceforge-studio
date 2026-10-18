@@ -1,5 +1,5 @@
 import { useMemo, useState, type JSX } from 'react'
-import { AudioLines, CircleAlert, CircleCheck, FileText, FolderOpen, KeyRound, ListOrdered, Mic, RotateCcw, Search, Sparkles, Tv, Wand2 } from 'lucide-react'
+import { AudioLines, CircleAlert, CircleCheck, ClipboardPaste, FileText, FolderOpen, KeyRound, ListOrdered, Mic, RotateCcw, Search, Sparkles, Tv, Wand2 } from 'lucide-react'
 import type { JobView } from '@shared/types'
 import { api, audioUrl } from '@/lib/api'
 import { useAsync, useNow } from '@/lib/hooks'
@@ -103,8 +103,17 @@ export function DashboardPage(): JSX.Element {
             <Button icon={<FolderOpen size={14} />} onClick={openOutput}>
               Open output folder
             </Button>
-            <Button variant="primary" icon={<Sparkles size={14} />} onClick={() => navigate('generate')}>
+            <Button icon={<Sparkles size={14} />} onClick={() => navigate('generate')}>
               New generation
+            </Button>
+            <Button
+              variant="primary"
+              icon={<ClipboardPaste size={14} />}
+              disabled={live.length === 0}
+              title="Copy your titles (one per line), then click: same channel, format and mode as last time"
+              onClick={() => navigate('generate', { paste: '1' })}
+            >
+              Paste &amp; generate
             </Button>
           </>
         }

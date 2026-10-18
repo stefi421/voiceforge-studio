@@ -201,10 +201,10 @@ export class StyleService {
   }
 
   /** Reference scripts sent to the writer as style examples. */
-  promptReferences(templateId: string): Array<Pick<ReferenceScript, 'title' | 'text'>> {
+  promptReferences(templateId: string, count = PROMPT_REFERENCES): Array<Pick<ReferenceScript, 'title' | 'text'>> {
     return this.s.channels
       .listReferences(templateId)
-      .slice(-PROMPT_REFERENCES)
+      .slice(-Math.max(1, count))
       .reverse()
       .map((r) => ({ title: r.title, text: r.text.length > PROMPT_REFERENCE_CHARS ? `${r.text.slice(0, PROMPT_REFERENCE_CHARS)}\n[…truncated]` : r.text }))
   }

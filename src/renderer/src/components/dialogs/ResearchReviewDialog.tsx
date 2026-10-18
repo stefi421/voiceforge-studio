@@ -62,14 +62,17 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
 
   const r = research.data
   const d = r?.data
-  const interactive = !readOnly && job?.status === 'research_review_required'
+  const failedOnResearch = job?.status === 'failed' && (job.lastError?.kind === 'ambiguous' || job.lastError?.kind === 'insufficient_info')
+  const interactive = !readOnly && (job?.status === 'research_review_required' || failedOnResearch)
+  // 1.6.0: the title looks like a game that was researched before (Game Library).
+  const libraryChoice = r?.model === 'library' && r.status === 'ambiguous'
 
   return (
     <Dialog
       open={Boolean(job)}
       onClose={onClose}
       size="lg"
-      title={readOnly ? 'Research data' : 'Research needs your input'}
+      title={readOnly ? 'Research data' : libraryChoice ? 'Is this a game you already researched?' : 'Research needs your input'}
       description={job ? `"${job.title}" · ${job.channelName}` : undefined}
       footer={
         interactive ? (
@@ -99,12 +102,19 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
         <Alert tone="info">No research data is stored for this job yet.</Alert>
       ) : (
         <>
-          <div className="row wrap">
-            <Badge tone={r.status === 'confirmed' ? 'success' : r.status === 'ambiguous' ? 'warning' : r.status === 'insufficient' ? 'danger' : 'info'}>{r.status}</Badge>
-            <Badge>confidence {formatPercent(d?.confidence ?? 0)}</Badge>
-            <Badge>{r.mode.replace(/_/g, ' ')}</Badge>
-            {r.model && <Badge>{r.model}</Badge>}
-          </div>
+          {libraryChoice ? (
+            <Alert tone="info" title="Saved research may match this title">
+              Pick the saved game to reuse its research (no research credits, no wait), or research it as a new game. Your choice is remembered for this spelling.
+            </Alert>
+          ) : (
+            <div className="row wrap">
+              <Badge tone={r.status === 'confirmed' ? 'success' : r.status === 'ambiguous' ? 'warning' : r.status === 'insufficient' ? 'danger' : 'info'}>{r.status}</Badge>
+              <Badge>confidence {formatPercent(d?.confidence ?? 0)}</Badge>
+              <Badge>{r.mode.replace(/_/g, ' ')}</Badge>
+              {r.model && r.model !== 'library' && <Badge>{r.model}</Badge>}
+              {r.model === 'library' && <Badge tone="success">Saved research</Badge>}
+            </div>
+          )}
 
           {d?.insufficientReason && (
             <Alert tone="warning" title="Why the pipeline stopped">
@@ -114,7 +124,7 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
 
           {d && d.ambiguityCandidates.length > 0 && (
             <div className="col gap-3">
-              <div className="section-title">Which one did you mean?</div>
+              <div className="section-title">{libraryChoice ? 'Same game as one of these?' : 'Which one did you mean?'}</div>
               <div className="grid grid-2">
                 {d.ambiguityCandidates.map((c, i) => (
                   <Card key={i} padded="sm" hover={interactive}>
@@ -127,7 +137,7 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
                       {interactive && (
                         <div className="mt-2">
                           <Button size="sm" variant="primary" loading={busy === `c${i}`} disabled={busy != null} onClick={() => resolve({ candidateIndex: i }, `c${i}`)}>
-                            Use this one
+                            {c.gameId ? 'Use saved research' : 'Use this one'}
                           </Button>
                         </div>
                       )}
@@ -135,10 +145,17 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
                   </Card>
                 ))}
               </div>
+              {libraryChoice && interactive && job && (
+                <div>
+                  <Button loading={busy === 'new'} disabled={busy != null} onClick={() => resolve({ manualTitle: job.title }, 'new')}>
+                    It's a different game — research it as new
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
-          {d && (
+          {d && !libraryChoice && (
             <details open={!interactive}>
               <summary className="small strong clickable">Research summary</summary>
               <div className="mt-3 col gap-3">
@@ -201,7 +218,7 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
             </div>
           )}
 
-          {interactive && (
+          {interactive && !libraryChoice && (
             <Card padded="sm">
               <div className="col gap-3">
                 <div className="section-title">Or tell the pipeline what this is</div>

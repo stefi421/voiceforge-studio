@@ -219,6 +219,19 @@ function rowToResearch(r: ResearchRow): ResearchResult {
 export class ResearchRepo {
   constructor(private db: Database) {}
 
+  setGame(researchId: string, gameId: string | null): void {
+    this.db.run('UPDATE research_results SET game_id = ? WHERE id = ?', gameId, researchId)
+  }
+
+  gameIdOf(researchId: string): string | null {
+    return this.db.get<{ game_id: string | null }>('SELECT game_id FROM research_results WHERE id = ?', researchId)?.game_id ?? null
+  }
+
+  /** Every confirmed research row not yet linked to the library (used once to import 1.5 data). */
+  unlinkedConfirmed(): ResearchResult[] {
+    return this.db.all<ResearchRow>("SELECT * FROM research_results WHERE status = 'confirmed' AND game_id IS NULL ORDER BY created_at ASC").map(rowToResearch)
+  }
+
   create(input: Omit<ResearchResult, 'id' | 'createdAt'>, id = newId()): ResearchResult {
     this.db.run(
       'INSERT INTO research_results (id, job_id, project_id, status, data_json, sources_json, model, mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -633,5 +646,26 @@ export class AudioRepo {
 
   delete(id: string): void {
     this.db.run('DELETE FROM audio_files WHERE id = ?', id)
+  }
+
+  /** Records what was voiced (hash of narration + voice + model + format + settings) and how it was split. */
+  setContent(id: string, contentHash: string, partAnchors: string[] | null): void {
+    this.db.run('UPDATE audio_files SET content_hash = ?, part_anchors_json = ? WHERE id = ?', contentHash, partAnchors ? JSON.stringify(partAnchors) : null, id)
+  }
+
+  /** Newest finished audio with exactly this content (any project), whose file still exists on disk. */
+  findReadyByHash(contentHash: string, exists: (filePath: string) => boolean): AudioFile | undefined {
+    const rows = this.db.all<AudioRow>("SELECT * FROM audio_files WHERE content_hash = ? AND status = 'ready' ORDER BY created_at DESC LIMIT 10", contentHash)
+    for (const r of rows) if (exists(r.file_path)) return rowToAudio(r)
+    return undefined
+  }
+
+  /** Paragraph anchors of the newest multi-part voiceover of a project (keeps split points stable across edits). */
+  latestPartAnchors(projectId: string): string[] | null {
+    const r = this.db.get<{ part_anchors_json: string | null }>(
+      'SELECT part_anchors_json FROM audio_files WHERE project_id = ? AND part_anchors_json IS NOT NULL ORDER BY version DESC LIMIT 1',
+      projectId
+    )
+    return r?.part_anchors_json ? parseJson<string[]>(r.part_anchors_json, []) : null
   }
 }

@@ -591,6 +591,101 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     const fromIso = from ? dayStart(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
     return s.usage.summary(fromIso, toIso)
   })
+  reg.handle('usage:savings', usageRangeSchema, ({ from, to }) => {
+    const dayStart = (d: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00:00`).toISOString() : d)
+    const dayEnd = (d: string): string => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T23:59:59.999`).toISOString() : d)
+    const toIso = to ? dayEnd(to) : new Date().toISOString()
+    const fromIso = from ? dayStart(from) : new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    const r = s.reuse.summary(fromIso, toIso)
+    return {
+      range: { from: fromIso, to: toIso },
+      researchCallsAvoided: r.research,
+      estimatedTokensSaved: r.tokens,
+      elevenCharactersSaved: r.characters,
+      audioFilesReused: r.files,
+      audioPartsReused: r.parts,
+      estimatedUsdSaved: Math.round(r.usd * 10000) / 10000,
+      estimatesLabel: 'Estimates — based on typical research size and your configured prices.'
+    }
+  })
+
+  // ---- Game Library (1.6.0) -------------------------------------------------
+  const library = engine.pipeline.library
+  const gameText = z.string().trim().min(1).max(2000)
+  const gameView = (id: string) => library.view(library.require(id))
+  reg.handle(
+    'games:list',
+    z.object({ query: z.string().max(200).optional(), subject: z.enum(['game', 'product', 'all']).optional(), limit: z.number().int().min(1).max(5000).optional() }),
+    (q) => s.games.list({ subject: q.subject ?? 'all', query: q.query, limit: q.limit }).map((g) => library.view(g))
+  )
+  reg.handle('games:get', idOnly, ({ id }) => gameView(id))
+  reg.handle(
+    'games:update',
+    z.object({ id: idSchema, canonicalTitle: z.string().trim().min(1).max(300).optional(), userNotes: z.string().max(20000).optional(), pinned: z.boolean().optional() }),
+    ({ id, canonicalTitle, userNotes, pinned }) => {
+      library.require(id)
+      // Renaming keeps the old name as an alias (GameRepo.update), so it still matches typed titles.
+      s.games.update(id, { ...(canonicalTitle ? { canonicalTitle } : {}), ...(userNotes !== undefined ? { userNotes } : {}), ...(pinned !== undefined ? { pinned } : {}) })
+      return gameView(id)
+    }
+  )
+  reg.handle('games:addFact', z.object({ id: idSchema, text: gameText }), ({ id, text }) => library.view(library.addFact(id, text)))
+  reg.handle('games:removeFact', z.object({ id: idSchema, text: gameText }), ({ id, text }) => library.view(library.removeFact(id, text)))
+  reg.handle('games:restoreFact', z.object({ id: idSchema, text: gameText }), ({ id, text }) => library.view(library.restoreFact(id, text)))
+  reg.handle('games:addAlias', z.object({ id: idSchema, alias: z.string().trim().min(1).max(300) }), ({ id, alias }) => library.view(library.addAlias(id, alias)))
+  reg.handle('games:removeAlias', z.object({ id: idSchema, alias: z.string().trim().min(1).max(300) }), ({ id, alias }) => {
+    library.require(id)
+    s.games.removeAlias(id, alias)
+    return gameView(id)
+  })
+  reg.handle('games:refresh', idOnly, async ({ id }) => library.view(await library.refresh(id)))
+  reg.handle('games:delete', idOnly, ({ id }) => {
+    library.require(id)
+    s.games.delete(id)
+    return { ok: true as const }
+  })
+  reg.handle('games:export', null, async () => {
+    const res = await dialog.showSaveDialog(win(deps)!, {
+      title: 'Export saved games',
+      defaultPath: path.join(app.getPath('documents'), `voiceforge-games-${new Date().toISOString().slice(0, 10)}.json`),
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    })
+    if (res.canceled || !res.filePath) return null
+    return { path: res.filePath, count: library.exportToFile(res.filePath) }
+  })
+  reg.handle('games:import', null, async () => {
+    const res = await dialog.showOpenDialog(win(deps)!, { title: 'Import saved games', filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile'] })
+    const file = res.filePaths[0]
+    if (res.canceled || !file) return null
+    let raw: unknown
+    try {
+      raw = JSON.parse(await fsp.readFile(file, 'utf8'))
+    } catch {
+      throw new AppError('config', 'The file is not valid JSON.', { retryable: false })
+    }
+    return library.importJson(raw)
+  })
+  reg.handle('games:match', z.object({ titles: z.array(z.string().max(300)).max(5000), channelId: idSchema }), ({ titles, channelId }) => {
+    const channel = s.channels.get(channelId)
+    if (!channel) return titles.map((title) => ({ title, kind: 'none' as const, gameId: null, canonicalTitle: null, candidates: [] }))
+    return library.matchMany(titles, channel.category)
+  })
+  reg.handle('queue:copyScripts', z.object({ batchId: idSchema }), ({ batchId }) => {
+    const jobs = s.jobs
+      .list({ batchId, status: ['completed'], limit: 2000 })
+      .slice()
+      .sort((a, b) => a.position - b.position)
+    const blocks: string[] = []
+    for (const j of jobs) {
+      const script = (j.scriptId ? s.scripts.get(j.scriptId) : undefined) ?? s.scripts.latestForProject(j.projectId)
+      if (!script || !script.text.trim()) continue
+      blocks.push(`${j.title}\n\n${script.text.trim()}`)
+    }
+    if (!blocks.length) throw new AppError('config', 'No finished scripts in this batch yet.', { retryable: false, code: 'NO_SCRIPTS' })
+    const text = blocks.join('\n\n\n')
+    clipboard.writeText(text)
+    return { count: blocks.length, characters: text.length }
+  })
   reg.handle('backup:create', null, () => backup.create())
   reg.handle('backup:list', null, () => backup.list())
   reg.handle('backup:restore', z.object({ path: pathSchema }), async ({ path: p }) => {
@@ -606,3 +701,4 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
 
   void app
 }
+

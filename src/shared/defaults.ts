@@ -114,6 +114,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     logLevel: 'info',
     manualE2EMode: false
   },
+  research: {
+    refreshAfterDays: 0
+  },
+  ui: {
+    lastChannelId: null,
+    lastTemplateId: null,
+    lastMode: null
+  },
   updates: {
     checkOnStartup: true,
     owner: 'stefi421',

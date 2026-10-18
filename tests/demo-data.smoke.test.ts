@@ -28,6 +28,11 @@ describe.skipIf(!process.env.VF_DEMO_DIR)('demo data', () => {
     const b = gen.createBatch({ channelId: rf.id, mode: 'review_before_voice', entries: [{ title: 'Keychron Q1 HE', channelId: null }, { title: 'MINISFORUM UM890 Pro', channelId: null }], skipExisting: false, name: 'RiftForge — keyboards & mini PCs' })
     await waitFor(() => a.jobIds.every((id) => ['completed', 'failed'].includes(env.s.jobs.get(id)!.status)), 30000)
     await waitFor(() => b.jobIds.every((id) => ['awaiting_approval', 'failed'].includes(env.s.jobs.get(id)!.status)), 30000)
+    // 1.6.0: reuse — the same titles again (saved research) and an identical voiceover (0 characters).
+    const again = gen.createBatch({ channelId: gv.id, mode: 'scripts_only', entries: ['Emberward', 'Active Matter'].map((t) => ({ title: t, channelId: null })), skipExisting: false, name: 'Game Vault — reuse' })
+    await waitFor(() => again.jobIds.every((id) => ['completed', 'failed'].includes(env.s.jobs.get(id)!.status)), 30000)
+    const regen = engine.regenerateAudio({ projectId: env.s.jobs.get(a.jobIds[0]!)!.projectId })
+    await waitFor(() => ['completed', 'failed'].includes(env.s.jobs.get(regen.id)!.status), 30000)
     env.openai.researchImpl = () => {
       throw new AppError('auth', 'OpenAI rejected the API key.', { retryable: false })
     }

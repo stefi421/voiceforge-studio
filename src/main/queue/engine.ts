@@ -7,6 +7,7 @@ import { computeBackoffMs } from '../util/retry'
 import { ACTIVE_STATUSES, USER_WAIT_STATUSES } from '../db/repos/jobRepo'
 import { newId, normalizeTitle } from '../util/common'
 import fs from 'node:fs'
+import path from 'node:path'
 import { DatabaseClosedError } from '../db/database'
 
 interface Running {
@@ -273,8 +274,31 @@ export class QueueEngine {
     const remaining = this.s.jobs.list({ batchId, status: ['pending', ...ACTIVE_STATUSES, 'paused'] }).length
     if (remaining === 0 && !this.batchNotified.has(batchId) && batch.total > 0) {
       this.batchNotified.add(batchId)
-      this.s.events.emit('batch:completed', { batchId, name: batch.name, completed: batch.completed, failed: batch.failed })
+      this.s.events.emit('batch:completed', { batchId, name: batch.name, completed: batch.completed, failed: batch.failed, folder: this.batchFolder(batchId) })
     }
+  }
+
+  /** The deepest folder that contains every finished project of a batch (null when nothing finished). */
+  batchFolder(batchId: string): string | null {
+    const dirs = [
+      ...new Set(
+        this.s.jobs
+          .list({ batchId, status: ['completed'], limit: 2000 })
+          .map((j) => this.s.projects.get(j.projectId)?.folderPath)
+          .filter((p): p is string => typeof p === 'string' && p.length > 0)
+      )
+    ]
+    if (!dirs.length) return null
+    if (dirs.length === 1) return dirs[0]!
+    const split = dirs.map((d) => path.resolve(d).split(path.sep))
+    const common: string[] = []
+    for (let i = 0; i < split[0]!.length; i++) {
+      const part = split[0]![i]!
+      if (split.every((p) => p[i] === part)) common.push(part)
+      else break
+    }
+    const joined = common.join(path.sep)
+    return joined || null
   }
 
   // ---------------------------------------------------------------------------
@@ -493,11 +517,29 @@ export class QueueEngine {
     const channel = this.s.channels.get(job.channelId)
     let notes = job.manualResearchNotes ?? ''
     let title = job.title
+    const overrides = { ...(job.overrides ?? {}) }
+    const libraryChoice = research?.model === 'library'
     if (opts.candidateIndex !== undefined && research) {
       const c = research.data.ambiguityCandidates?.[opts.candidateIndex]
       if (!c) throw new AppError('config', 'That candidate does not exist.', { retryable: false })
+      if (c.gameId) {
+        // A saved Game Library entry: reuse its research (no credits) and keep the user's title.
+        if (!this.s.games.get(c.gameId)) throw new AppError('config', 'That saved game no longer exists.', { retryable: false, code: 'GAME_NOT_FOUND' })
+        overrides.libraryGameId = c.gameId
+        delete overrides.skipLibraryNear
+        this.s.jobs.update(jobId, { overrides, researchId: null, lastError: null, stage: 'research' })
+        this.s.jobs.setStatus(jobId, 'pending', { stage: 'research', event: 'research_resolved', detail: `Using saved research: ${c.title}` })
+        this.emitJob(jobId)
+        this.tick()
+        return this.s.jobs.get(jobId)!
+      }
       notes = `The user confirmed the correct title is "${c.title}"${c.developer ? ` by ${c.developer}` : ''}${c.year ? ` (${c.year})` : ''}. ${c.note ?? ''}`.trim()
       title = c.title?.trim() || title
+    }
+    // Rejecting the saved matches means "this is a different game": research it as new.
+    if (libraryChoice) {
+      overrides.skipLibraryNear = true
+      delete overrides.libraryGameId
     }
     if (opts.manualTitle?.trim()) title = opts.manualTitle.trim()
     if (opts.manualNotes?.trim()) notes = [notes, opts.manualNotes.trim()].filter(Boolean).join('\n')
@@ -512,8 +554,10 @@ export class QueueEngine {
         }
       }
       this.s.jobs.addEvent(jobId, 'title_changed', null, null, `${job.title} → ${title}`)
+      // Learn what the user typed, so the same spelling resolves to this game next time.
+      overrides.aliasTitles = [...new Set([...(overrides.aliasTitles ?? []), job.title])]
     }
-    this.s.jobs.update(jobId, { title, manualResearchNotes: notes || null, researchId: null, lastError: null, stage: 'research' })
+    this.s.jobs.update(jobId, { title, manualResearchNotes: notes || null, researchId: null, lastError: null, stage: 'research', overrides })
     if (channel?.research.mode === 'manual' && !notes.trim()) {
       throw new AppError('insufficient_info', 'Manual research notes are required for this channel.', { retryable: false })
     }
@@ -587,7 +631,7 @@ export class QueueEngine {
   }
 
   /** Creates a new audio-only job for a project (optionally with another voice). */
-  regenerateAudio(opts: { projectId: string; scriptId?: string; voiceId?: string; voiceName?: string; modelId?: string; voiceSettings?: VoiceSettings }): Job {
+  regenerateAudio(opts: { projectId: string; scriptId?: string; voiceId?: string; voiceName?: string; modelId?: string; voiceSettings?: VoiceSettings; freshTake?: boolean }): Job {
     const project = this.s.projects.get(opts.projectId)
     if (!project) throw new AppError('config', 'Project not found.', { retryable: false })
     const script = opts.scriptId ? this.s.scripts.get(opts.scriptId) : this.s.scripts.latestForProject(opts.projectId)
@@ -604,7 +648,7 @@ export class QueueEngine {
       mode: 'auto',
       position: 0,
       stage: 'script',
-      overrides: { useScriptId: script.id, voiceId: opts.voiceId, voiceName: opts.voiceName, modelId: opts.modelId, voiceSettings: opts.voiceSettings }
+      overrides: { useScriptId: script.id, voiceId: opts.voiceId, voiceName: opts.voiceName, modelId: opts.modelId, voiceSettings: opts.voiceSettings, freshTake: opts.freshTake || undefined }
     })
     this.emitJob(job.id)
     this.tick()

@@ -294,6 +294,12 @@ app.whenReady().then(() => {
   services = s
   installMediaProtocol(s)
   engine = new QueueEngine(s, logger.child('queue'))
+  // 1.6.0: research saved by earlier versions becomes part of the permanent Game Library (once).
+  try {
+    engine.pipeline.library.importLegacyResearch()
+  } catch (err) {
+    logger.log('warn', 'library', 'Importing earlier research into the Game Library failed', { error: (err as Error).message })
+  }
   const generation = new GenerationService(s, engine)
   const backup = new BackupService(s)
   const updates = new UpdateService(s, logger.child('updates'))
@@ -324,6 +330,7 @@ app.whenReady().then(() => {
   scheduleBackups(s, backup)
   updates.scheduleStartupCheck()
   disposeUpdates = () => updates.dispose()
+  timers.push(setTimeout(() => void engine?.pipeline.cleanTtsCache().then((n) => n && logger.log('info', 'cleanup', 'Removed old cached voice parts', { count: n })).catch(() => undefined), 20_000))
   if (s.settings.get().storage.cleanupTempFiles) {
     timers.push(setTimeout(() => void cleanupTempFiles(s.paths.outputRoot()).then((n) => n && logger.log('info', 'cleanup', 'Removed stale temp files', { count: n })), 15_000))
   }

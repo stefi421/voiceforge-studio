@@ -28,6 +28,9 @@ import type {
   TemplateVersion,
   TemplateVersionInput,
   UpdateStatus,
+  GameView,
+  GameMatch,
+  ReuseSavings,
   JobTimings,
   TimingSummary,
   PreflightResult,
@@ -200,6 +203,28 @@ export interface IpcContract {
   'history:list': { req: { limit?: number; jobId?: string; search?: string }; res: JobEvent[] }
   'history:exportReport': { req: { batchId?: string; path: string }; res: { ok: true } }
   'usage:summary': { req: { from?: string; to?: string }; res: UsageSummary }
+  'usage:savings': { req: { from?: string; to?: string }; res: ReuseSavings }
+
+  // Game Library (1.6.0)
+  'games:list': { req: { query?: string; subject?: 'game' | 'product' | 'all'; limit?: number }; res: GameView[] }
+  'games:get': { req: { id: string }; res: GameView }
+  'games:update': { req: { id: string; canonicalTitle?: string; userNotes?: string; pinned?: boolean }; res: GameView }
+  'games:addFact': { req: { id: string; text: string }; res: GameView }
+  /** Marks a fact as wrong (removed from prompts) or removes a user-added fact. */
+  'games:removeFact': { req: { id: string; text: string }; res: GameView }
+  'games:restoreFact': { req: { id: string; text: string }; res: GameView }
+  'games:addAlias': { req: { id: string; alias: string }; res: GameView }
+  'games:removeAlias': { req: { id: string; alias: string }; res: GameView }
+  /** Researches the entry again (uses OpenAI credits) and keeps the user's notes, facts and aliases. */
+  'games:refresh': { req: { id: string }; res: GameView }
+  'games:delete': { req: { id: string }; res: { ok: true } }
+  'games:export': { req: void; res: { path: string; count: number } | null }
+  'games:import': { req: void; res: { added: number; merged: number } | null }
+  /** Classifies typed titles against the library (exact / auto / near / none) for one channel. */
+  'games:match': { req: { titles: string[]; channelId: string }; res: GameMatch[] }
+
+  /** Copies every finished script of a batch (title above each, one below another) to the clipboard. */
+  'queue:copyScripts': { req: { batchId: string }; res: { count: number; characters: number } }
   'backup:create': { req: void; res: BackupInfo }
   'backup:list': { req: void; res: BackupInfo[] }
   'backup:restore': { req: { path: string }; res: { ok: true; restartRequired: true } }
@@ -229,7 +254,9 @@ export const DASHBOARD_PAGES = [
   'projects',
   'history',
   'usage',
-  'settings'
+  'settings',
+  // 1.6.0 — appended so Ctrl+1 … Ctrl+0 keep their meaning; reachable from the sidebar and Ctrl+K.
+  'games'
 ] as const
 
 export type PageId = (typeof DASHBOARD_PAGES)[number]
