@@ -48,7 +48,8 @@ export const validationRulesSchema = z.object({
   wordsPerMinute: z.number().int().min(80).max(260),
   language: z.string().min(2).max(10),
   forbiddenPhrases: z.array(z.string().max(200)).max(200),
-  narrateSectionHeadings: z.boolean()
+  narrateSectionHeadings: z.boolean(),
+  openWithChannelIntro: z.boolean().default(true)
 })
 
 const channelInputBase = z.object({
@@ -210,7 +211,7 @@ export const appSettingsSchema = z.object({
     defaultOutputFormat: z.string().min(1).max(40),
     timeoutMs: z.number().int().min(5000).max(900000),
     maxRetries: z.number().int().min(0).max(10),
-    concurrency: z.number().int().min(1).max(5),
+    concurrency: z.number().int().min(1).max(10),
     maxCharsPerRequest: z.number().int().min(0).max(40000)
   }),
   generation: z.object({
@@ -220,6 +221,7 @@ export const appSettingsSchema = z.object({
     maxStageRetries: z.number().int().min(0).max(10),
     validationStrictness: z.enum(['relaxed', 'standard', 'strict']),
     lengthToleranceChars: z.number().int().min(0).max(2000),
+    aiReviewPass: z.boolean(),
     duplicateDetection: z.boolean(),
     largeBatchWarningThreshold: z.number().int().min(1).max(1000),
     confirmExpensiveRegeneration: z.boolean()
@@ -230,6 +232,7 @@ export const appSettingsSchema = z.object({
     pricing: pricingSchema
   }),
   storage: z.object({
+    outputLayout: z.enum(['folders', 'flat']),
     backupDir: z.string().max(1024).nullable(),
     autoBackupEveryHours: z.number().int().min(0).max(720),
     keepBackups: z.number().int().min(1).max(100),

@@ -142,8 +142,8 @@ export function ElevenLabsSection(): JSX.Element {
           <Field label="Max retries">
             <DeferredNumber value={e.maxRetries} onCommit={(v) => void set('elevenlabs', 'maxRetries', v ?? 0)} min={0} max={10} />
           </Field>
-          <Field label="Concurrency" hint="Parallel TTS requests. Keep low on Starter/Creator plans.">
-            <DeferredNumber value={e.concurrency} onCommit={(v) => void set('elevenlabs', 'concurrency', v ?? 1)} min={1} max={5} />
+          <Field label="Concurrency" hint="Parallel voiceovers. Pro and higher plans allow more at once; lower it if ElevenLabs reports too many requests.">
+            <DeferredNumber value={e.concurrency} onCommit={(v) => void set('elevenlabs', 'concurrency', v ?? 1)} min={1} max={10} />
           </Field>
           <Field label="Max characters per request" hint="0 = use the model's limit. Lower values create more, shorter chunks.">
             <DeferredNumber value={e.maxCharsPerRequest} onCommit={(v) => void set('elevenlabs', 'maxCharsPerRequest', v ?? 0)} min={0} max={40000} />

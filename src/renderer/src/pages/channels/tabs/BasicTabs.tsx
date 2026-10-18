@@ -9,11 +9,14 @@ import { toast } from '@/store/toasts'
 import { Alert, Button, Field, Input, NumberInput, Select, Slider, StringListEditor, Switch, Textarea } from '@/components/ui'
 import type { FieldErrors } from '../ChannelEditor'
 import { formatDuration } from '@/lib/format'
+import { OpeningBlock } from './OpeningBlock'
 
 export interface TabProps {
   form: ChannelInput
   patch: (p: Partial<ChannelInput>) => void
   errors: FieldErrors
+  /** Saved channel id (null while creating a new channel). */
+  channelId?: string | null
 }
 
 const LANGUAGES = [
@@ -91,7 +94,7 @@ const LENGTH_PRESETS: Array<{ label: string; sub: string; minChars: number; maxC
   { label: '10 min', sub: '8,000–9,500 chars', minChars: 8000, maxChars: 9500, targetDurationSec: 600 }
 ]
 
-export function WritingTab({ form, patch, errors }: TabProps): JSX.Element {
+export function WritingTab({ form, patch, errors, channelId }: TabProps): JSX.Element {
   const rules = form.pronunciationRules
   const setRule = (i: number, r: Partial<PronunciationRule>): void => {
     const next = rules.map((x, j) => (j === i ? { ...x, ...r } : x))
@@ -130,6 +133,7 @@ export function WritingTab({ form, patch, errors }: TabProps): JSX.Element {
         {form.maxChars < form.minChars && <Alert tone="danger">Maximum must be at least the minimum.</Alert>}
         {form.maxChars > 10000 && <Alert tone="info">Above 10,000 characters the voiceover is generated in several requests and stitched together.</Alert>}
       </div>
+      <OpeningBlock channelId={channelId ?? null} channelName={form.name || 'this channel'} validation={form.validation} onValidation={(v) => patch({ validation: v })} />
       <Field label="Writing instructions" hint="The core brief for every script on this channel. Sent to the model together with the active template." error={errors.writingInstructions}>
         <Textarea value={form.writingInstructions} onChange={(e) => patch({ writingInstructions: e.target.value })} rows={6} />
       </Field>
@@ -138,10 +142,10 @@ export function WritingTab({ form, patch, errors }: TabProps): JSX.Element {
           <Textarea value={form.writingStyle} onChange={(e) => patch({ writingStyle: e.target.value })} rows={3} placeholder="Natural, energetic spoken review narration." />
         </Field>
         <div />
-        <Field label="Intro requirements" error={errors.introRequirements}>
-          <Textarea value={form.introRequirements} onChange={(e) => patch({ introRequirements: e.target.value })} rows={3} placeholder='e.g. Open with the fixed intro: "Welcome back to…"' />
+        <Field label="Intro guidance" hint="Free-text guidance. For exact wording use Fixed intro above." error={errors.introRequirements}>
+          <Textarea value={form.introRequirements} onChange={(e) => patch({ introRequirements: e.target.value })} rows={3} placeholder="e.g. Mention the genre in the first sentence." />
         </Field>
-        <Field label="Outro requirements" error={errors.outroRequirements}>
+        <Field label="Outro guidance" hint="Free-text guidance. For exact wording use Fixed outro above." error={errors.outroRequirements}>
           <Textarea value={form.outroRequirements} onChange={(e) => patch({ outroRequirements: e.target.value })} rows={3} placeholder="e.g. Close with a clear verdict." />
         </Field>
       </div>

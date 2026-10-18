@@ -1,4 +1,4 @@
-# Known limitations (v1.2.0)
+# Known limitations (v1.3.0)
 
 Honest list of what is not done, partially done, or unverified.
 
@@ -83,13 +83,26 @@ Honest list of what is not done, partially done, or unverified.
 * `node:sqlite` prints an "experimental feature" warning in Node 22 test runs; in
   Electron 44 (Node 24) it is stable.
 
-## Channel formats (1.2.0)
+## Channel formats (1.2.0, updated 1.3.0)
 
-* Only Game Vault (review), RENVO (YouTube review) and RiftForge Tech (full review) start as
-  *provisional* (built from the written rules, usable in Review before voice). Every other
-  channel/format needs approved reference scripts before it can generate — by design, so no
-  intro, outro or section order is invented.
+* Game Vault (review), RENVO (YouTube review) and RiftForge Tech (full review) start as
+  *provisional* (built from the owner's written rules). Since 1.3.0 every other format can also
+  generate in Review before voice / Scripts only, following the channel rules with a "not
+  verified" warning; Fully automatic still needs an approved format. Exact intros/outros are only
+  enforced where the owner stated them (Game Vault's intro, or text typed in Writing → Opening).
+* Channels without a fixed intro open with a short, varied channel introduction written by the
+  model (toggle in Writing → Opening). Its wording is not checked word for word.
+* GameSense / GAMIX / VELIX should match the "Dark Auction" script, which has not been imported.
 * Length limits are per channel, not per format (RiftForge short reviews: lower the channel
   limits for that batch).
 * Dropping .docx/.pdf onto the window cannot pass file paths through the sandbox; use
   *Choose files* (TXT/MD paste and drop work).
+
+## Speed and output (1.3.0)
+
+* Speed numbers in the changelog come from the mocked benchmark (`VF_BENCH=1`), not from live
+  API calls. Real gains depend on OpenAI/ElevenLabs latency and your plan's concurrency limits.
+* The AI fact check is off by default (one request less per script). Turn it on in
+  Settings → Generation if you want the extra check.
+* Only finished Script/Voice files go to the output folder. Projects created before 1.3.0 keep
+  their old files (Research.json, project.json, Narration.txt, drafts) where they are.

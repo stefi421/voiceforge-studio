@@ -28,6 +28,7 @@ interface ProjectRow {
   canonical_title?: string | null
   folder_name: string
   folder_path: string | null
+  layout?: string | null
   archived: number
   created_at: string
   updated_at: string
@@ -48,6 +49,7 @@ function rowToProject(r: ProjectRow): Project {
     canonicalTitle: r.canonical_title ?? null,
     folderName: r.folder_name,
     folderPath: r.folder_path,
+    layout: r.layout === 'flat' ? 'flat' : 'folders',
     archived: toBool(r.archived),
     createdAt: r.created_at,
     updatedAt: r.updated_at
@@ -90,16 +92,17 @@ export interface LibraryFilter {
 export class ProjectRepo {
   constructor(private db: Database) {}
 
-  create(input: { channelId: string; title: string; titleNormalized: string; folderName: string; folderPath: string | null }, id = newId()): Project {
+  create(input: { channelId: string; title: string; titleNormalized: string; folderName: string; folderPath: string | null; layout?: Project['layout'] }, id = newId()): Project {
     const ts = nowIso()
     this.db.run(
-      'INSERT INTO projects (id, channel_id, title, title_normalized, folder_name, folder_path, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      'INSERT INTO projects (id, channel_id, title, title_normalized, folder_name, folder_path, layout, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
       id,
       input.channelId,
       input.title,
       input.titleNormalized,
       input.folderName,
       input.folderPath,
+      input.layout ?? 'folders',
       ts,
       ts
     )

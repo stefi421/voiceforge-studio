@@ -226,7 +226,9 @@ export class OpenAIClientProvider implements OpenAIProvider {
 
   async research(req: ResearchRequest): Promise<ResearchResponse> {
     const useWeb = req.settings.mode === 'openai_web_search'
-    const params = this.baseParams(req.model, { reasoningEffort: 'low', maxOutputTokens: 12000 })
+    // Speed: the research JSON is small; a tight cap keeps reasoning short. 'low' context by default.
+    const params = this.baseParams(req.model, { reasoningEffort: 'low', maxOutputTokens: 5000 })
+    params.prompt_cache_key = `vf:research:${req.category}`
     params.instructions = researchInstructions(req.category, req.settings, useWeb)
     params.input = researchUserInput(req.title, req.category, req.manualNotes)
     params.text = { format: { type: 'json_schema', name: 'research_result', schema: RESEARCH_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
@@ -248,12 +250,14 @@ export class OpenAIClientProvider implements OpenAIProvider {
     const params = this.baseParams(req.model, { temperature: req.temperature, reasoningEffort: req.reasoningEffort, maxOutputTokens: req.maxOutputTokens })
     params.instructions = scriptSystemPrompt(req.channel, req.template, req.references ?? [])
     params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
+    if (req.promptCacheKey) params.prompt_cache_key = req.promptCacheKey
     const res = await this.create(params, req.signal)
     if (res.status === 'incomplete') {
       const reason = res.incomplete_details?.reason ?? 'unknown'
       throw new AppError('config', `OpenAI stopped the script early (${reason}).`, {
         action: reason === 'max_output_tokens' ? 'Increase "Max output tokens" in Settings → OpenAI.' : 'Retry the job.',
-        retryable: reason !== 'max_output_tokens'
+        retryable: reason !== 'max_output_tokens',
+        code: reason === 'max_output_tokens' ? 'MAX_OUTPUT_TOKENS' : undefined
       })
     }
     const text = cleanScriptText(outputText(res))

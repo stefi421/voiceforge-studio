@@ -90,6 +90,24 @@ export function StorageSection(): JSX.Element {
     <div className="settings-section">
       <div className="settings-group">
         <div className="settings-group-title row">
+          <FolderOpen size={15} /> Finished files
+        </div>
+        <div className="small muted">
+          Only the finished script and voiceover go to your output folder, and only once a title is complete. Drafts, research and project details stay in the app's data folder.
+        </div>
+        <Field label="Output folder layout" hint="Applies to new titles; existing ones keep their files where they are.">
+          <Select
+            value={st.outputLayout}
+            onChange={(v) => void set('storage', 'outputLayout', v as typeof st.outputLayout)}
+            options={[
+              { value: 'folders', label: 'A folder per title — Channel / Title / Script.txt + Voice.mp3' },
+              { value: 'flat', label: 'All in the channel folder — Channel / Title.txt + Title.mp3' }
+            ]}
+          />
+        </Field>
+      </div>
+      <div className="settings-group">
+        <div className="settings-group-title row">
           <Database size={15} /> Database
         </div>
         <KeyValue

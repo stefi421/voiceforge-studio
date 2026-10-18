@@ -181,7 +181,7 @@ describe('approval and gating', () => {
     return { engine, gen: new GenerationService(env.s, engine) }
   }
 
-  it('refuses Fully automatic for unapproved formats, allows supervised modes with a warning, blocks unconfigured ones', async () => {
+  it('refuses Fully automatic for unapproved formats and allows supervised modes with a warning (also for unverified ones)', async () => {
     const { engine, gen } = engineAndGen()
     const { channel, versionId } = gameVault()
     env.s.channels.setVersionStatus(versionId, 'provisional')
@@ -193,7 +193,10 @@ describe('approval and gating', () => {
     expect(ok.jobIds).toHaveLength(1)
     expect(env.s.jobs.get(ok.jobIds[0]!)!.overrides?.templateId).toBe(env.s.channels.getVersion(versionId)!.templateId)
     const nexora = env.s.channels.getByName('Nexora')!
-    expect(() => gen.createBatch({ channelId: nexora.id, mode: 'review_before_voice', entries, skipExisting: false })).toThrow(expect.objectContaining({ code: 'FORMAT_NOT_CONFIGURED' }))
+    // 1.3.0: unverified formats no longer block the channel — supervised modes work, Fully automatic does not.
+    expect(() => gen.createBatch({ channelId: nexora.id, mode: 'auto', entries, skipExisting: false })).toThrow(expect.objectContaining({ code: 'FORMAT_NOT_APPROVED' }))
+    expect(gen.estimate({ channelId: nexora.id, mode: 'review_before_voice', entries, skipExisting: false }).warnings.join(' ')).toMatch(/not verified/)
+    expect(gen.createBatch({ channelId: nexora.id, mode: 'review_before_voice', entries, skipExisting: false }).jobIds).toHaveLength(1)
     style.setApproval(versionId, 'approved')
     expect(env.s.channels.getVersion(versionId)!.approvedAt).toBeTruthy()
     expect(gen.createBatch({ channelId: channel.id, mode: 'auto', entries: [{ title: 'Another', channelId: null }], skipExisting: false }).jobIds).toHaveLength(1)
@@ -213,11 +216,12 @@ describe('approval and gating', () => {
   it('never edits an approved version in place and never lets the app approve on its own', () => {
     const { versionId, templateId } = gameVault()
     style.setApproval(versionId, 'approved')
+    const before = env.s.channels.getVersion(versionId)!.fixedBlocks
     const blocks = [block('intro', INTRO, true)]
     const next = style.setFixedBlocks(versionId, blocks)
     expect(next.id).not.toBe(versionId)
     expect(next.approvalStatus).toBe('awaiting_approval')
-    expect(env.s.channels.getVersion(versionId)!.fixedBlocks).toEqual([])
+    expect(env.s.channels.getVersion(versionId)!.fixedBlocks).toEqual(before)
     expect(env.s.channels.activeVersionOf(templateId)!.id).toBe(versionId)
     expect(() => style.setApproval(versionId, 'test_passed')).toThrow(/style test/)
     const added = env.s.channels.addVersion(templateId, { systemPrompt: 'x', structure: [], exampleScript: null, notes: '', approvalStatus: 'approved' })
@@ -268,7 +272,9 @@ describe('locked text and narration', () => {
     expect(script.contentType).toBe('review')
     expect(script.referenceSetVersion).toBe(env.s.channels.referenceSetVersion(templateId))
     expect(script.researchId).toBe(job.researchId)
-    const dir = path.dirname(script.filePath!)
+    // Narration.txt and project.json live in app data; the output folder only gets Script.txt.
+    const dir = path.join(env.s.paths.userData, 'projects', job.projectId)
+    expect(fs.readdirSync(path.dirname(script.filePath!))).toEqual(['Script.txt'])
     expect(fs.readFileSync(path.join(dir, 'Narration.txt'), 'utf8')).not.toMatch(/^Gameplay$/m)
     const meta = JSON.parse(fs.readFileSync(path.join(dir, 'project.json'), 'utf8'))
     expect(meta.script.contentType).toBe('review')
@@ -325,7 +331,14 @@ describe('seed and upgrades', () => {
           const v = fresh.s.channels.activeVersionOf(t.id)!
           expect(v.systemPrompt).not.toContain('Every game has its own rhythm')
           expect(v.systemPrompt).not.toContain('Three minutes. One game')
-          expect(v.fixedBlocks).toEqual([])
+          // Only text the owner stated is locked: the Game Vault intro (restored in 1.3.0).
+          if (c.name === 'Game Vault') {
+            expect(v.fixedBlocks).toHaveLength(1)
+            expect(v.fixedBlocks[0]).toMatchObject({ kind: 'intro', locked: true, provenance: 'user_confirmed', spoken: true })
+            expect(v.fixedBlocks[0]!.text).toContain('Welcome back to Game Vault')
+          } else {
+            expect(v.fixedBlocks).toEqual([])
+          }
           expect(v.approvalStatus).not.toBe('approved')
         }
       }
@@ -359,7 +372,8 @@ describe('seed and upgrades', () => {
       const gvT = old.s.channels.defaultTemplate(gv.id)!
       expect(gvT.latestVersion).toBe(2)
       expect(gvT.approvalStatus).toBe('provisional')
-      expect(old.s.channels.activeVersionOf(gvT.id)!.notes).toContain('[seed:v3]')
+      expect(old.s.channels.activeVersionOf(gvT.id)!.notes).toMatch(/\[seed:v\d\]/)
+      expect(old.s.channels.activeVersionOf(gvT.id)!.fixedBlocks.some((b) => b.kind === 'intro' && b.locked && b.text.includes('Welcome back to Game Vault'))).toBe(true)
       expect(old.s.channels.listTemplates(old.s.channels.getByName('RiftForge Tech')!.id).map((t) => t.contentType)).toEqual(['full_review', 'unboxing', 'short_review'])
       const vpTemplates = old.s.channels.listTemplates(vp.id)
       expect(vpTemplates).toHaveLength(1)

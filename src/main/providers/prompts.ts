@@ -103,7 +103,25 @@ Language: write in natural, fluent English suitable for professional AI narratio
 Output: only text intended for narration (plus the section labels when the format below uses them). Never include URLs, source citations, markdown links, research references, instructions for the AI, notes for the video editor, timestamps, generation metadata, or unrequested introductions/explanations.
 Style preservation: this channel has its own writing identity. Preserve its opening style, fixed introduction wording, paragraph organisation, section sequence, sentence-length patterns, narration perspective, transitions, level of detail, tone, conclusion structure, approved call-to-action wording, and length limits. Only the game/product-specific information changes. Do not introduce stylistic variations the format does not allow, and never borrow another channel's format.
 Accuracy: never invent personal gameplay or testing experiences, features, combat systems, benchmarks, release information, developer information, multiplayer capabilities, platform availability or test results. Use only the verified research data. Do not claim the reviewer played or tested anything unless such notes were supplied. For unreleased titles, separate confirmed information from expectations.
-Narration formatting: speech-friendly text. For technology scripts write abbreviations in their established lowercase style (usb-c, qmk, via, ghz). Keep official product and game names exactly as written.`
+Narration formatting: speech-friendly text. For technology scripts write abbreviations in their established lowercase style (usb-c, qmk, via, ghz). Keep official product and game names exactly as written. Section labels, when used, are plain text lines — never markdown "#" markers. The title is not part of the script: never start with a title line or repeat the title as a heading.`
+
+/**
+ * Opening instruction. A locked intro always wins (it is enforced verbatim). Without one, the
+ * writer opens with a short spoken channel introduction (1.3.0 — scripts used to start cold),
+ * unless the owner turned that off for the channel.
+ */
+export function openingRule(channel: Channel, template: TemplateVersion, hasReferences: boolean): string {
+  const lockedIntro = template.fixedBlocks.some((b) => b.locked && b.kind === 'intro' && b.text.trim())
+  if (lockedIntro) return 'OPENING: the locked opening above is the very first spoken text, word for word; continue naturally into the content after it.'
+  if (channel.validation.openWithChannelIntro === false) return ''
+  const subject = channel.category === 'tech' ? 'product' : 'game'
+  return [
+    `OPENING: begin with a short spoken introduction (1–2 sentences) that names the channel "${channel.name}" and the ${subject}, in this channel's own voice — for example welcoming viewers back to ${channel.name} and saying which ${subject} is covered today. Vary the wording naturally from script to script.`,
+    hasReferences ? 'If the approved reference scripts consistently open in a specific way, follow their opening pattern instead.' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
 
 function formatRules(template: TemplateVersion): string {
   const parts: string[] = []
@@ -145,6 +163,7 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, 
     GLOBAL_NARRATION_RULES,
     `CHANNEL MASTER PROMPT — ${channel.name}\n${template.systemPrompt.trim()}`,
     formatRules(template),
+    openingRule(channel, template, references.length > 0 || !!template.exampleScript?.trim()),
     `Channel: ${channel.name} (${channel.category}). Language: ${channel.language === 'en' ? 'English' : channel.language}.`,
     channel.writingInstructions.trim() ? `Channel writing instructions:\n${channel.writingInstructions.trim()}` : '',
     channel.writingStyle.trim() ? `Writing style: ${channel.writingStyle.trim()}` : '',

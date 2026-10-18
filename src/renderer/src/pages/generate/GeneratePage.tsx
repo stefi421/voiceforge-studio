@@ -348,7 +348,7 @@ export function GeneratePage(): JSX.Element {
               </span>
               {formatStatus && allowsSupervised(formatStatus) && !allowsAuto(formatStatus) && (
                 <Button size="sm" variant="ghost" onClick={() => navigate('channels', { edit: channelId, tab: 'formats', format: templateId ?? undefined })}>
-                  Approve this format
+                  {formatStatus === 'not_configured' || formatStatus === 'references_imported' ? 'Verify with reference scripts' : 'Approve this format'}
                 </Button>
               )}
             </div>
@@ -431,6 +431,14 @@ export function GeneratePage(): JSX.Element {
                 <span className="tnum" title="Estimated from your pricing table and average script length">
                   ~{formatCost(liveEstimate.estimatedTotal)} est.
                 </span>
+                {(liveEstimate.estimatedSeconds ?? 0) > 0 && (
+                  <>
+                    <span className="muted">·</span>
+                    <span className="tnum" title="Wall-clock estimate with your concurrency settings; improves as the app learns real stage times">
+                      {batchTime(liveEstimate.estimatedSeconds)}
+                    </span>
+                  </>
+                )}
                 {mode !== 'scripts_only' && (
                   <>
                     <span className="muted">·</span>
@@ -546,6 +554,7 @@ export function GeneratePage(): JSX.Element {
                 <span className="stat-value" style={{ fontSize: 20 }}>
                   {formatCost(estimate.estimatedTotal)}
                 </span>
+                {(estimate.estimatedSeconds ?? 0) > 0 && <span className="stat-sub">{batchTime(estimate.estimatedSeconds)}</span>}
               </div>
             </div>
             <div className="xs subtle">Estimates from your pricing table and average script length. ElevenLabs characters come out of your subscription; OpenAI is billed per token.</div>
@@ -564,4 +573,12 @@ export function GeneratePage(): JSX.Element {
       </Dialog>
     </div>
   )
+}
+
+/** "~4 min for this batch" (rounded up, never "0 min"). */
+function batchTime(seconds: number | undefined): string {
+  const s = Math.max(0, seconds ?? 0)
+  if (s < 90) return `~${Math.max(1, Math.round(s / 10) * 10)} s for this batch`
+  const m = Math.ceil(s / 60)
+  return m < 90 ? `~${m} min for this batch` : `~${(m / 60).toFixed(1)} h for this batch`
 }

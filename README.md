@@ -9,16 +9,18 @@ Select channel → paste titles → Generate All → open the channel folder
 ```
 
 ```
-VoiceForge Studio/
+VoiceForge Studio/            ← only finished files, written when a title completes
   Game Vault/
     Emberward/
       Script.txt
       Voice.mp3
-      Research.json
-      project.json
   PlayTopia/
   …
 ```
+
+Optional flat layout (Settings → Storage): `Game Vault/Emberward.txt` + `Game Vault/Emberward.mp3`.
+Drafts, research, `project.json` and `Narration.txt` stay in app data
+(`%APPDATA%\VoiceForge Studio\projects\<id>\`). See `CHANGELOG.md` for what changed per version.
 
 ## Highlights
 
@@ -55,7 +57,7 @@ VoiceForge Studio/
 | Area | Status |
 |---|---|
 | Core pipeline, queue, libraries, settings, backups | Implemented, covered by 55 automated tests (mocked APIs) + a headless Electron smoke test over all 10 pages |
-| Windows installer + portable exe | Built with electron-builder on Linux + wine (`release/VoiceForge-Studio-Setup-1.2.0-x64.exe`, `release/VoiceForge-Studio-Portable-1.2.0-x64.exe`, checksums in `release/SHA256SUMS.txt`) — unsigned, not yet launched on a Windows machine |
+| Windows installer + portable exe | Built with electron-builder on Linux + wine (`release/VoiceForge-Studio-Setup-1.3.0-x64.exe`, `release/VoiceForge-Studio-Portable-1.3.0-x64.exe`, checksums in `release/SHA256SUMS.txt`) — unsigned, not yet launched on a Windows machine |
 | Live OpenAI / ElevenLabs calls | **Awaiting live verification** — no credentials were available during development; see `docs/E2E_MANUAL_TEST.md` |
 | PlayTopia / VoidPulse / RENVO templates | **Placeholders** — generation is blocked until you paste the approved templates |
 | Multi-PC cloud sync | **Not implemented** — architecture only (`docs/SYNC_ARCHITECTURE.md`) |

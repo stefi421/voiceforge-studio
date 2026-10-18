@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type { Channel, Job, ResearchData, ResearchResult, ResearchSource, Script, TemplateVersion, ValidationIssue, ValidationReport } from '@shared/types'
 import type { Services } from '../services/container'
-import { ProjectService } from '../services/projects'
+import { moveInto, ProjectService } from '../services/projects'
 import { atomicWriteFile, describeFsError, sha256Buffer } from '../services/files'
 import type { ScopedLogger } from '../services/logger'
 import { AppError, toAppError } from '../util/errors'
@@ -17,7 +17,8 @@ import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenla
 import { StyleService } from '../services/style'
 import { buildNarrationText } from './style'
 
-const RESEARCH_CACHE_MS = 7 * 24 * 60 * 60 * 1000
+/** Research is reused across channels (same category) for 30 days — facts don't change per channel. */
+const RESEARCH_CACHE_MS = 30 * 24 * 60 * 60 * 1000
 const LEASE_MS = 120_000
 
 export interface StageContext {
@@ -195,7 +196,7 @@ export class Pipeline {
       return 'continue'
     }
 
-    // Cache: identical title + category + mode within 7 days, unless the user added notes.
+    // Cache: identical title + category + mode within 30 days, unless the user added notes.
     const cacheKey = `${channel.category}:${research.mode}:${normalizeTitle(job.title)}`
     if (!job.manualResearchNotes?.trim()) {
       const cached = this.s.research.cacheGet(cacheKey, RESEARCH_CACHE_MS)
@@ -229,7 +230,10 @@ export class Pipeline {
     this.recordOpenAIUsage(job, 'research', result.model, result.usage)
     const data = result.data
     const candidates = data.ambiguityCandidates ?? []
-    const ambiguous = research.askOnAmbiguity && candidates.length > 1 && data.confidence < 0.85
+    // Don't stop for a choice when the typed title IS the top candidate and research is confident enough.
+    const typedMatchesTop = candidates.length > 0 && normalizeTitle(candidates[0]!.title) === normalizeTitle(job.title)
+    const exactAndConfident = typedMatchesTop && data.confidence >= research.minConfidence
+    const ambiguous = research.askOnAmbiguity && candidates.length > 1 && data.confidence < 0.85 && !exactAndConfident
     const insufficient = !!data.insufficientReason?.trim() || data.confidence < research.minConfidence
     const status: ResearchResult['status'] = ambiguous ? 'ambiguous' : insufficient ? 'insufficient' : 'confirmed'
     const row = this.s.research.create({ jobId: job.id, projectId: job.projectId, status, data, sources: result.sources, model: result.model, mode: research.mode })
@@ -262,13 +266,6 @@ export class Pipeline {
       })
     }
     const tv = r.version
-    if (tv.placeholder || tv.approvalStatus === 'not_configured' || tv.approvalStatus === 'references_imported') {
-      throw new AppError('config', `The format "${channel.name} › ${r.template.name}" is not configured yet (no approved template). Generation is blocked rather than using a generic format.`, {
-        action: 'Open Channels → this channel → Formats, import 3–5 approved scripts, analyse them and approve the extracted template.',
-        retryable: false,
-        code: 'FORMAT_NOT_CONFIGURED'
-      })
-    }
     if (job?.mode === 'auto' && !['approved', 'test_passed'].includes(tv.approvalStatus)) {
       throw new AppError('config', `The format "${channel.name} › ${r.template.name}" is not approved for Fully automatic mode.`, {
         action: 'Retry in Review before voice mode, or approve the format in Channels → Formats.',
@@ -312,29 +309,48 @@ export class Pipeline {
     this.s.jobs.update(job.id, { scriptAttempts: job.scriptAttempts + 1 })
 
     const tolerance = settings.generation.lengthToleranceChars
-    const callWriter = async (opts: { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }, kind: string) => {
+    // Speed: cap output tokens to what the script needs (≈3.5 chars/token, ×2 headroom, + a small
+    // reasoning budget). If the model still runs out, the call is retried once with the full limit.
+    const tokenCap = Math.min(settings.openai.maxOutputTokens, Math.max(2500, Math.ceil(((channel.maxChars || 5000) * 2) / 3.5) + 1500))
+    let maxOutputTokens = tokenCap
+    type WriterOpts = { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }
+    const writeOnce = (opts: WriterOpts, tokens: number) =>
+      this.s.providers.openai().writeScript({
+        channel,
+        template,
+        title: job.title,
+        research: researchData,
+        researchSources,
+        model,
+        temperature: settings.openai.temperature,
+        maxOutputTokens: tokens,
+        reasoningEffort: settings.openai.reasoningEffort,
+        previousScript: opts.previousScript,
+        issues: opts.issues,
+        feedback: opts.feedback,
+        tighten: opts.tighten,
+        references,
+        // Same stable prefix for every title of this format → provider-side prompt caching.
+        promptCacheKey: `vf:${template.id}`,
+        signal: ctx.signal
+      })
+    const callWriter = async (opts: WriterOpts, kind: string) => {
       const release = await this.openaiSem.acquire(ctx.signal)
       let out
       try {
         out = await withRetry(
-          () =>
-            this.s.providers.openai().writeScript({
-              channel,
-              template,
-              title: job.title,
-              research: researchData,
-              researchSources,
-              model,
-              temperature: settings.openai.temperature,
-              maxOutputTokens: settings.openai.maxOutputTokens,
-              reasoningEffort: settings.openai.reasoningEffort,
-              previousScript: opts.previousScript,
-              issues: opts.issues,
-              feedback: opts.feedback,
-              tighten: opts.tighten,
-              references,
-              signal: ctx.signal
-            }),
+          async () => {
+            try {
+              return await writeOnce(opts, maxOutputTokens)
+            } catch (err) {
+              const e = toAppError(err)
+              if (e.code === 'MAX_OUTPUT_TOKENS' && maxOutputTokens < settings.openai.maxOutputTokens) {
+                maxOutputTokens = settings.openai.maxOutputTokens
+                return await writeOnce(opts, maxOutputTokens)
+              }
+              throw e
+            }
+          },
           {
             maxRetries: settings.openai.maxRetries,
             signal: ctx.signal,
@@ -365,7 +381,8 @@ export class Pipeline {
         strictLength: !finalVerdict
       })
       let aiIssues: ValidationIssue[] = []
-      if (report.ok && channel.validation.aiReviewPass && strictness !== 'relaxed') {
+      // The extra fact-check request is opt-in (Settings → Generation) since 1.3.0: it roughly doubles script time.
+      if (report.ok && settings.generation.aiReviewPass && channel.validation.aiReviewPass && strictness !== 'relaxed') {
         try {
           const r2 = await this.openaiSem.acquire(ctx.signal)
           let review
@@ -470,7 +487,8 @@ export class Pipeline {
     const text = rawText.replace(/\r\n/g, '\n').trim()
     const project = this.s.projects.get(job.projectId)
     if (!project) throw new AppError('config', 'Project missing for job.', { retryable: false })
-    const dir = this.projectsSvc.ensureFolder(project)
+    // Drafts live in app data; only the finished script is published to the output folder (runSave).
+    const dir = this.projectsSvc.workDir(project)
     const script = this.s.scripts.create({
       projectId: job.projectId,
       jobId: job.id,
@@ -510,7 +528,7 @@ export class Pipeline {
     const template = base?.templateVersionId ? this.s.channels.getVersion(base.templateVersionId) ?? null : this.style.resolve(channel)?.version ?? null
     const gen = this.s.settings.get().generation
     const report = validateScript(text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
-    const dir = this.projectsSvc.ensureFolder(project)
+    const dir = this.projectsSvc.workDir(project)
     const script = this.s.scripts.create({
       projectId,
       jobId: base?.jobId ?? null,
@@ -614,7 +632,8 @@ export class Pipeline {
     const voiceSettings = voiceSettingsForModel(modelId, baseVoiceSettings, live ? { modelId, name: '', description: '', canDoTextToSpeech: true, canUseStyle: live.canUseStyle, canUseSpeakerBoost: live.canUseSpeakerBoost, maxCharacters: live.maxCharacters, languages: [] } : null)
 
     const project = this.s.projects.get(job.projectId)!
-    const dir = this.projectsSvc.ensureFolder(project)
+    // Audio is generated in app data and moved into the output folder when the job completes.
+    const dir = this.projectsSvc.workDir(project)
     const version = this.s.audio.nextVersion(job.projectId)
     let finalPath = path.join(dir, this.projectsSvc.audioFileName(version, outputFormat))
     if (fs.existsSync(finalPath)) finalPath = path.join(dir, `Voice_v${version}_${Date.now()}.${path.extname(finalPath).slice(1)}`)
@@ -639,11 +658,15 @@ export class Pipeline {
     this.log.info('Generating audio', { jobId: job.id, chunks: chunks.length, chars: narration.length, model: modelId })
 
     const buffers: Buffer[] = []
+    // Part files only matter for multi-chunk scripts (resume after a crash mid-way); a single
+    // request is written once, directly as the final file.
+    const multi = chunks.length > 1
+    let singleInfo: ReturnType<typeof parseMp3> | null = null
     for (const chunk of chunks) {
       this.throwIfAborted(ctx.signal)
       const partPath = `${finalPath}.chunk${chunk.index}.part`
       // Recovery within a job: reuse a chunk that was fully written before an interruption.
-      if (fs.existsSync(partPath)) {
+      if (multi && fs.existsSync(partPath)) {
         const buf = await fsp.readFile(partPath)
         if (buf.length > 0 && (!isMp3Format(outputFormat) || parseMp3(buf).valid)) {
           buffers.push(buf)
@@ -683,20 +706,24 @@ export class Pipeline {
       if (isMp3Format(outputFormat)) {
         const info = parseMp3(res.audio)
         if (!info.valid) throw new AppError('provider_down', 'ElevenLabs returned data that is not a valid MP3 stream.', { details: `frames=${info.frames}`, retryable: true })
+        if (!multi) singleInfo = info
       }
-      await atomicWriteFile(partPath, res.audio)
+      if (multi) await atomicWriteFile(partPath, res.audio)
       buffers.push(res.audio)
     }
 
-    const combined = isMp3Format(outputFormat) ? concatMp3(buffers) : Buffer.concat(buffers)
-    const durationSec = isMp3Format(outputFormat) ? parseMp3(combined).durationSec : pcmDuration(combined.length, outputFormat)
+    const combined = multi ? (isMp3Format(outputFormat) ? concatMp3(buffers) : Buffer.concat(buffers)) : buffers[0]!
+    let durationSec: number | null | undefined
     if (isMp3Format(outputFormat)) {
-      const info = parseMp3(combined)
+      const info = singleInfo ?? parseMp3(combined)
       if (!info.valid) throw new AppError('unknown', 'The combined MP3 failed verification.', { retryable: true })
+      durationSec = info.durationSec
       const expectedMin = narration.length / 25 // ~25 chars/sec is a very fast speaking rate; anything shorter means missing speech
       if (info.durationSec < expectedMin * 0.5) {
         throw new AppError('provider_down', `The generated audio is suspiciously short (${info.durationSec.toFixed(1)}s for ${narration.length} characters).`, { retryable: true })
       }
+    } else {
+      durationSec = pcmDuration(combined.length, outputFormat)
     }
     try {
       await atomicWriteFile(finalPath, combined)
@@ -735,24 +762,56 @@ export class Pipeline {
   private async runSave(job: Job, channel: Channel): Promise<StageOutcome> {
     this.setStatus(job.id, 'saving_files')
     const project = this.s.projects.get(job.projectId)!
-    const dir = this.projectsSvc.ensureFolder(project)
+    const work = this.projectsSvc.workDir(project)
     const script = job.scriptId ? this.s.scripts.get(job.scriptId) : undefined
-    const audio = job.audioId ? this.s.audio.get(job.audioId) : undefined
+    let audio = job.audioId ? this.s.audio.get(job.audioId) : undefined
     const research = job.researchId ? this.s.research.get(job.researchId) : undefined
+    if (audio && audio.status !== 'ready') throw new AppError('unknown', 'Audio is not marked ready.', { retryable: false })
+    const publishDir = this.projectsSvc.publishDir(project)
+    let publishedScript: string | null = null
+    let publishedAudio: string | null = null
     try {
-      if (script && (!script.filePath || !fs.existsSync(script.filePath))) {
-        const file = path.join(dir, this.projectsSvc.scriptFileName(script.version))
-        await atomicWriteFile(file, script.text + '\n')
-        this.s.scripts.update(script.id, { filePath: file })
-      }
-      if (script) await atomicWriteFile(path.join(dir, 'Narration.txt'), (script.narrationText || script.text) + '\n')
+      // 1) Metadata stays in app data — the output folder only gets the files you send on.
+      if (script) await atomicWriteFile(path.join(work, 'Narration.txt'), (script.narrationText || script.text) + '\n')
       if (research) {
-        await atomicWriteFile(path.join(dir, 'Research.json'), JSON.stringify({ status: research.status, mode: research.mode, model: research.model, data: research.data, sources: research.sources, createdAt: research.createdAt }, null, 2))
+        await atomicWriteFile(path.join(work, 'Research.json'), JSON.stringify({ status: research.status, mode: research.mode, model: research.model, data: research.data, sources: research.sources, createdAt: research.createdAt }, null, 2))
       }
+
+      // 2) Publish the script (replaces the previous Script.txt of this project).
+      if (script) {
+        publishedScript = path.join(publishDir, this.projectsSvc.publishedScriptName(project))
+        const tmp = path.join(work, `publish_${script.id}.txt`)
+        await atomicWriteFile(tmp, script.text + '\n')
+        await moveInto(tmp, publishedScript)
+        this.s.scripts.update(script.id, { filePath: publishedScript })
+      }
+
+      // 3) Publish the audio. Never overwrites a different existing file; a crash between the move
+      //    and the DB update is recovered by adopting the already-moved file.
+      if (audio) {
+        const wanted = path.join(publishDir, this.projectsSvc.publishedAudioName(project, audio.version, audio.outputFormat))
+        const alreadyPublished = path.resolve(audio.filePath) === path.resolve(wanted) || this.projectsSvc.isPublishedFile(project, audio.filePath)
+        if (alreadyPublished && fs.existsSync(audio.filePath)) {
+          publishedAudio = audio.filePath
+        } else if (fs.existsSync(audio.filePath)) {
+          let dest = wanted
+          if (fs.existsSync(dest)) dest = dest.replace(/(\.[a-z0-9]+)$/i, `_${Date.now()}$1`)
+          await moveInto(audio.filePath, dest)
+          publishedAudio = dest
+          audio = this.s.audio.update(audio.id, { filePath: dest })
+        } else if (fs.existsSync(wanted) && audio.sha256 && sha256Buffer(await fsp.readFile(wanted)) === audio.sha256) {
+          publishedAudio = wanted
+          audio = this.s.audio.update(audio.id, { filePath: wanted })
+        } else {
+          throw new AppError('filesystem', 'The voiceover file disappeared before the job could complete.', { action: 'Retry the job; the audio will be regenerated.', retryable: false })
+        }
+      }
+
       const meta = {
         app: 'VoiceForge Studio',
         projectId: project.id,
         title: project.title,
+        layout: project.layout,
         channel: { id: channel.id, name: channel.name },
         job: { id: job.id, mode: job.mode, completedAt: nowIso() },
         script: script
@@ -770,23 +829,21 @@ export class Pipeline {
               approvedWithIssues: script.approvedWithIssues,
               chars: script.charCount,
               words: script.wordCount,
-              file: script.filePath ? path.basename(script.filePath) : null,
-              narrationFile: 'Narration.txt'
+              file: publishedScript,
+              narrationFile: path.join(work, 'Narration.txt')
             }
           : null,
-        audio: audio ? { id: audio.id, version: audio.version, voiceId: audio.voiceId, voiceName: audio.voiceName, modelId: audio.modelId, outputFormat: audio.outputFormat, durationSec: audio.durationSec, sha256: audio.sha256, file: path.basename(audio.filePath) } : null
+        audio: audio ? { id: audio.id, version: audio.version, voiceId: audio.voiceId, voiceName: audio.voiceName, modelId: audio.modelId, outputFormat: audio.outputFormat, durationSec: audio.durationSec, sha256: audio.sha256, file: publishedAudio } : null
       }
-      await atomicWriteFile(path.join(dir, 'project.json'), JSON.stringify(meta, null, 2))
+      await atomicWriteFile(path.join(work, 'project.json'), JSON.stringify(meta, null, 2))
     } catch (err) {
-      const d = describeFsError(err, 'saving project files')
+      if (err instanceof AppError) throw err
+      const d = describeFsError(err, 'saving the finished files')
       throw new AppError('filesystem', d.message, { action: d.action, retryable: true })
     }
-    if (audio && !fs.existsSync(audio.filePath)) {
-      throw new AppError('filesystem', 'The voiceover file disappeared before the job could complete.', { action: 'Retry the job; the audio will be regenerated.', retryable: false })
-    }
-    if (audio && audio.status !== 'ready') throw new AppError('unknown', 'Audio is not marked ready.', { retryable: false })
+    if (this.s.projects.get(project.id)?.folderPath !== publishDir) this.s.projects.update(project.id, { folderPath: publishDir })
     this.s.jobs.update(job.id, { stage: 'done', lastError: null })
-    this.setStatus(job.id, 'completed', { stage: 'done', event: 'completed', detail: audio ? path.basename(audio.filePath) : script ? path.basename(script.filePath ?? 'Script.txt') : null })
+    this.setStatus(job.id, 'completed', { stage: 'done', event: 'completed', detail: publishedAudio ? path.basename(publishedAudio) : publishedScript ? path.basename(publishedScript) : null })
     this.s.projects.touch(project.id)
     return 'done'
   }

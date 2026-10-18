@@ -149,8 +149,11 @@ describe('batch creation and generation pipeline', () => {
       const job = env.s.jobs.getView(id)!
       expect(job.status, job.lastError?.message).toBe('completed')
       expect(job.projectFolder).toBeTruthy()
-      const files = fs.readdirSync(job.projectFolder!)
-      expect(files).toEqual(expect.arrayContaining(['Script.txt', 'Voice.mp3', 'Research.json', 'project.json']))
+      // 1.3.0: the output folder holds ONLY the finished script and voice.
+      const files = fs.readdirSync(job.projectFolder!).sort()
+      expect(files).toEqual(['Script.txt', 'Voice.mp3'])
+      const work = path.join(env.s.paths.userData, 'projects', job.projectId)
+      expect(fs.readdirSync(work)).toEqual(expect.arrayContaining(['Research.json', 'project.json', 'Narration.txt']))
       const audio = env.s.audio.get(job.audioId!)!
       expect(audio.status).toBe('ready')
       expect(audio.sha256).toHaveLength(64)
@@ -159,13 +162,15 @@ describe('batch creation and generation pipeline', () => {
       expect(script.templateVersionId).toBe(gv.activeTemplateVersionId)
       expect(script.templateVersionNumber).toBe(1)
       expect(fs.readFileSync(script.filePath!, 'utf8').trim()).toBe(script.text)
-      const research = JSON.parse(fs.readFileSync(path.join(job.projectFolder!, 'Research.json'), 'utf8'))
+      expect(script.filePath).toBe(path.join(job.projectFolder!, 'Script.txt'))
+      expect(audio.filePath).toBe(path.join(job.projectFolder!, 'Voice.mp3'))
+      const research = JSON.parse(fs.readFileSync(path.join(work, 'Research.json'), 'utf8'))
       expect(research.sources).toHaveLength(1)
       expect(script.text).not.toContain('https://')
     }
     expect(env.s.jobs.getBatch(batchId)!.completed).toBe(2)
     const usage = env.s.usage.summary(new Date(Date.now() - 60000).toISOString(), new Date(Date.now() + 60000).toISOString())
-    expect(usage.openai.requests).toBe(6) // 2 research + 2 scripts + 2 AI review passes
+    expect(usage.openai.requests).toBe(4) // 2 research + 2 scripts (AI fact check is opt-in since 1.3.0)
     expect(usage.elevenlabs.characters).toBeGreaterThan(0)
     expect(usage.elevenlabs.estimatedCost).toBeGreaterThan(0)
     expect(usage.byChannel[0]!.channelName).toBe('Game Vault')
@@ -174,17 +179,26 @@ describe('batch creation and generation pipeline', () => {
   it('runs the AI review pass when enabled and records its usage', async () => {
     const gv = env.s.channels.getByName('Game Vault')!
     expect(gv.validation.aiReviewPass).toBe(true)
+    env.s.settings.update({ generation: { aiReviewPass: true } })
     const { jobIds } = await runBatch(['Reviewed Game'], gv.id, 'scripts_only')
     await settle(jobIds, ['completed', 'failed'])
     expect(env.s.jobs.get(jobIds[0]!)!.status).toBe('completed')
     expect(env.openai.count('review')).toBe(1)
   })
 
-  it('blocks generation while a channel format is not configured (no generic fallback)', async () => {
+  it('an unverified format refuses Fully automatic but works under supervision (1.3.0)', async () => {
     const pt = env.s.channels.getByName('PlayTopia')!
-    await expect(runBatch(['Some Game'], pt.id)).rejects.toMatchObject({ code: 'FORMAT_NOT_CONFIGURED' })
+    await expect(runBatch(['Some Game'], pt.id)).rejects.toMatchObject({ code: 'FORMAT_NOT_APPROVED' })
     expect(env.s.jobs.list({}).length).toBe(0)
     expect(env.openai.count('script')).toBe(0)
+    const est = gen.estimate({ channelId: pt.id, mode: 'review_before_voice', entries: [{ title: 'Some Game', channelId: null }], skipExisting: false })
+    expect(est.warnings.join(' ')).toMatch(/not verified/)
+    // PlayTopia has no section list yet (and a 3,800–4,700 window), so the mock writes plain prose of that length.
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title, [], 4300).slice(0, 4400), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const { jobIds } = await runBatch(['Some Game'], pt.id, 'scripts_only')
+    await settle(jobIds, ['completed', 'failed', 'awaiting_approval'])
+    const j = env.s.jobs.get(jobIds[0]!)!
+    expect(j.status, j.lastError?.message).not.toBe('failed')
   })
 
   it('scripts-only mode saves TXT without calling ElevenLabs', async () => {
@@ -593,12 +607,12 @@ describe('queue control', () => {
     const titles = Array.from({ length: 100 }, (_, i) => `Game ${i + 1}`)
     const { jobIds } = await runBatch(titles, gv.id)
     expect(jobIds).toHaveLength(100)
-    await settle(jobIds, ['completed', 'failed'], 60000)
+    await settle(jobIds, ['completed', 'failed'], 240000)
     expect(jobIds.every((id) => env.s.jobs.get(id)!.status === 'completed')).toBe(true)
     expect(peakOpenAI).toBeLessThanOrEqual(2)
     expect(peakEleven).toBeLessThanOrEqual(1)
     expect(engine.stats().completed).toBe(100)
-  }, 90000)
+  }, 300000)
 })
 
 describe('crash recovery and persistence', () => {

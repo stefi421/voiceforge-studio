@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxOutputTokens: 8000,
     timeoutMs: 240000,
     maxRetries: 2,
-    concurrency: 2,
+    concurrency: 4,
     reasoningEffort: 'low'
   },
   elevenlabs: {
@@ -73,16 +73,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
     defaultOutputFormat: 'mp3_44100_128',
     timeoutMs: 300000,
     maxRetries: 2,
-    concurrency: 1,
+    concurrency: 3,
     maxCharsPerRequest: 0
   },
   generation: {
     defaultMode: 'auto',
-    maxConcurrentJobs: 2,
+    maxConcurrentJobs: 6,
     maxRewriteAttempts: 2,
     maxStageRetries: 3,
     validationStrictness: 'standard',
     lengthToleranceChars: 150,
+    aiReviewPass: false,
     duplicateDetection: true,
     largeBatchWarningThreshold: 20,
     confirmExpensiveRegeneration: true
@@ -93,6 +94,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     pricing: DEFAULT_PRICING
   },
   storage: {
+    outputLayout: 'folders',
     backupDir: null,
     autoBackupEveryHours: 24,
     keepBackups: 10,
@@ -127,7 +129,7 @@ export const DEFAULT_RESEARCH: ResearchSettings = {
   enabled: true,
   mode: 'openai_web_search',
   minConfidence: 0.6,
-  searchContextSize: 'medium',
+  searchContextSize: 'low',
   askOnAmbiguity: true,
   extraInstructions: ''
 }
@@ -142,7 +144,8 @@ export const DEFAULT_VALIDATION: ValidationRules = {
   wordsPerMinute: 150,
   language: 'en',
   forbiddenPhrases: [],
-  narrateSectionHeadings: true
+  narrateSectionHeadings: true,
+  openWithChannelIntro: true
 }
 
 export const JOB_STATUS_LABELS: Record<string, string> = {

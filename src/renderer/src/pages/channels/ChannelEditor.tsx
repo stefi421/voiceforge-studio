@@ -210,7 +210,7 @@ export function ChannelEditor({ channelId, initialTab, initialFormat, onClose }:
       {errors._form && <Alert tone="danger">{errors._form}</Alert>}
       <Card padded>
         {tab === 'identity' && <IdentityTab form={form} patch={patch} errors={errors} />}
-        {tab === 'writing' && <WritingTab form={form} patch={patch} errors={errors} />}
+        {tab === 'writing' && <WritingTab form={form} patch={patch} errors={errors} channelId={createdId} />}
         {tab === 'voice' && <VoiceTab form={form} patch={patch} errors={errors} />}
         {tab === 'research' && <ResearchTab form={form} patch={patch} errors={errors} />}
         {tab === 'validation' && <ValidationTab form={form} patch={patch} errors={errors} />}

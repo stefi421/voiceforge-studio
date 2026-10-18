@@ -56,6 +56,8 @@ export interface ScriptRequest {
   tighten?: { cut: number; target: number; max: number }
   /** Approved reference scripts for the format (most recent first, already truncated). */
   references?: Array<Pick<ReferenceScript, 'title' | 'text'>>
+  /** Provider prompt-cache key; identical for every title of one format version. */
+  promptCacheKey?: string
   signal?: AbortSignal
 }
 

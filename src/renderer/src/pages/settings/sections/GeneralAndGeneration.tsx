@@ -111,11 +111,31 @@ export function GenerationSection(): JSX.Element {
         </div>
       </div>
       <div className="settings-group">
-        <div className="settings-group-title">Concurrency & retries</div>
+        <div className="settings-group-title">Speed</div>
+        <div className="small muted" style={{ marginBottom: 'var(--sp-3)' }}>
+          Titles run side by side: while one voiceover is being generated, the next titles are already being researched and written.
+        </div>
         <div className="form-grid">
-          <Field label="Max concurrent jobs" hint="Jobs processed in parallel. Provider concurrency limits still apply.">
+          <Field label="Titles at the same time" hint="How many titles are in progress at once.">
             <DeferredNumber value={g.maxConcurrentJobs} onCommit={(v) => void set('generation', 'maxConcurrentJobs', v ?? 1)} min={1} max={20} />
           </Field>
+          <Field label="OpenAI requests at once" hint="Research and script writing in parallel.">
+            <DeferredNumber value={settings.openai.concurrency} onCommit={(v) => void set('openai', 'concurrency', v ?? 1)} min={1} max={10} />
+          </Field>
+          <Field label="Voiceovers at once" hint="Parallel ElevenLabs requests. Lower it if ElevenLabs reports too many requests.">
+            <DeferredNumber value={settings.elevenlabs.concurrency} onCommit={(v) => void set('elevenlabs', 'concurrency', v ?? 1)} min={1} max={10} />
+          </Field>
+        </div>
+        <Switch
+          checked={g.aiReviewPass}
+          onChange={(v) => void set('generation', 'aiReviewPass', v)}
+          label="AI fact check"
+          description="Slower: an extra OpenAI request per script compares it with the research and flags unsupported claims. Rules like length, sections and fixed text are always checked."
+        />
+      </div>
+      <div className="settings-group">
+        <div className="settings-group-title">Retries</div>
+        <div className="form-grid">
           <Field label="Max rewrite attempts" hint="Automatic rewrites when validation fails (channel setting overrides).">
             <DeferredNumber value={g.maxRewriteAttempts} onCommit={(v) => void set('generation', 'maxRewriteAttempts', v ?? 0)} min={0} max={10} />
           </Field>

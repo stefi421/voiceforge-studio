@@ -332,6 +332,10 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
   })
   reg.handle('style:analyze', z.object({ templateId: idSchema, instructions: z.string().max(20000).optional() }), ({ templateId, instructions }) => style.analyze(templateId, instructions ?? ''))
   reg.handle('style:lastAnalysis', z.object({ templateId: idSchema }), ({ templateId }) => s.channels.lastAnalysis(templateId))
+  reg.handle('channels:getOpening', z.object({ channelId: idSchema }), ({ channelId }) => style.getOpening(channelId))
+  reg.handle('channels:setOpening', z.object({ channelId: idSchema, intro: z.string().max(4000), outro: z.string().max(4000), openWithChannelIntro: z.boolean() }), (o) =>
+    style.setOpening(o.channelId, o)
+  )
   reg.handle('templates:setApproval', z.object({ versionId: idSchema, status: approvalStatusSchema }), ({ versionId, status }) => style.setApproval(versionId, status))
   reg.handle('templates:setDefault', z.object({ channelId: idSchema, templateId: idSchema }), ({ channelId, templateId }) => {
     const t = s.channels.getTemplate(templateId)
@@ -522,8 +526,15 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
   reg.handle('projects:export', z.object({ id: idSchema, destinationDir: pathSchema }), async ({ id, destinationDir }) => {
     const p = s.projects.get(id)
     if (!p) throw new AppError('config', 'Project not found.', { retryable: false })
-    const src = projectsSvc.ensureFolder(p)
     const dest = path.join(destinationDir, p.folderName)
+    if (p.layout === 'flat') {
+      // Flat layout shares the channel folder: export only this project's finished files.
+      await fsp.mkdir(dest, { recursive: true })
+      const files = [...s.scripts.versions(id).map((x) => x.filePath), ...s.audio.versions(id).map((a) => a.filePath)].filter((f): f is string => !!f && projectsSvc.isPublishedFile(p, f) && fs.existsSync(f))
+      for (const f of new Set(files)) await fsp.copyFile(f, path.join(dest, path.basename(f)))
+      return { path: dest }
+    }
+    const src = projectsSvc.ensureFolder(p)
     await fsp.cp(src, dest, { recursive: true, force: false, errorOnExist: false })
     return { path: dest }
   })
@@ -531,8 +542,19 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     const p = s.projects.get(id)
     if (!p) throw new AppError('config', 'Project not found.', { retryable: false })
     const dir = projectsSvc.folderFor(p)
+    const published = [...s.scripts.versions(id).map((x) => x.filePath), ...s.audio.versions(id).map((a) => a.filePath)].filter((f): f is string => !!f && projectsSvc.isPublishedFile(p, f))
+    const work = path.join(s.paths.userData, 'projects', p.id)
     s.projects.delete(id)
-    if (deleteFiles && fs.existsSync(dir)) await fsp.rm(dir, { recursive: true, force: true })
+    // Drafts/metadata in app data always go with the project.
+    await fsp.rm(work, { recursive: true, force: true }).catch(() => undefined)
+    if (deleteFiles) {
+      if (p.layout === 'flat') {
+        // Never remove the shared channel folder — only this project's own files.
+        for (const f of new Set(published)) await fsp.unlink(f).catch(() => undefined)
+      } else if (fs.existsSync(dir)) {
+        await fsp.rm(dir, { recursive: true, force: true })
+      }
+    }
     return { ok: true as const }
   })
 

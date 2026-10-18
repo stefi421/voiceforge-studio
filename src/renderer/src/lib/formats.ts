@@ -67,9 +67,13 @@ export function allowsAuto(s: TemplateApprovalStatus): boolean {
   return s === 'approved' || s === 'test_passed'
 }
 
-/** Review-before-voice / scripts-only: approved formats plus provisional ones (with a warning). */
+/**
+ * Review-before-voice / scripts-only work for every format since 1.3.0: unverified ones follow
+ * the channel rules only and show a warning. Fully automatic still needs an approved format.
+ */
 export function allowsSupervised(s: TemplateApprovalStatus): boolean {
-  return allowsAuto(s) || s === 'provisional'
+  void s
+  return true
 }
 
 export function allowsMode(s: TemplateApprovalStatus, mode: JobMode): boolean {

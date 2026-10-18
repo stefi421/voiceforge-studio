@@ -313,5 +313,14 @@ CREATE TABLE IF NOT EXISTS style_tests (
 );
 CREATE INDEX IF NOT EXISTS idx_style_tests_template ON style_tests(template_id, created_at);
 `
+  },
+  {
+    id: 4,
+    name: 'clean_output_layout',
+    // 1.3.0: only finished Script/Voice files are published to the output folder; the layout
+    // is fixed per project. Existing projects keep their files where they are ("folders").
+    sql: `
+ALTER TABLE projects ADD COLUMN layout TEXT NOT NULL DEFAULT 'folders';
+`
   }
 ]

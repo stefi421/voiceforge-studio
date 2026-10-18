@@ -34,6 +34,7 @@ import type {
   StyleTestResult,
   TemplateApprovalStatus,
   FixedTextBlock,
+  ChannelOpening,
   UsageSummary,
   ValidationReport
 } from './types'
@@ -117,6 +118,10 @@ export interface IpcContract {
   'style:analyze': { req: { templateId: string; instructions?: string }; res: StyleAnalysis }
   'style:lastAnalysis': { req: { templateId: string }; res: StyleAnalysis | null }
   /** Approve/reject/lock: sets the status of a version (user action only). */
+  /** Fast path: the default format's locked intro/outro + the "short channel introduction" toggle. */
+  'channels:getOpening': { req: { channelId: string }; res: ChannelOpening }
+  /** Saves intro/outro as locked spoken blocks in a NEW version of the default format (same status). */
+  'channels:setOpening': { req: { channelId: string; intro: string; outro: string; openWithChannelIntro: boolean }; res: ChannelOpening }
   'templates:setApproval': { req: { versionId: string; status: TemplateApprovalStatus }; res: TemplateVersion }
   /** Makes a format the channel's default (used when a batch does not pick one). */
   'templates:setDefault': { req: { channelId: string; templateId: string }; res: Channel }

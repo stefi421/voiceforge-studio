@@ -60,8 +60,13 @@ export interface ValidationRules {
   forbidMarkdown: boolean
   /** Require every required section to appear in the declared order. */
   enforceSectionOrder: boolean
-  /** Run an additional AI review pass for unsupported claims. */
+  /** Run an additional AI review pass for unsupported claims (only when Settings → Generation → AI fact check is on). */
   aiReviewPass: boolean
+  /**
+   * When the format has no locked intro, the writer opens with a short spoken introduction that
+   * names the channel and the title (variable wording). Off = no opening instruction at all.
+   */
+  openWithChannelIntro: boolean
   /** Maximum automatic rewrite attempts when validation fails. */
   maxRewriteAttempts: number
   /** Words per minute used for duration estimates. */
@@ -406,6 +411,8 @@ export interface Batch {
   failed: number
 }
 
+export type OutputLayout = 'folders' | 'flat'
+
 export interface Project {
   id: string
   channelId: string
@@ -415,6 +422,8 @@ export interface Project {
   canonicalTitle: string | null
   folderName: string
   folderPath: string | null
+  /** Layout the project's finished files are published with (fixed when the project is created). */
+  layout: OutputLayout
   archived: boolean
   createdAt: string
   updatedAt: string
@@ -677,7 +686,19 @@ export interface BatchEstimate {
   estimatedElevenCost: number
   estimatedTotal: number
   estimatedCharacters: number
+  /** Rough wall-clock time for the whole batch with the current concurrency settings. */
+  estimatedSeconds: number
   warnings: string[]
+}
+
+/** Quick per-channel opening settings (fast path to the default format's locked intro/outro). */
+export interface ChannelOpening {
+  channelId: string
+  templateId: string | null
+  versionId: string | null
+  intro: string
+  outro: string
+  openWithChannelIntro: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +749,8 @@ export interface AppSettings {
      * (relaxed/standard only; 'strict' never tolerates overshoot). 0 disables the tolerance.
      */
     lengthToleranceChars: number
+    /** Extra OpenAI fact-check request per script (slower). Off by default since 1.3.0. */
+    aiReviewPass: boolean
     duplicateDetection: boolean
     largeBatchWarningThreshold: number
     confirmExpensiveRegeneration: boolean
@@ -738,6 +761,12 @@ export interface AppSettings {
     pricing: PricingConfig
   }
   storage: {
+    /**
+     * `folders`: <Channel>/<Title>/Script.txt + Voice.mp3 (default).
+     * `flat`: <Channel>/<Title>.txt + <Title>.mp3 — handy for sending files on.
+     * Only finished files are placed in the output folder; drafts, research and metadata stay in app data.
+     */
+    outputLayout: OutputLayout
     backupDir: string | null
     autoBackupEveryHours: number
     keepBackups: number

@@ -1,4 +1,4 @@
-import type { ChannelInput, ScriptSection, TemplateApprovalStatus, TemplateVersionInput } from './types'
+import type { ChannelInput, FixedTextBlock, ScriptSection, TemplateApprovalStatus, TemplateVersionInput } from './types'
 import { DEFAULT_RESEARCH, DEFAULT_VALIDATION, DEFAULT_VOICE_SETTINGS } from './defaults'
 
 /**
@@ -14,7 +14,25 @@ import { DEFAULT_RESEARCH, DEFAULT_VALIDATION, DEFAULT_VOICE_SETTINGS } from './
  * channel description, explicitly labelled, and never reach a writer prompt.
  */
 
-export const SEED_MARKER = '[seed:v3]'
+/** Marks versions created from this file. Bumped when the seed changes (v4 = 1.3.0). */
+export const SEED_MARKER = '[seed:v4]'
+/** Any seed generation (v3 = 1.2.0, v4 = 1.3.0) — used to detect versions the owner never edited. */
+export const SEED_MARKER_RE = /\[seed:v\d+\]/
+
+/** Rules the owner stated directly in earlier work (user_confirmed), applied to every channel. */
+export const OWNER_GLOBAL_RULES = [
+  'All scripts in English.',
+  'No links inside scripts.',
+  'Acronyms in lowercase (usb-c, qmk, via, ghz).',
+  'The title is not part of the script text (it goes in front of the script, never inside it).'
+]
+
+/** The Game Vault opening the owner stated (restored in 1.3.0 — 1.2.0 dropped it by mistake). */
+export const GAME_VAULT_INTRO = 'Welcome back to Game Vault, where we mine the hidden gems and dive into the big releases—breaking down the mechanics that matter.'
+
+function lockedIntro(text: string): FixedTextBlock {
+  return { id: 'seed-intro', kind: 'intro', text, locked: true, provenance: 'user_confirmed', spoken: true, occurrences: 0 }
+}
 
 export interface SeedFormat {
   name: string
@@ -65,7 +83,7 @@ function prompt(name: string, identity: string[]): string {
   return [
     `You write YouTube voiceover scripts for the channel ${name}.`,
     ...identity,
-    'Preserve this channel\'s established format. Do not invent a fixed introduction, conclusion, call to action or section headings that are not stated below or shown by the approved reference scripts.'
+    'Preserve this channel\'s established format. Do not invent a word-for-word fixed introduction, conclusion, call to action or section headings that are not stated below or shown by the approved reference scripts.'
   ].join('\n')
 }
 
@@ -73,7 +91,7 @@ function format(
   name: string,
   contentType: string,
   status: TemplateApprovalStatus,
-  o: { systemPrompt: string; confirmed: string[]; unverified: string[]; structure?: ScriptSection[]; notes?: string }
+  o: { systemPrompt: string; confirmed: string[]; unverified: string[]; structure?: ScriptSection[]; notes?: string; fixedBlocks?: FixedTextBlock[] }
 ): SeedFormat {
   return {
     name,
@@ -85,9 +103,9 @@ function format(
       notes: `${SEED_MARKER} ${o.notes ?? 'Created from the channel configuration document. Import approved reference scripts to verify the format.'}`,
       placeholder: status === 'not_configured',
       approvalStatus: status,
-      fixedBlocks: [],
+      fixedBlocks: o.fixedBlocks ?? [],
       findings: [],
-      confirmedRules: o.confirmed.map((r) => `- ${r}`).join('\n'),
+      confirmedRules: [...o.confirmed, ...OWNER_GLOBAL_RULES.filter((g) => !o.confirmed.includes(g))].map((r) => `- ${r}`).join('\n'),
       unverified: o.unverified,
       headingsSpoken: false,
       referenceSetVersion: null
@@ -137,8 +155,8 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
       category: 'gaming',
       description: 'Gaming reviews. Gameplay → Combat / Combat & Exploration → Pros → Cons → Conclusion. About 4–5 minutes.',
       targetDurationSec: 270,
-      minChars: 3600,
-      maxChars: 4700,
+      minChars: 3500,
+      maxChars: 4500,
       validation: { ...DEFAULT_VALIDATION, narrateSectionHeadings: false, forbiddenPhrases: ['AAA'] }
     }),
     formats: [
@@ -157,13 +175,16 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
           section('conclusion', 'Conclusion', 'Concise, balanced overall assessment.')
         ],
         confirmed: [
+          `Fixed intro (stated by the owner): "${GAME_VAULT_INTRO}"`,
           'Mandatory order: Gameplay; Combat OR Combat & Exploration; Pros; Cons; Conclusion. The order must not change and no extra major sections are added.',
-          'Target approximately 4–5 minutes of narration.',
+          'Keep Pros and Cons as separate sections.',
+          'Target approximately 4–5 minutes of narration, about 3,500–4,500 characters.',
           'English, natural review narration, accurate information only.',
           'No URLs. No citations. Never use the term "AAA".'
         ],
-        unverified: ['Exact fixed intro/outro wording — import from approved Game Vault scripts.'],
-        notes: 'Provisional: the section structure is confirmed in writing; intro/outro wording still needs approved references. Usable in Review before voice until approved.'
+        fixedBlocks: [lockedIntro(GAME_VAULT_INTRO)],
+        unverified: ['Exact outro wording — import from approved Game Vault scripts (the intro is confirmed).'],
+        notes: 'Provisional: structure and intro are confirmed by the owner; the closing still needs approved references. Usable in Review before voice until approved.'
       })
     ]
   },
@@ -207,7 +228,14 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
     formats: [
       format('RazorFrame review', 'review', 'not_configured', {
         systemPrompt: prompt('RazorFrame', ['Category: gaming reviews. Known editorial identity: direct, precise, analytical, focused on gameplay quality, willing to identify meaningful weaknesses, no unnecessary promotional language. Keep it distinct from Nexora and Game Vault; no generic review introductions.']),
-        confirmed: ['English.', ...NO_LINKS, PROVISIONAL_LENGTH],
+        confirmed: [
+          'English.',
+          ...NO_LINKS,
+          'Section labels are plain text lines — never markdown "#" markers.',
+          'Do not write the word "Intro" as a heading; keep the introductory prose itself.',
+          'Scripts should be longer than the earliest versions.',
+          PROVISIONAL_LENGTH
+        ],
         unverified: IMPORT_REQUIRED('RazorFrame')
       })
     ]
@@ -245,12 +273,12 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
   },
   // 08 — GameSense
   {
-    channel: ch({ name: 'GameSense', icon: '🎯', color: '#60A5FA', category: 'gaming', description: 'Gaming coverage: gameplay, mechanics and first impressions. "Is It Worth Playing?" is a content concept, not an assumed opening line.' }),
+    channel: ch({ name: 'GameSense', icon: '🎯', color: '#60A5FA', category: 'gaming', description: 'Gaming coverage: gameplay, mechanics and first impressions. "Is It Worth Playing?" is a content concept, not an assumed opening line.', minChars: 4000, maxChars: 4300 }),
     formats: [
       format('GameSense review', 'review', 'not_configured', {
         systemPrompt: prompt('GameSense', ['Category: gaming coverage and reviews. Editorial identity: informative, accessible, gameplay-focused, helps viewers understand what a game offers. The "Is It Worth Playing?" concept must not be used as a fixed opening line unless approved references show it.']),
-        confirmed: ['English.', ...NO_LINKS, PROVISIONAL_LENGTH],
-        unverified: IMPORT_REQUIRED('GameSense')
+        confirmed: ['English.', ...NO_LINKS, 'Scripts are 4,000–4,300 characters (stated by the owner).', 'Follow the same style, structure and ending format as the approved "Dark Auction" script.'],
+        unverified: ['Dark Auction reference script needed — import it so its structure and ending can be matched.', IMPORT_REQUIRED('GameSense')[0]!]
       })
     ]
   },
@@ -282,19 +310,19 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
     formats: [
       format('VELIX review', 'review', 'not_configured', {
         systemPrompt: prompt('VELIX', ['Category: PC gaming reviews. Known editorial focus: gameplay, core mechanics, important features, overall appeal. Maintain its own narration style; never copy Game Vault or NexPlay Gaming.']),
-        confirmed: ['English.', ...NO_LINKS, PROVISIONAL_LENGTH],
-        unverified: IMPORT_REQUIRED('VELIX')
+        confirmed: ['English.', ...NO_LINKS, PROVISIONAL_LENGTH, 'Follow the same style, structure and ending format as the approved "Dark Auction" script ("Is It Worth Playing?" family).'],
+        unverified: ['Dark Auction reference script needed — import it so its structure and ending can be matched.', ...IMPORT_REQUIRED('VELIX')]
       })
     ]
   },
   // 12 — GAMIX
   {
-    channel: ch({ name: 'GAMIX', icon: '🧩', color: '#E879F9', category: 'gaming', description: 'Gaming content. Exact narration format not verified.' }),
+    channel: ch({ name: 'GAMIX', icon: '🧩', color: '#E879F9', category: 'gaming', description: 'Gaming content ("Is It Worth Playing?" scripts). Exact narration format not verified.', minChars: 4000, maxChars: 4300 }),
     formats: [
       format('GAMIX format', 'review', 'not_configured', {
         systemPrompt: prompt('GAMIX', ['Category: gaming content.']),
-        confirmed: ['English.', ...NO_LINKS],
-        unverified: ['Introduction, conclusion and section order — import approved GAMIX scripts.', ...IMPORT_REQUIRED('GAMIX').slice(1)]
+        confirmed: ['English.', ...NO_LINKS, '"Is It Worth Playing?" scripts are 4,000–4,300 characters (stated by the owner).', 'Follow the same style, structure and ending format as the approved "Dark Auction" script.'],
+        unverified: ['Dark Auction reference script needed — import it so its structure and ending can be matched.', 'Introduction, conclusion and section order — import approved GAMIX scripts.']
       })
     ]
   },
@@ -359,7 +387,9 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
       color: '#0EA5E9',
       category: 'tech',
       description: 'Premium technology reviews (YouTube narration — separate from RENVO website articles).',
-      targetDurationSec: 300
+      targetDurationSec: 300,
+      minChars: 4000,
+      maxChars: 4800
     }),
     formats: [
       format('RENVO YouTube review', 'youtube_review', 'provisional', {
@@ -374,11 +404,11 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
           section('verdict', 'Final Verdict', 'Clear evaluation.')
         ],
         confirmed: [
-          'Review sequence: Introduction; Unboxing; Build Quality & Design; Features; Performance & Testing; Pros & Cons; Final Verdict (customisable).',
+          'Review sequence: Introduction; Unboxing; Build Quality & Design; Features; Performance & Testing; Pros & Cons; Final Verdict (customisable). Owner-stated order: unboxing → build/quality → features → tests → pros/cons → verdict.',
+          'At most 4,800 characters (stated by the owner).',
           'English, professional technology-review tone, accurate technical details.',
           'No fabricated hands-on testing. No URLs in voiceover scripts.',
-          'Use the established lowercase styling for abbreviations (usb-c, qmk, via, ghz).',
-          PROVISIONAL_LENGTH
+          'Use the established lowercase styling for abbreviations (usb-c, qmk, via, ghz).'
         ],
         unverified: ['Exact narration template wording — import approved RENVO YouTube scripts.']
       }),

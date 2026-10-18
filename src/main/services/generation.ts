@@ -74,7 +74,7 @@ export class GenerationService {
         model: ch.openaiModel || settings.openai.defaultModel,
         expectedChars,
         research: ch.research.enabled && ch.research.mode !== 'manual',
-        reviewPass: ch.validation.aiReviewPass,
+        reviewPass: settings.generation.aiReviewPass && ch.validation.aiReviewPass,
         audio: input.mode !== 'scripts_only'
       })
       openai += est.openai
@@ -101,7 +101,25 @@ export class GenerationService {
       const today = this.s.usage.spendSince(startOfDay.toISOString())
       if (today + total > limits.dailyLimitUsd) warnings.push(`This batch (~$${total.toFixed(2)}) would exceed today's spending limit ($${limits.dailyLimitUsd.toFixed(2)}); the queue will pause when the limit is reached.`)
     }
-    return { jobs, estimatedOpenAICost: openai, estimatedElevenCost: eleven, estimatedTotal: total, estimatedCharacters: characters, warnings }
+    return { jobs, estimatedOpenAICost: openai, estimatedElevenCost: eleven, estimatedTotal: total, estimatedCharacters: characters, estimatedSeconds: this.estimateSeconds(jobs, input.mode), warnings }
+  }
+
+  /**
+   * Wall-clock estimate: one job end to end, then the rest pipelined through the slowest
+   * stage (OpenAI stages share the OpenAI concurrency, audio the ElevenLabs concurrency).
+   * Uses the engine's per-stage medians from history (defaults until data exists).
+   */
+  estimateSeconds(jobs: number, mode: CreateBatchInput['mode']): number {
+    if (jobs <= 0) return 0
+    const st = this.s.settings.get()
+    const secs = this.engine.stageSeconds()
+    const textStages = secs.research + secs.script
+    const audio = mode === 'scripts_only' ? 0 : secs.audio
+    const perJob = textStages + audio + secs.save
+    const openaiLanes = Math.max(1, Math.min(st.openai.concurrency, st.generation.maxConcurrentJobs))
+    const elevenLanes = Math.max(1, Math.min(st.elevenlabs.concurrency, st.generation.maxConcurrentJobs))
+    const perExtra = Math.max(textStages / openaiLanes, audio / elevenLanes)
+    return Math.round(perJob + (jobs - 1) * perExtra)
   }
 
   createBatch(input: CreateBatchInput): CreateBatchResult {

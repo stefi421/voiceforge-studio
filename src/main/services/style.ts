@@ -3,7 +3,9 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import type {
   Channel,
+  ChannelOpening,
   ComplianceCheck,
+  FixedTextBlock,
   JobMode,
   ReferenceFormat,
   ReferenceScript,
@@ -75,8 +77,71 @@ export function normalizeReferenceText(raw: string): string {
  * Channel Style Preservation Studio: reference library, analysis, approval and
  * style tests, plus the template resolution/gating used by generation.
  */
+/** Copies a version into an input for a new version (status handled by the caller). */
+export function versionToInput(v: TemplateVersion): import('@shared/types').TemplateVersionInput {
+  return {
+    systemPrompt: v.systemPrompt,
+    structure: v.structure,
+    exampleScript: v.exampleScript,
+    notes: v.notes,
+    placeholder: v.placeholder,
+    fixedBlocks: v.fixedBlocks,
+    findings: v.findings,
+    confirmedRules: v.confirmedRules,
+    unverified: v.unverified,
+    headingsSpoken: v.headingsSpoken,
+    referenceSetVersion: v.referenceSetVersion
+  }
+}
+
 export class StyleService {
   constructor(private s: Services) {}
+
+  // ---- opening (fast path for intro/outro) --------------------------------------
+
+  getOpening(channelId: string): ChannelOpening {
+    const channel = this.s.channels.get(channelId)
+    if (!channel) throw new AppError('config', 'Channel not found.', { retryable: false })
+    const r = this.resolve(channel)
+    const locked = (kind: 'intro' | 'outro'): string => r?.version.fixedBlocks.find((b) => b.locked && b.kind === kind)?.text ?? ''
+    return {
+      channelId,
+      templateId: r?.template.id ?? null,
+      versionId: r?.version.id ?? null,
+      intro: locked('intro'),
+      outro: locked('outro'),
+      openWithChannelIntro: channel.validation.openWithChannelIntro !== false
+    }
+  }
+
+  /**
+   * Saves the intro/outro typed by the owner as LOCKED spoken blocks of the channel's default
+   * format. Always a NEW version (approved versions are never edited in place); the new version
+   * keeps the current status because the owner is stating these words themselves
+   * (provenance `user_confirmed`). Unchanged text creates no version.
+   */
+  setOpening(channelId: string, input: { intro: string; outro: string; openWithChannelIntro: boolean }): ChannelOpening {
+    const channel = this.s.channels.get(channelId)
+    if (!channel) throw new AppError('config', 'Channel not found.', { retryable: false })
+    if ((channel.validation.openWithChannelIntro !== false) !== input.openWithChannelIntro) {
+      this.s.channels.update(channelId, { validation: { ...channel.validation, openWithChannelIntro: input.openWithChannelIntro } })
+    }
+    const r = this.resolve(channel)
+    if (!r) throw new AppError('config', `Channel "${channel.name}" has no script format yet.`, { retryable: false, code: 'FORMAT_MISSING' })
+    const cur = this.getOpening(channelId)
+    const intro = input.intro.trim()
+    const outro = input.outro.trim()
+    if (cur.intro === intro && cur.outro === outro) return this.getOpening(channelId)
+    const keep = r.version.fixedBlocks.filter((b) => !(b.locked && (b.kind === 'intro' || b.kind === 'outro')))
+    const blocks: FixedTextBlock[] = [...keep]
+    if (intro) blocks.unshift({ id: newId(), kind: 'intro', text: intro, locked: true, provenance: 'user_confirmed', spoken: true, occurrences: 0 })
+    if (outro) blocks.push({ id: newId(), kind: 'outro', text: outro, locked: true, provenance: 'user_confirmed', spoken: true, occurrences: 0 })
+    const status = r.version.approvalStatus
+    const v = this.s.channels.addVersion(r.template.id, { ...versionToInput(r.version), fixedBlocks: blocks, approvalStatus: status, notes: `${r.version.notes ? r.version.notes + '\n' : ''}Opening/closing set in the Writing tab (${nowIso().slice(0, 10)}).` })
+    if (v.approvalStatus !== status) this.s.channels.setVersionStatus(v.id, status)
+    this.s.channels.setActiveVersion(channelId, v.id)
+    return this.getOpening(channelId)
+  }
 
   // ---- template resolution & gating -----------------------------------------
 
@@ -102,15 +167,20 @@ export class StyleService {
     const { template, version } = r
     const status = version.approvalStatus
     const label = `${channel.name} › ${template.name}`
+    // 1.3.0: an unverified format no longer blocks the channel. It can be used under supervision
+    // (Review before voice / Scripts only); scripts then follow the channel's written rules only.
     if (version.placeholder || status === 'not_configured' || status === 'references_imported') {
-      return {
-        allowed: false,
-        error: new AppError('config', `The format "${label}" is not configured yet — import approved reference scripts first.`, {
-          action: 'Open Channels → this channel → Formats, import 3–5 approved scripts, analyse them and approve the extracted template.',
-          retryable: false,
-          code: 'FORMAT_NOT_CONFIGURED'
-        })
+      if (mode === 'auto') {
+        return {
+          allowed: false,
+          error: new AppError('config', `The format "${label}" is not verified yet — use Review before voice, or import approved reference scripts and approve the format.`, {
+            action: 'Switch the mode to Review before voice (or Scripts only). For Fully automatic, import 3–5 approved scripts in Channels → Formats and approve the format.',
+            retryable: false,
+            code: 'FORMAT_NOT_APPROVED'
+          })
+        }
       }
+      return { allowed: true, warning: `"${label}": format not verified — scripts follow the channel rules only. Review each script before audio.` }
     }
     if (PRODUCTION_STATUSES.includes(status)) return { allowed: true, warning: null }
     if (SUPERVISED_STATUSES.includes(status)) {
