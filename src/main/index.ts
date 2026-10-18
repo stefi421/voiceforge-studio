@@ -12,6 +12,7 @@ import { BackupService } from './services/backup'
 import { IpcRegistry } from './ipc/registry'
 import { registerHandlers } from './ipc/handlers'
 import { seedDefaults } from './services/seed'
+import { applyReferencePack } from './services/referencePack'
 import { cleanupTempFiles } from './services/files'
 import { ElevenLabsClientProvider } from './providers/elevenlabs'
 import { UpdateService } from './services/updater'
@@ -95,6 +96,11 @@ function bootstrap(): Services {
   const providers = createProviderFactory(secrets, repos.settings, logger)
   const s: Services = { db, ...repos, secrets, providers, events, logger, paths, appVersion: app.getVersion() }
   seedDefaults(s)
+  try {
+    applyReferencePack(s, undefined, { notifyDelayMs: 6000 })
+  } catch (err) {
+    logger.log('error', 'reference-pack', 'Applying the reference pack failed', { error: (err as Error).message })
+  }
   return s
 }
 

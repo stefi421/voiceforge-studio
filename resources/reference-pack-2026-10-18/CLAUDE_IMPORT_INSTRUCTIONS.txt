@@ -1,0 +1,8 @@
+Import each channel folder as a SEPARATE profile; never mix reference examples across channels.
+Treat all files as TEMPORARY, GENERATED, UNVERIFIED training examples.
+They are NOT user-approved historical scripts. Do not lock their introductions/outros as canonical.
+Require an explicit user approval step before promoting any sample to the canonical style profile.
+When real approved historical examples are supplied, prefer them and replace generated examples.
+For generated scripts: no external links in narration, English only, validate character limits,
+check factual claims against research, and do not invent first-hand gameplay experiences.
+The five shared games across channels allow A/B tests of channel style separation.

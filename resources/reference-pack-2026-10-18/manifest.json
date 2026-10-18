@@ -1,0 +1,602 @@
+[
+  {
+    "channel": "Game Vault",
+    "code": "GV",
+    "game": "Emberward",
+    "file": "GV - Game Vault/01 - Emberward.txt",
+    "characters": 4686,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Game Vault",
+    "code": "GV",
+    "game": "ENDLESS Legend 2",
+    "file": "GV - Game Vault/02 - ENDLESS Legend 2.txt",
+    "characters": 4741,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Game Vault",
+    "code": "GV",
+    "game": "RuneScape: Dragonwilds",
+    "file": "GV - Game Vault/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4772,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Game Vault",
+    "code": "GV",
+    "game": "Active Matter",
+    "file": "GV - Game Vault/04 - Active Matter.txt",
+    "characters": 4715,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Game Vault",
+    "code": "GV",
+    "game": "Police Chief Simulator",
+    "file": "GV - Game Vault/05 - Police Chief Simulator.txt",
+    "characters": 4768,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AperoX",
+    "code": "AP",
+    "game": "Emberward",
+    "file": "AP - AperoX/01 - Emberward.txt",
+    "characters": 4780,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AperoX",
+    "code": "AP",
+    "game": "ENDLESS Legend 2",
+    "file": "AP - AperoX/02 - ENDLESS Legend 2.txt",
+    "characters": 4835,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AperoX",
+    "code": "AP",
+    "game": "RuneScape: Dragonwilds",
+    "file": "AP - AperoX/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4866,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AperoX",
+    "code": "AP",
+    "game": "Active Matter",
+    "file": "AP - AperoX/04 - Active Matter.txt",
+    "characters": 4809,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AperoX",
+    "code": "AP",
+    "game": "Police Chief Simulator",
+    "file": "AP - AperoX/05 - Police Chief Simulator.txt",
+    "characters": 4862,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nexora",
+    "code": "NE",
+    "game": "Emberward",
+    "file": "NE - Nexora/01 - Emberward.txt",
+    "characters": 4729,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nexora",
+    "code": "NE",
+    "game": "ENDLESS Legend 2",
+    "file": "NE - Nexora/02 - ENDLESS Legend 2.txt",
+    "characters": 4784,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nexora",
+    "code": "NE",
+    "game": "RuneScape: Dragonwilds",
+    "file": "NE - Nexora/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4815,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nexora",
+    "code": "NE",
+    "game": "Active Matter",
+    "file": "NE - Nexora/04 - Active Matter.txt",
+    "characters": 4758,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nexora",
+    "code": "NE",
+    "game": "Police Chief Simulator",
+    "file": "NE - Nexora/05 - Police Chief Simulator.txt",
+    "characters": 4811,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "RazorFrame",
+    "code": "RF",
+    "game": "Emberward",
+    "file": "RF - RazorFrame/01 - Emberward.txt",
+    "characters": 4737,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "RazorFrame",
+    "code": "RF",
+    "game": "ENDLESS Legend 2",
+    "file": "RF - RazorFrame/02 - ENDLESS Legend 2.txt",
+    "characters": 4792,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "RazorFrame",
+    "code": "RF",
+    "game": "RuneScape: Dragonwilds",
+    "file": "RF - RazorFrame/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4823,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "RazorFrame",
+    "code": "RF",
+    "game": "Active Matter",
+    "file": "RF - RazorFrame/04 - Active Matter.txt",
+    "characters": 4766,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "RazorFrame",
+    "code": "RF",
+    "game": "Police Chief Simulator",
+    "file": "RF - RazorFrame/05 - Police Chief Simulator.txt",
+    "characters": 4819,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "PixelDrop",
+    "code": "PD",
+    "game": "Emberward",
+    "file": "PD - PixelDrop/01 - Emberward.txt",
+    "characters": 4698,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "PixelDrop",
+    "code": "PD",
+    "game": "ENDLESS Legend 2",
+    "file": "PD - PixelDrop/02 - ENDLESS Legend 2.txt",
+    "characters": 4753,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "PixelDrop",
+    "code": "PD",
+    "game": "RuneScape: Dragonwilds",
+    "file": "PD - PixelDrop/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4784,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "PixelDrop",
+    "code": "PD",
+    "game": "Active Matter",
+    "file": "PD - PixelDrop/04 - Active Matter.txt",
+    "characters": 4727,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "PixelDrop",
+    "code": "PD",
+    "game": "Police Chief Simulator",
+    "file": "PD - PixelDrop/05 - Police Chief Simulator.txt",
+    "characters": 4780,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VELIX",
+    "code": "VE",
+    "game": "Emberward",
+    "file": "VE - VELIX/01 - Emberward.txt",
+    "characters": 4684,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VELIX",
+    "code": "VE",
+    "game": "ENDLESS Legend 2",
+    "file": "VE - VELIX/02 - ENDLESS Legend 2.txt",
+    "characters": 4739,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VELIX",
+    "code": "VE",
+    "game": "RuneScape: Dragonwilds",
+    "file": "VE - VELIX/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4770,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VELIX",
+    "code": "VE",
+    "game": "Active Matter",
+    "file": "VE - VELIX/04 - Active Matter.txt",
+    "characters": 4713,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VELIX",
+    "code": "VE",
+    "game": "Police Chief Simulator",
+    "file": "VE - VELIX/05 - Police Chief Simulator.txt",
+    "characters": 4766,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GameSense",
+    "code": "GS",
+    "game": "Emberward",
+    "file": "GS - GameSense/01 - Emberward.txt",
+    "characters": 4734,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GameSense",
+    "code": "GS",
+    "game": "ENDLESS Legend 2",
+    "file": "GS - GameSense/02 - ENDLESS Legend 2.txt",
+    "characters": 4789,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GameSense",
+    "code": "GS",
+    "game": "RuneScape: Dragonwilds",
+    "file": "GS - GameSense/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4820,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GameSense",
+    "code": "GS",
+    "game": "Active Matter",
+    "file": "GS - GameSense/04 - Active Matter.txt",
+    "characters": 4763,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GameSense",
+    "code": "GS",
+    "game": "Police Chief Simulator",
+    "file": "GS - GameSense/05 - Police Chief Simulator.txt",
+    "characters": 4816,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "NexPlay Gaming",
+    "code": "NP",
+    "game": "Emberward",
+    "file": "NP - NexPlay Gaming/01 - Emberward.txt",
+    "characters": 4732,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "NexPlay Gaming",
+    "code": "NP",
+    "game": "ENDLESS Legend 2",
+    "file": "NP - NexPlay Gaming/02 - ENDLESS Legend 2.txt",
+    "characters": 4787,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "NexPlay Gaming",
+    "code": "NP",
+    "game": "RuneScape: Dragonwilds",
+    "file": "NP - NexPlay Gaming/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4818,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "NexPlay Gaming",
+    "code": "NP",
+    "game": "Active Matter",
+    "file": "NP - NexPlay Gaming/04 - Active Matter.txt",
+    "characters": 4761,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "NexPlay Gaming",
+    "code": "NP",
+    "game": "Police Chief Simulator",
+    "file": "NP - NexPlay Gaming/05 - Police Chief Simulator.txt",
+    "characters": 4814,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Fluxor",
+    "code": "FL",
+    "game": "Emberward",
+    "file": "FL - Fluxor/01 - Emberward.txt",
+    "characters": 4663,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Fluxor",
+    "code": "FL",
+    "game": "ENDLESS Legend 2",
+    "file": "FL - Fluxor/02 - ENDLESS Legend 2.txt",
+    "characters": 4718,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Fluxor",
+    "code": "FL",
+    "game": "RuneScape: Dragonwilds",
+    "file": "FL - Fluxor/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4749,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Fluxor",
+    "code": "FL",
+    "game": "Active Matter",
+    "file": "FL - Fluxor/04 - Active Matter.txt",
+    "characters": 4692,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Fluxor",
+    "code": "FL",
+    "game": "Police Chief Simulator",
+    "file": "FL - Fluxor/05 - Police Chief Simulator.txt",
+    "characters": 4745,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nyx Shadow",
+    "code": "NS",
+    "game": "Emberward",
+    "file": "NS - Nyx Shadow/01 - Emberward.txt",
+    "characters": 4709,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nyx Shadow",
+    "code": "NS",
+    "game": "ENDLESS Legend 2",
+    "file": "NS - Nyx Shadow/02 - ENDLESS Legend 2.txt",
+    "characters": 4764,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nyx Shadow",
+    "code": "NS",
+    "game": "RuneScape: Dragonwilds",
+    "file": "NS - Nyx Shadow/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4795,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nyx Shadow",
+    "code": "NS",
+    "game": "Active Matter",
+    "file": "NS - Nyx Shadow/04 - Active Matter.txt",
+    "characters": 4738,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "Nyx Shadow",
+    "code": "NS",
+    "game": "Police Chief Simulator",
+    "file": "NS - Nyx Shadow/05 - Police Chief Simulator.txt",
+    "characters": 4791,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AxioS",
+    "code": "AX",
+    "game": "Emberward",
+    "file": "AX - AxioS/01 - Emberward.txt",
+    "characters": 4684,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AxioS",
+    "code": "AX",
+    "game": "ENDLESS Legend 2",
+    "file": "AX - AxioS/02 - ENDLESS Legend 2.txt",
+    "characters": 4739,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AxioS",
+    "code": "AX",
+    "game": "RuneScape: Dragonwilds",
+    "file": "AX - AxioS/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4770,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AxioS",
+    "code": "AX",
+    "game": "Active Matter",
+    "file": "AX - AxioS/04 - Active Matter.txt",
+    "characters": 4713,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "AxioS",
+    "code": "AX",
+    "game": "Police Chief Simulator",
+    "file": "AX - AxioS/05 - Police Chief Simulator.txt",
+    "characters": 4766,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "THE BLAZE",
+    "code": "BL",
+    "game": "Emberward",
+    "file": "BL - THE BLAZE/01 - Emberward.txt",
+    "characters": 4686,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "THE BLAZE",
+    "code": "BL",
+    "game": "ENDLESS Legend 2",
+    "file": "BL - THE BLAZE/02 - ENDLESS Legend 2.txt",
+    "characters": 4741,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "THE BLAZE",
+    "code": "BL",
+    "game": "RuneScape: Dragonwilds",
+    "file": "BL - THE BLAZE/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4772,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "THE BLAZE",
+    "code": "BL",
+    "game": "Active Matter",
+    "file": "BL - THE BLAZE/04 - Active Matter.txt",
+    "characters": 4715,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "THE BLAZE",
+    "code": "BL",
+    "game": "Police Chief Simulator",
+    "file": "BL - THE BLAZE/05 - Police Chief Simulator.txt",
+    "characters": 4768,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GAMIX",
+    "code": "GA",
+    "game": "Emberward",
+    "file": "GA - GAMIX/01 - Emberward.txt",
+    "characters": 4693,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GAMIX",
+    "code": "GA",
+    "game": "ENDLESS Legend 2",
+    "file": "GA - GAMIX/02 - ENDLESS Legend 2.txt",
+    "characters": 4748,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GAMIX",
+    "code": "GA",
+    "game": "RuneScape: Dragonwilds",
+    "file": "GA - GAMIX/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4779,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GAMIX",
+    "code": "GA",
+    "game": "Active Matter",
+    "file": "GA - GAMIX/04 - Active Matter.txt",
+    "characters": 4722,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "GAMIX",
+    "code": "GA",
+    "game": "Police Chief Simulator",
+    "file": "GA - GAMIX/05 - Police Chief Simulator.txt",
+    "characters": 4775,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VIR3ON",
+    "code": "VI",
+    "game": "Emberward",
+    "file": "VI - VIR3ON/01 - Emberward.txt",
+    "characters": 4691,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VIR3ON",
+    "code": "VI",
+    "game": "ENDLESS Legend 2",
+    "file": "VI - VIR3ON/02 - ENDLESS Legend 2.txt",
+    "characters": 4746,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VIR3ON",
+    "code": "VI",
+    "game": "RuneScape: Dragonwilds",
+    "file": "VI - VIR3ON/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4777,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VIR3ON",
+    "code": "VI",
+    "game": "Active Matter",
+    "file": "VI - VIR3ON/04 - Active Matter.txt",
+    "characters": 4720,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VIR3ON",
+    "code": "VI",
+    "game": "Police Chief Simulator",
+    "file": "VI - VIR3ON/05 - Police Chief Simulator.txt",
+    "characters": 4773,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VoidPulse",
+    "code": "VP",
+    "game": "Emberward",
+    "file": "VP - VoidPulse/01 - Emberward.txt",
+    "characters": 4714,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VoidPulse",
+    "code": "VP",
+    "game": "ENDLESS Legend 2",
+    "file": "VP - VoidPulse/02 - ENDLESS Legend 2.txt",
+    "characters": 4769,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VoidPulse",
+    "code": "VP",
+    "game": "RuneScape: Dragonwilds",
+    "file": "VP - VoidPulse/03 - RuneScape - Dragonwilds.txt",
+    "characters": 4800,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VoidPulse",
+    "code": "VP",
+    "game": "Active Matter",
+    "file": "VP - VoidPulse/04 - Active Matter.txt",
+    "characters": 4743,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  },
+  {
+    "channel": "VoidPulse",
+    "code": "VP",
+    "game": "Police Chief Simulator",
+    "file": "VP - VoidPulse/05 - Police Chief Simulator.txt",
+    "characters": 4796,
+    "origin": "NEW_RECONSTRUCTION_NOT_HISTORICAL"
+  }
+]

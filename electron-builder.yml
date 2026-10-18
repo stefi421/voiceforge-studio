@@ -13,6 +13,11 @@ npmRebuild: false
 extraResources:
   - from: build/icon.ico
     to: icon.ico
+  - from: resources/reference-pack-2026-10-18
+    to: reference-pack/2026-10-18
+    filter:
+      - "**/*.txt"
+      - "manifest.json"
 win:
   target:
     - target: nsis

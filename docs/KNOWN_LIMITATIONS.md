@@ -1,4 +1,4 @@
-# Known limitations (v1.3.0)
+# Known limitations (v1.4.0)
 
 Honest list of what is not done, partially done, or unverified.
 
@@ -106,3 +106,13 @@ Honest list of what is not done, partially done, or unverified.
   Settings → Generation if you want the extra check.
 * Only finished Script/Voice files go to the output folder. Projects created before 1.3.0 keep
   their old files (Research.json, project.json, Narration.txt, drafts) where they are.
+
+## Reference pack (1.4.0)
+
+* The 15 pack formats reproduce the pack samples. The pack's README says those samples are
+  reconstructions, not the original historical ChatGPT scripts; replace the references in
+  Channels → Formats when the originals are available.
+* In the pack, the body of the same game is almost identical across channels (11 of 12 body
+  paragraphs are word for word the same) — mainly the intro, section labels and outro differ. Channel-specific tone in the body therefore comes from
+  the channel instructions, not from the samples.
+* PlayTopia, RENVO and RiftForge Tech are not in the pack.

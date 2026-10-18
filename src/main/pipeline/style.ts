@@ -148,6 +148,18 @@ export function validateFixedBlocks(text: string, template: Pick<TemplateVersion
   const headingPositions: Array<{ block: FixedTextBlock; line: number }> = []
   for (const b of locked) {
     const bn = normalizeForMatch(b.text)
+    if ((b.kind === 'intro' || b.kind === 'outro') && b.wholeParagraph) {
+      const paras = scriptParagraphs(text, template?.structure ?? [])
+      const target = b.kind === 'intro' ? paras[0] : paras[paras.length - 1]
+      if (!target || exactKey(target) !== exactKey(b.text)) {
+        issues.push(
+          b.kind === 'intro'
+            ? { code: 'fixed_intro', severity: 'error', message: `The first paragraph must be exactly the locked introduction, on its own: "${short(b.text)}". Put the rest of the opening in the next paragraph.` }
+            : { code: 'fixed_outro', severity: 'error', message: `The last paragraph must be exactly the locked closing, on its own: "${short(b.text)}". Nothing may follow it.` }
+        )
+      }
+      continue
+    }
     if (b.kind === 'intro') {
       if (!body.startsWith(stripEdgePunct(bn))) {
         issues.push({ code: 'fixed_intro', severity: 'error', message: `The locked introduction must open the script exactly: "${short(b.text)}". Keep it word for word.` })
@@ -172,6 +184,186 @@ export function validateFixedBlocks(text: string, template: Pick<TemplateVersion
     issues.push({ code: 'fixed_heading_order', severity: 'error', message: `Locked headings are out of order. Expected: ${exp.map((id) => locked.find((b) => b.id === id)?.text).join(' → ')}.` })
   }
   return issues
+}
+
+
+// ---------------------------------------------------------------------------
+// Exact format reproduction (1.4.0 reference pack): paragraphs, normaliser, skeleton
+// ---------------------------------------------------------------------------
+
+/** Case-preserving comparison key: only whitespace, quote and dash style are ignored. */
+export function exactKey(s: string): string {
+  return s
+    .replace(/[‘’‛′]/g, "'")
+    .replace(/[“”‟″]/g, '"')
+    .replace(/\s*[–—−]\s*/g, '-')
+    .replace(/\s+-\s+/g, '-')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Paragraphs of a script (blank-line separated), with single-line breaks inside a paragraph kept. */
+export function splitParagraphs(text: string): string[] {
+  return text
+    .replace(/\r\n/g, '\n')
+    .split(/\n[ \t]*\n+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+}
+
+/**
+ * Spoken paragraphs in order, with section heading lines removed — used to find the
+ * first (intro) and last (outro) paragraph. A heading written directly above its text
+ * (no blank line) is stripped from that paragraph.
+ */
+export function scriptParagraphs(text: string, structure: ScriptSection[]): string[] {
+  const isHeading = (line: string): boolean => {
+    const n = normalizeHeading(line)
+    return structure.some((sec) => [sec.label, ...sec.aliases].some((c) => c.toLowerCase().trim() === n))
+  }
+  const out: string[] = []
+  for (const p of splitParagraphs(text)) {
+    const lines = p.split('\n').filter((l) => !isHeading(l))
+    const rest = lines.join('\n').trim()
+    if (rest) out.push(rest)
+  }
+  return out
+}
+
+function sentencesOf(paragraph: string): string[] {
+  return paragraph.match(/[^.!?]+(?:[.!?]+["'’”)\]]*|$)/g)?.map((x) => x.trim()).filter(Boolean) ?? [paragraph]
+}
+
+/** If `para` begins with `block` (by exactKey), returns [block, remainder]; else null. */
+function splitLeading(para: string, block: string): [string, string] | null {
+  const target = exactKey(block).toLowerCase()
+  const sentences = sentencesOf(para)
+  let acc = ''
+  for (let i = 0; i < sentences.length; i++) {
+    acc = acc ? `${acc} ${sentences[i]}` : sentences[i]!
+    const k = exactKey(acc).toLowerCase()
+    if (k === target) return [block.trim(), sentences.slice(i + 1).join(' ').trim()]
+    if (!target.startsWith(k)) return null
+  }
+  return null
+}
+
+function splitTrailing(para: string, block: string): [string, string] | null {
+  const target = exactKey(block).toLowerCase()
+  const sentences = sentencesOf(para)
+  let acc = ''
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    acc = acc ? `${sentences[i]} ${acc}` : sentences[i]!
+    const k = exactKey(acc).toLowerCase()
+    if (k === target) return [sentences.slice(0, i).join(' ').trim(), block.trim()]
+    if (!target.endsWith(k)) return null
+  }
+  return null
+}
+
+/**
+ * Deterministic post-processor applied to every writer output before validation.
+ * It only fixes presentation — never content:
+ * - line endings, trailing spaces, runs of blank lines, markdown heading/bold markers on label lines;
+ * - section label lines are rewritten to the exact approved label (case, trailing colon);
+ * - a whole-paragraph locked intro/outro that differs only by case, whitespace, quote or
+ *   dash style is replaced by the locked text, and one that was merged into the neighbouring
+ *   paragraph is split back out into its own paragraph.
+ * Text that is actually reworded is left alone so the validator reports it.
+ */
+export function normalizeLockedText(text: string, template: Pick<TemplateVersion, 'structure' | 'fixedBlocks'> | null): string {
+  if (!template) return text
+  const whole = template.fixedBlocks.filter((b) => b.locked && b.wholeParagraph && b.text.trim())
+  // Whitespace is only normalised for exact-paragraph formats; other formats keep the text as written.
+  let t = whole.length ? text.replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim() : text
+  const labels = template.structure.flatMap((sec) => [sec.label, ...sec.aliases])
+  t = t
+    .split('\n')
+    .map((line) => {
+      const stripped = line.replace(/^\s*#{1,6}\s*/, '').replace(/^\s*\*\*(.+?)\*\*\s*$/, '$1').replace(/^\s*__(.+?)__\s*$/, '$1')
+      if (stripped.trim().length === 0 || stripped.trim().length > 60) return line
+      const n = normalizeHeading(stripped)
+      const hit = labels.find((l) => l.toLowerCase().trim() === n)
+      return hit ?? line
+    })
+    .join('\n')
+  if (!whole.length) return t
+  const paras = splitParagraphs(t)
+  const isLabel = (p: string): boolean => labels.some((l) => l === p.trim())
+  const intro = whole.find((b) => b.kind === 'intro')
+  if (intro) {
+    const i = paras.findIndex((p) => !isLabel(p))
+    if (i >= 0) {
+      const p = paras[i]!
+      if (exactKey(p).toLowerCase() === exactKey(intro.text).toLowerCase()) paras[i] = intro.text.trim()
+      else {
+        const split = splitLeading(p, intro.text)
+        if (split) paras.splice(i, 1, ...split.filter(Boolean))
+      }
+    }
+  }
+  const outro = whole.find((b) => b.kind === 'outro')
+  if (outro && paras.length) {
+    const i = paras.length - 1
+    const p = paras[i]!
+    if (exactKey(p).toLowerCase() === exactKey(outro.text).toLowerCase()) paras[i] = outro.text.trim()
+    else {
+      const split = splitTrailing(p, outro.text)
+      if (split) paras.splice(i, 1, ...split.filter(Boolean))
+    }
+  }
+  return paras.join('\n\n')
+}
+
+export interface SkeletonPart {
+  kind: 'intro' | 'opening' | 'section' | 'outro'
+  /** Verbatim text for intro/outro; label for sections. */
+  text: string
+  /** Typical body paragraph count (median over the references). */
+  paragraphs: number
+}
+
+/**
+ * Derives the format skeleton from the version and its reference scripts: locked intro,
+ * opening paragraphs before the first label, each label with its typical paragraph count,
+ * then the locked outro. Returns [] when the format has no labelled structure.
+ */
+export function buildFormatSkeleton(template: Pick<TemplateVersion, 'structure' | 'fixedBlocks'>, references: Array<Pick<ReferenceScript, 'text'>>): SkeletonPart[] {
+  if (!template.structure.length) return []
+  const intro = template.fixedBlocks.find((b) => b.locked && b.kind === 'intro' && b.text.trim())
+  const outro = template.fixedBlocks.find((b) => b.locked && b.kind === 'outro' && b.text.trim())
+  const keys = ['__opening', ...template.structure.map((s) => s.key)]
+  const counts = new Map<string, number[]>(keys.map((k) => [k, []]))
+  for (const ref of references) {
+    const paras = splitParagraphs(ref.text)
+    let current = '__opening'
+    const per = new Map<string, number>(keys.map((k) => [k, 0]))
+    paras.forEach((p, idx) => {
+      const sec = template.structure.find((s) => [s.label, ...s.aliases].some((c) => normalizeHeading(c) === normalizeHeading(p)) && p.length <= 60)
+      if (sec) {
+        current = sec.key
+        return
+      }
+      const isIntro = idx === 0 && !!intro
+      const isOutro = idx === paras.length - 1 && !!outro
+      if (isIntro || isOutro) return
+      per.set(current, (per.get(current) ?? 0) + 1)
+    })
+    for (const k of keys) counts.get(k)!.push(per.get(k) ?? 0)
+  }
+  const median = (xs: number[]): number => {
+    if (!xs.length) return 0
+    const s = [...xs].sort((a, b) => a - b)
+    return s[Math.floor(s.length / 2)]!
+  }
+  const parts: SkeletonPart[] = []
+  if (intro) parts.push({ kind: 'intro', text: intro.text.trim(), paragraphs: 1 })
+  const opening = median(counts.get('__opening')!)
+  if (opening > 0) parts.push({ kind: 'opening', text: '', paragraphs: opening })
+  for (const sec of template.structure) parts.push({ kind: 'section', text: sec.label, paragraphs: median(counts.get(sec.key)!) })
+  if (outro) parts.push({ kind: 'outro', text: outro.text.trim(), paragraphs: 1 })
+  return parts
 }
 
 /**

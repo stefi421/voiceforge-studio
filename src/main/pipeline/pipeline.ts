@@ -15,7 +15,7 @@ import { concatMp3, isMp3Format, parseMp3, pcmDuration } from './mp3'
 import { applyPronunciation, describeIssuesForRewrite, onlyLengthErrors, stripSectionHeadings, targetChars, validateScript } from './validator'
 import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenlabs'
 import { StyleService } from '../services/style'
-import { buildNarrationText } from './style'
+import { buildNarrationText, normalizeLockedText } from './style'
 
 /** Research is reused across channels (same category) for 30 days — facts don't change per channel. */
 const RESEARCH_CACHE_MS = 30 * 24 * 60 * 60 * 1000
@@ -365,7 +365,9 @@ export class Pipeline {
       }
       ctx.heartbeat()
       this.recordOpenAIUsage(job, kind, out.model, out.usage)
-      return out
+      // Presentation-only fixes (label case, quote/dash style, a locked intro/outro merged into a
+      // neighbouring paragraph) so they don't cost a rewrite. Reworded text is left for the validator.
+      return { ...out, text: normalizeLockedText(out.text, template) }
     }
 
     /** Deterministic checks + optional AI review. `finalVerdict` applies the length tolerance. */

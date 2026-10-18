@@ -97,7 +97,8 @@ export const fixedTextBlockSchema = z.object({
   locked: z.boolean(),
   provenance: provenanceSchema,
   spoken: z.boolean(),
-  occurrences: z.number().int().min(0).max(1000)
+  occurrences: z.number().int().min(0).max(1000),
+  wholeParagraph: z.boolean().optional()
 })
 
 export const styleFindingSchema = z.object({

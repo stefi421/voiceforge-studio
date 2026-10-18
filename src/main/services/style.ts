@@ -21,14 +21,14 @@ import { PRODUCTION_STATUSES, SUPERVISED_STATUSES } from '../db/repos/channelRep
 import { AppError, toAppError } from '../util/errors'
 import { withRetry } from '../util/retry'
 import { countWords, newId, nowIso } from '../util/common'
-import { detectFixedText, deterministicCompliance, referenceStats } from '../pipeline/style'
+import { detectFixedText, deterministicCompliance, normalizeLockedText, referenceStats } from '../pipeline/style'
 import { validateScript } from '../pipeline/validator'
 import { openaiCost } from '../pipeline/cost'
 
 export const REFERENCE_LIMITS = { maxTextChars: 200_000, maxPerTemplate: 30, maxFileBytes: 20 * 1024 * 1024 }
 const EXT_FORMAT: Record<string, ReferenceFormat> = { '.txt': 'txt', '.md': 'md', '.markdown': 'md', '.docx': 'docx', '.pdf': 'pdf' }
 /** References sent to the writer per request (most recent first) and their size cap. */
-const PROMPT_REFERENCES = 3
+const PROMPT_REFERENCES = 2
 const PROMPT_REFERENCE_CHARS = 7000
 
 export type GateResult = { allowed: true; warning: string | null } | { allowed: false; error: AppError }
@@ -418,6 +418,7 @@ export class StyleService {
       { maxRetries: settings.openai.maxRetries, signal }
     )
     this.recordUsage(channel, 'style_test_script', out.model, out.usage)
+    out.text = normalizeLockedText(out.text, version)
     const report = validateScript(out.text, {
       channel,
       template: version,

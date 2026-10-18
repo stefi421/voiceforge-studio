@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4.0
+
+**Your reference pack is built in (15 channels)**
+- The 75 scripts you sent on 18 Oct 2026 ship with the app and are applied once on first start:
+  AperoX, AxioS, THE BLAZE, Fluxor, GAMIX, GameSense, Game Vault, Nexora, NexPlay Gaming,
+  Nyx Shadow, PixelDrop, RazorFrame, VELIX, VIR3ON and VoidPulse (Review format).
+- Each of those formats gets the 5 scripts as references and a new **approved** version with
+  the intro locked as the first paragraph, the outro locked as the last paragraph, and the five
+  section labels in the same order. Fully automatic works for them right away.
+- Game Vault keeps the intro you stated earlier ("Welcome back to Game Vault, where we mine the
+  hidden gems…") instead of the pack's shorter line; the closing comes from the pack.
+- Length for these channels: 4,500–5,000 characters, aiming for about 4,750 like the samples
+  (only where you had not changed the limits yourself).
+- A format you had edited yourself is not replaced: the pack version waits for your approval
+  in Channels → channel → Formats.
+- The pack's own README calls the samples reconstructions rather than the original historical
+  scripts; that note is kept in each version.
+- PlayTopia, RENVO and RiftForge Tech are not in the pack and still need their own references.
+
+**Scripts follow the format exactly**
+- The writer gets a format skeleton: exact intro, each section label with its usual number of
+  paragraphs, exact outro, plus two of the reference scripts (their game facts are never reused).
+- Validation checks that the first and last paragraphs are exactly the locked intro and outro and
+  that the labels appear in order.
+- Small presentation slips (label case or "## Pros:", curly vs straight quotes, dashes, the intro
+  or outro glued to the next paragraph) are fixed automatically instead of costing a rewrite.
+
 ## 1.3.0
 
 **Openings**

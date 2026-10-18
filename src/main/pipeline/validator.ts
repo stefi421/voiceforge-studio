@@ -54,7 +54,9 @@ export function targetChars(channel: Pick<Channel, 'minChars' | 'maxChars'>): nu
   const max = channel.maxChars > 0 ? channel.maxChars : 0
   const min = channel.minChars > 0 ? channel.minChars : 0
   if (max <= 0) return min > 0 ? Math.round(min * 1.1) : 0
-  const ceiling = Math.floor(max * 0.92)
+  // 92% of the max, but never more than ~250 chars below it (narrow windows such as 4,500–5,000
+  // aim for ≈4,750, the length of the owner's reference scripts).
+  const ceiling = Math.max(Math.floor(max * 0.92), max - 250)
   if (min <= 0) return ceiling
   const mid = Math.round(min + (max - min) * 0.6)
   return Math.max(min, Math.min(ceiling, mid))

@@ -174,6 +174,11 @@ export interface FixedTextBlock {
   spoken: boolean
   /** How many reference scripts contain it verbatim (0 when typed by the user). */
   occurrences: number
+  /**
+   * Intro/outro only: the block is a whole paragraph of its own — the script's first
+   * (intro) or last (outro) paragraph must equal it exactly. Set by the reference pack.
+   */
+  wholeParagraph?: boolean
 }
 
 export interface StyleFinding {

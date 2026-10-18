@@ -1,5 +1,6 @@
 import type { Channel, ReferenceScript, ResearchData, ResearchSource, TemplateVersion } from '@shared/types'
 import { targetChars } from '../pipeline/validator'
+import { buildFormatSkeleton } from '../pipeline/style'
 
 /**
  * Prompt builders. Everything the model is told about a channel comes from the
@@ -123,7 +124,28 @@ export function openingRule(channel: Channel, template: TemplateVersion, hasRefe
     .join(' ')
 }
 
-function formatRules(template: TemplateVersion): string {
+/**
+ * Explicit skeleton of the format (1.4.0): locked intro, opening paragraphs, each label with
+ * its typical paragraph count from the references, locked outro. Lets the writer reproduce
+ * the established format exactly while only the game-specific content changes.
+ */
+export function formatSkeleton(template: TemplateVersion, references: Array<Pick<ReferenceScript, 'text'>>): string {
+  const parts = buildFormatSkeleton(template, references)
+  if (!parts.length) return ''
+  const n = (k: number): string => `${k} paragraph${k === 1 ? '' : 's'}`
+  const lines = parts.map((p) => {
+    if (p.kind === 'intro') return `[first paragraph, exactly this text and nothing else:]\n${p.text}`
+    if (p.kind === 'opening') return `[${n(p.paragraphs)} introducing today's title in the channel's voice]`
+    if (p.kind === 'outro') return `[last paragraph, exactly this text and nothing after it:]\n${p.text}`
+    return `${p.text}\n[${p.paragraphs > 0 ? n(p.paragraphs) : 'paragraphs'}]`
+  })
+  return [
+    'FORMAT SKELETON — reproduce this exactly. Same structure, same section labels (each on its own line, written exactly as shown), same paragraph rhythm and similar paragraph length as the reference scripts; only the game-specific content changes. Plain text, one blank line between paragraphs, no markdown, no title line.',
+    lines.join('\n\n')
+  ].join('\n\n')
+}
+
+function formatRules(template: TemplateVersion, references: Array<Pick<ReferenceScript, 'text'>> = []): string {
   const parts: string[] = []
   if (template.confirmedRules.trim()) parts.push(`Rules the channel owner confirmed for this format:\n${template.confirmedRules.trim()}`)
   if (template.structure.length) {
@@ -139,9 +161,11 @@ function formatRules(template: TemplateVersion): string {
   if (locked.length) {
     const label: Record<string, string> = { intro: 'Opening (must be the very first spoken text)', outro: 'Closing (must be the very last text, nothing after it)', heading: 'Heading line', transition: 'Transition phrase', cta: 'Call to action', other: 'Fixed phrase' }
     parts.push(
-      `LOCKED TEXT — each item below must appear EXACTLY as written, word for word, never paraphrased:\n${locked.map((b) => `- ${label[b.kind] ?? 'Fixed text'}: <<${b.text.trim()}>>`).join('\n')}\n(Write the text without the << >> markers.)`
+      `LOCKED TEXT — each item below must appear EXACTLY as written, word for word, never paraphrased:\n${locked.map((b) => `- ${label[b.kind] ?? 'Fixed text'}${b.wholeParagraph ? ' (a paragraph of its own)' : ''}: <<${b.text.trim()}>>`).join('\n')}\n(Write the text without the << >> markers.)`
     )
   }
+  const skeleton = formatSkeleton(template, references)
+  if (skeleton) parts.push(skeleton)
   return parts.join('\n\n')
 }
 
@@ -153,7 +177,7 @@ function formatRules(template: TemplateVersion): string {
 export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, references: Array<Pick<ReferenceScript, 'title' | 'text'>> = []): string {
   const forbidden = channel.validation.forbiddenPhrases.filter(Boolean)
   const refBlock = references.length
-    ? `Approved reference scripts for this format (match their structure, tone, pacing, paragraphing and ending; reuse only the wording that the locked text above requires; never copy their game-specific sentences):\n${references
+    ? `Approved reference scripts for this format (match their structure, tone, pacing, paragraphing and ending; reuse only the wording that the locked text above requires; never copy their game-specific sentences and never reuse their game facts — those belong to other games):\n${references
         .map((r, i) => `<reference_script index="${i + 1}">\n${r.text.trim()}\n</reference_script>`)
         .join('\n')}`
     : template.exampleScript?.trim()
@@ -162,7 +186,7 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion, 
   const parts = [
     GLOBAL_NARRATION_RULES,
     `CHANNEL MASTER PROMPT — ${channel.name}\n${template.systemPrompt.trim()}`,
-    formatRules(template),
+    formatRules(template, references),
     openingRule(channel, template, references.length > 0 || !!template.exampleScript?.trim()),
     `Channel: ${channel.name} (${channel.category}). Language: ${channel.language === 'en' ? 'English' : channel.language}.`,
     channel.writingInstructions.trim() ? `Channel writing instructions:\n${channel.writingInstructions.trim()}` : '',
