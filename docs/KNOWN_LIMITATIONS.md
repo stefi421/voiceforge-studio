@@ -1,6 +1,16 @@
-# Known limitations (v1.6.0)
+# Known limitations (v1.6.1)
 
 Honest list of what is not done, partially done, or unverified.
+
+## OpenAI limits and store links (1.6.1)
+
+* Token reservations are estimated from characters (≈ 4 per token) plus a fixed allowance for web
+  search results; the real numbers come from OpenAI's headers after each response, so the first
+  requests of a model after a restart start from the limits seen last time.
+* The provider_calls log has no viewer in the app yet (it is in the SQLite database, table
+  `provider_calls`, newest 5,000 rows).
+* Only Steam links are recognised as store links; other stores' links are treated as text.
+* Retitling a link-derived project only happens before its output folder exists.
 
 ## Game Library and reuse (1.6.0)
 

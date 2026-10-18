@@ -21,8 +21,13 @@ import { StyleService } from '../services/style'
 import { buildNarrationText, normalizeLockedText } from './style'
 import { compactResearch, GameLibrary, subjectFor, TYPICAL_RESEARCH_TOKENS } from '../services/gameLibrary'
 import { localScriptFixes } from './localFixes'
+import { inputTokens, RESEARCH_FULL_OUTPUT_TOKENS, RESEARCH_OUTPUT_TOKENS, scriptOutputTokens, WEB_SEARCH_INPUT_TOKENS } from './tokens'
+import { buildScriptPrompt, researchInstructions, researchUserInput } from '../providers/prompts'
+import type { ScriptRequest, ScriptResponse } from '../providers/types'
 
 const LEASE_MS = 120_000
+/** Rate-limit (429) retries allowed per request; each waits as long as OpenAI asks. */
+const RATE_LIMIT_RETRIES = 8
 /** Voice parts are kept this long so a resume or a regeneration after a small edit can reuse them. */
 const TTS_CACHE_MS = 30 * 24 * 60 * 60 * 1000
 
@@ -223,24 +228,37 @@ export class Pipeline {
     const model = this.s.settings.get().openai.researchModel || channel.openaiModel || this.s.settings.get().openai.defaultModel
     // Retries happen outside the slot so a waiting backoff never blocks other titles.
     const timeoutMs = this.timeout('research', 'openai')
-    const result = await withRetry(
-      () => this.governor.withOpenAI(PRIORITY.research, ctx.signal, () => this.s.providers.openai().research({ title: job.title, category: channel.category, settings: research, model, manualNotes: job.manualResearchNotes, signal: ctx.signal, timeoutMs })),
-      {
-        maxRetries: this.s.settings.get().openai.maxRetries,
-        signal: ctx.signal,
-        onRetry: (attempt, delay, err) => {
-          ctx.heartbeat()
-          this.s.jobs.addEvent(job.id, 'retry', null, null, `Research retry ${attempt} in ${Math.round(delay / 1000)}s: ${err.message}`)
-        }
-      }
-    )
+    const storeHint = job.overrides?.steamAppId ? { appId: job.overrides.steamAppId, url: job.overrides.storeUrl ?? '' } : null
+    const useWeb = research.mode === 'openai_web_search'
+    // 1.6.1: a small output cap (reserved against the model's tokens/min); once more with the full cap if it runs out.
+    let maxOut = RESEARCH_OUTPUT_TOKENS
+    const promptTokens = inputTokens(researchInstructions(channel.category, research, useWeb), researchUserInput(job.title, channel.category, job.manualResearchNotes, storeHint)) + (useWeb ? WEB_SEARCH_INPUT_TOKENS : 0)
+    const callResearch = () =>
+      withRetry(
+        (attempt) =>
+          this.governor.withOpenAI({ model, priority: PRIORITY.research, estTokens: promptTokens + maxOut, jobId: job.id, kind: 'research', attempt }, ctx.signal, () =>
+            this.s.providers.openai().research({ title: job.title, category: channel.category, settings: research, model, manualNotes: job.manualResearchNotes, signal: ctx.signal, timeoutMs, maxOutputTokens: maxOut, storeHint })
+          ),
+        this.openaiRetryOptions(job, ctx, model, 'Research')
+      )
+    let result: Awaited<ReturnType<typeof callResearch>>
+    try {
+      result = await callResearch()
+    } catch (err) {
+      const e = toAppError(err)
+      if (e.code !== 'MAX_OUTPUT_TOKENS' || maxOut >= RESEARCH_FULL_OUTPUT_TOKENS) throw e
+      this.s.jobs.addEvent(job.id, 'retry', null, null, `Research needed more than ${maxOut.toLocaleString('en-US')} output tokens; retrying once with ${RESEARCH_FULL_OUTPUT_TOKENS.toLocaleString('en-US')}`)
+      maxOut = RESEARCH_FULL_OUTPUT_TOKENS
+      result = await callResearch()
+    }
     this.recordOpenAIUsage(job, 'research', result.model, result.usage)
     const data = result.data
     const candidates = data.ambiguityCandidates ?? []
     // Don't stop for a choice when the typed title IS the top candidate and research is confident enough.
     const typedMatchesTop = candidates.length > 0 && normalizeTitle(candidates[0]!.title) === normalizeTitle(job.title)
     const exactAndConfident = typedMatchesTop && data.confidence >= research.minConfidence
-    const ambiguous = research.askOnAmbiguity && candidates.length > 1 && data.confidence < 0.85 && !exactAndConfident
+    // A pasted store link identifies the game exactly: never ask which one was meant.
+    const ambiguous = !storeHint && research.askOnAmbiguity && candidates.length > 1 && data.confidence < 0.85 && !exactAndConfident
     const insufficient = !!data.insufficientReason?.trim() || data.confidence < research.minConfidence
     const status: ResearchResult['status'] = ambiguous ? 'ambiguous' : insufficient ? 'insufficient' : 'confirmed'
     const row = this.s.research.create({ jobId: job.id, projectId: job.projectId, status, data, sources: result.sources, model: result.model, mode: research.mode })
@@ -249,7 +267,8 @@ export class Pipeline {
       try {
         const game = this.library.record({
           typedTitle: job.title,
-          aliases: job.overrides?.aliasTitles ?? [],
+          aliases: [...(job.overrides?.aliasTitles ?? []), ...(job.overrides?.storeUrl ? [job.overrides.storeUrl] : [])],
+          steamAppId: job.overrides?.steamAppId ?? null,
           subject: subjectFor(channel.category),
           data,
           sources: result.sources,
@@ -263,9 +282,11 @@ export class Pipeline {
         this.log.warn('Could not save research to the Game Library', { jobId: job.id, error: toAppError(err).message })
       }
       this.s.jobs.update(job.id, { stage: 'script' })
-      // The official title is kept alongside the user's title; it never renames the project/folder.
+      // The official title is kept alongside the user's title; it never renames the project/folder —
+      // except for a title derived from a pasted link (1.6.1), which takes the official title.
       const canonical = data.canonicalTitle?.trim()
-      if (canonical && normalizeTitle(canonical) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: canonical })
+      if (canonical && job.overrides?.titleFromUrl) this.adoptOfficialTitle(job, canonical)
+      else if (canonical && normalizeTitle(canonical) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: canonical })
       return 'continue'
     }
     const detail = ambiguous ? `Ambiguous title: ${candidates.map((c) => c.title).join(' / ')}` : data.insufficientReason || `Low confidence (${data.confidence.toFixed(2)} < ${research.minConfidence})`
@@ -285,12 +306,23 @@ export class Pipeline {
     if (job.manualResearchNotes?.trim() && !chosenId) return 'research'
     let game = chosenId ? this.s.games.get(chosenId) : undefined
     let how = 'the saved research you chose'
+    const appId = job.overrides?.steamAppId
+    // 1.6.1: a Steam app id identifies the game exactly and beats any name match.
+    if (!game && appId) {
+      game = this.s.games.byAppId(appId)
+      if (game) how = 'saved research (same Steam app)'
+    }
     if (!game) {
       const m = this.library.match(job.title, channel.category)
-      if ((m.kind === 'exact' || m.kind === 'auto') && m.gameId) {
-        game = this.s.games.get(m.gameId)
+      const named = (m.kind === 'exact' || m.kind === 'auto') && m.gameId ? this.s.games.get(m.gameId) : undefined
+      if (named && appId && named.steamAppId && named.steamAppId !== appId) {
+        // Same name, different Steam app: a different game (research it).
+        this.s.jobs.addEvent(job.id, 'library_skip', null, null, `Saved "${named.canonicalTitle}" is Steam app ${named.steamAppId}, this link is app ${appId}; researching it as a different game.`)
+      } else if (named) {
+        game = named
         how = m.kind === 'exact' ? 'saved research' : `saved research for "${m.canonicalTitle}"`
-      } else if (m.kind === 'near' && !job.overrides?.skipLibraryNear && channel.research.askOnAmbiguity) {
+        if (appId && !named.steamAppId) this.s.games.setSteamAppId(named.id, appId)
+      } else if (m.kind === 'near' && !appId && !job.overrides?.skipLibraryNear && channel.research.askOnAmbiguity) {
         const candidates = m.candidates.map((c) => {
           const g = this.s.games.get(c.gameId)
           return { title: c.canonicalTitle, developer: g?.developer ?? '', year: (g?.releaseDate ?? '').slice(0, 4), note: 'Saved research — reusing it uses no credits.', gameId: c.gameId }
@@ -321,6 +353,7 @@ export class Pipeline {
     this.s.games.markUsed(game.id)
     // A choice the user made once is never asked again.
     if (chosenId) this.s.games.addAlias(game.id, job.title)
+    if (job.overrides?.storeUrl) this.s.games.addAlias(game.id, job.overrides.storeUrl)
     this.s.jobs.update(job.id, { researchId: row.id, stage: 'script' })
     this.s.reuse.record({
       kind: 'research',
@@ -332,9 +365,49 @@ export class Pipeline {
       detail: game.canonicalTitle
     })
     this.s.jobs.addEvent(job.id, 'research_reused', null, null, `Reused ${how}: ${game.canonicalTitle} (researched ${game.researchedAt.slice(0, 10)}) — no research credits used`)
-    if (normalizeTitle(game.canonicalTitle) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: game.canonicalTitle })
+    if (job.overrides?.titleFromUrl) this.adoptOfficialTitle(job, game.canonicalTitle)
+    else if (normalizeTitle(game.canonicalTitle) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: game.canonicalTitle })
     this.log.info('Research reused from the Game Library', { jobId: job.id, title: job.title, gameId: game.id })
     return 'continue'
+  }
+
+  /**
+   * 1.6.1: a job whose title was derived from a pasted link takes the official title for the job,
+   * the project and the (not yet created) output folder. Kept as-is when another project of the
+   * channel already has that title or the folder already exists.
+   */
+  private adoptOfficialTitle(job: Job, official: string): void {
+    const title = official.trim()
+    if (!title || title === job.title) return
+    try {
+      const renamed = this.projectsSvc.retitle(job.projectId, title)
+      if (renamed) {
+        this.s.jobs.update(job.id, { title, overrides: { ...(job.overrides ?? {}), titleFromUrl: false, aliasTitles: [...new Set([...(job.overrides?.aliasTitles ?? []), job.title])] } })
+        this.s.jobs.addEvent(job.id, 'retitled', null, null, `Title from the link "${job.title}" → official title "${title}"`)
+        const view = this.s.jobs.getView(job.id)
+        if (view) this.s.events.jobChanged(view)
+      } else {
+        this.s.projects.update(job.projectId, { canonicalTitle: title })
+      }
+    } catch (err) {
+      this.log.warn('Could not take the official title for a link-derived job', { jobId: job.id, error: toAppError(err).message })
+    }
+  }
+
+  /** Retry options for OpenAI calls: Retry-After honoured, waits shown on the job (1.6.1). */
+  private openaiRetryOptions(job: Job, ctx: StageContext, model: string, label: string): Parameters<typeof withRetry>[1] {
+    const settings = this.s.settings.get()
+    return {
+      maxRetries: settings.openai.maxRetries,
+      // A 429 is OpenAI asking us to slow down, not a failure: allow more of those.
+      maxRateLimitRetries: Math.max(settings.openai.maxRetries, RATE_LIMIT_RETRIES),
+      signal: ctx.signal,
+      onRetry: (attempt, delay, err) => {
+        ctx.heartbeat()
+        this.governor.noteRetryWait(job.id, model, delay, err.kind)
+        this.s.jobs.addEvent(job.id, 'retry', null, null, `${label} retry ${attempt} in ${Math.round(delay / 1000)}s: ${err.message}`)
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -399,57 +472,53 @@ export class Pipeline {
     this.s.jobs.update(job.id, { scriptAttempts: job.scriptAttempts + 1 })
 
     const tolerance = settings.generation.lengthToleranceChars
-    // Speed: cap output tokens to what the script needs (≈3.5 chars/token, ×2 headroom, + a small
-    // reasoning budget). If the model still runs out, the call is retried once with the full limit.
-    const tokenCap = Math.min(settings.openai.maxOutputTokens, Math.max(2500, Math.ceil(((channel.maxChars || 5000) * 2) / 3.5) + 1500))
+    // 1.6.1: the cap is reserved against the model's tokens/min, so it is sized to the script
+    // (max chars / 3.2 + reasoning headroom). If the model still runs out, the call is retried
+    // once with the full limit (shown in the job's history).
+    const tokenCap = scriptOutputTokens(channel.maxChars || 5000, settings.openai.reasoningEffort, settings.openai.maxOutputTokens)
     let maxOutputTokens = tokenCap
     type WriterOpts = { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }
-    const writeOnce = (opts: WriterOpts, tokens: number) =>
-      this.s.providers.openai().writeScript({
-        channel,
-        template,
-        title: job.title,
-        research: researchData,
-        researchSources,
-        model,
-        temperature: settings.openai.temperature,
-        maxOutputTokens: tokens,
-        reasoningEffort: settings.openai.reasoningEffort,
-        previousScript: opts.previousScript,
-        issues: opts.issues,
-        feedback: opts.feedback,
-        tighten: opts.tighten,
-        references,
-        skeletonReferences,
-        // Same stable prefix for every title of this format → provider-side prompt caching.
-        promptCacheKey: `vf:${template.id}`,
-        signal: ctx.signal,
-        timeoutMs: this.timeout('script', 'openai')
-      })
+    const scriptRequest = (opts: WriterOpts, tokens: number): ScriptRequest => ({
+      channel,
+      template,
+      title: job.title,
+      research: researchData,
+      researchSources,
+      model,
+      temperature: settings.openai.temperature,
+      maxOutputTokens: tokens,
+      reasoningEffort: settings.openai.reasoningEffort,
+      previousScript: opts.previousScript,
+      issues: opts.issues,
+      feedback: opts.feedback,
+      tighten: opts.tighten,
+      references,
+      skeletonReferences,
+      // Same stable prefix for every title of this format → provider-side prompt caching.
+      promptCacheKey: `vf:${template.id}`,
+      signal: ctx.signal,
+      timeoutMs: this.timeout('script', 'openai')
+    })
     const callWriter = async (opts: WriterOpts, kind: string) => {
-      const out = await withRetry(
-        () =>
-          this.governor.withOpenAI(PRIORITY.script, ctx.signal, async () => {
-            try {
-              return await writeOnce(opts, maxOutputTokens)
-            } catch (err) {
-              const e = toAppError(err)
-              if (e.code === 'MAX_OUTPUT_TOKENS' && maxOutputTokens < settings.openai.maxOutputTokens) {
-                maxOutputTokens = settings.openai.maxOutputTokens
-                return await writeOnce(opts, maxOutputTokens)
-              }
-              throw e
-            }
-          }),
-        {
-          maxRetries: settings.openai.maxRetries,
-          signal: ctx.signal,
-          onRetry: (n, delay, err) => {
-            ctx.heartbeat()
-            this.s.jobs.addEvent(job.id, 'retry', null, null, `Script retry ${n} in ${Math.round(delay / 1000)}s: ${err.message}`)
-          }
-        }
-      )
+      const send = () => {
+        const req = scriptRequest(opts, maxOutputTokens)
+        const prompt = buildScriptPrompt(req)
+        const estTokens = inputTokens(prompt.instructions, prompt.input) + maxOutputTokens
+        return withRetry(
+          (attempt) => this.governor.withOpenAI({ model, priority: PRIORITY.script, estTokens, jobId: job.id, kind, attempt }, ctx.signal, () => this.s.providers.openai().writeScript(req)),
+          this.openaiRetryOptions(job, ctx, model, 'Script')
+        )
+      }
+      let out: ScriptResponse
+      try {
+        out = await send()
+      } catch (err) {
+        const e = toAppError(err)
+        if (e.code !== 'MAX_OUTPUT_TOKENS' || maxOutputTokens >= settings.openai.maxOutputTokens) throw e
+        this.s.jobs.addEvent(job.id, 'retry', null, null, `The script needed more than ${maxOutputTokens.toLocaleString('en-US')} output tokens; retrying once with ${settings.openai.maxOutputTokens.toLocaleString('en-US')}`)
+        maxOutputTokens = settings.openai.maxOutputTokens
+        out = await send()
+      }
       ctx.heartbeat()
       this.recordOpenAIUsage(job, kind, out.model, out.usage)
       // Presentation-only fixes (label case, quote/dash style, a locked intro/outro merged into a
@@ -478,7 +547,10 @@ export class Pipeline {
       if (report.ok && settings.generation.aiReviewPass && channel.validation.aiReviewPass && strictness !== 'relaxed') {
         try {
           const review = await withRetry(
-            () => this.governor.withOpenAI(PRIORITY.review, ctx.signal, () => this.s.providers.openai().reviewScript({ channel, title: job.title, script: text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal })),
+            (attempt) =>
+              this.governor.withOpenAI({ model: settings.openai.reviewModel || model, priority: PRIORITY.review, estTokens: inputTokens(text) + 3000, jobId: job.id, kind: 'review', attempt }, ctx.signal, () =>
+                this.s.providers.openai().reviewScript({ channel, title: job.title, script: text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal })
+              ),
             { maxRetries: 1, signal: ctx.signal }
           )
           this.recordOpenAIUsage(job, 'review', review.model, review.usage)

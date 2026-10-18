@@ -1,4 +1,5 @@
 import type { Job, JobStage, JobStatus, QueueStats, VoiceSettings } from '@shared/types'
+import { jobWaits } from './callContext'
 import type { Services } from '../services/container'
 import type { ScopedLogger } from '../services/logger'
 import { LEASE_MS, Pipeline } from '../pipeline/pipeline'
@@ -101,6 +102,7 @@ export class QueueEngine {
     this.statsTimer = null
     for (const r of this.running.values()) r.controller.abort(new AppError('cancelled', 'Application is closing.', { retryable: false }))
     await Promise.allSettled([...this.running.values()].map((r) => r.promise))
+    this.pipeline.governor.stop()
     this.s.jobs.releaseAll()
   }
 
@@ -172,6 +174,7 @@ export class QueueEngine {
     const entry: Running = { controller, pauseRequested: false, owner, promise: Promise.resolve() }
     entry.promise = this.runJob(job.id, entry).finally(() => {
       this.running.delete(job.id)
+      jobWaits.clear(job.id)
       this.s.jobs.release(job.id)
       if (entry.afterExit) {
         try {

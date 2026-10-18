@@ -1,5 +1,51 @@
 # Changelog
 
+## 1.6.1
+
+**OpenAI limits per model — scripts no longer queue behind each other's reservations**
+- OpenAI's limits are per model (e.g. gpt-6.1-sol 30,000 tokens/min on the Build tier, gpt-6-luna
+  200,000). Each model now has its own lane: research on the small model never waits for scripts
+  on the large one, and vice versa. 1.6.0 kept one shared rate-limit reading for all models, so a
+  research response could make a script wait (up to 15 s per request) or let it run into a 429.
+- Each lane has a token budget learned from OpenAI's response headers (nothing is limited before
+  the first response). A request is sent when its reservation — prompt + max output tokens, which
+  is what OpenAI counts when the request arrives — fits in what is left of the window, in priority
+  order (audio > script > research). Adaptive concurrency (AIMD) is per model too.
+- After a 429 the model pauses for exactly as long as OpenAI says (`retry-after-ms`, `retry-after`,
+  then the window reset); up to 8 rate-limit retries per request (other errors keep "Max
+  retries"). The SDK's own hidden retries stay off.
+- **Visible waits**: the queue row says "Waiting for OpenAI limit · 18 s" (live countdown; hover
+  for why) and the batch header shows the soonest wait. One log line per wait.
+- **Settings → OpenAI → Rate limits per model**: "gpt-6.1-sol: 30,000 tokens/min, 500 requests/min
+  — detected from OpenAI". Limits rise automatically with your OpenAI usage tier.
+- Every OpenAI request is recorded (model, status, latency, wait, reserved tokens, retry number,
+  remaining/limit/reset for requests and tokens) in a compact log (newest 5,000 kept).
+
+**Smaller reservations** (same scripts — only the unused headroom goes)
+- Script max output tokens: max characters / 3.2 + reasoning headroom (low effort: +600).
+  4,700 chars: 4,186 → 2,069 · 5,000 chars: 4,358 → 2,163 · 6,000 chars: 4,929 → 2,475.
+- Research: 5,000 → 1,500 (with low search context).
+- If a model still runs out, the request is retried once with the full limit — now shown in the
+  job's history instead of happening silently inside the slot.
+- Mock benchmark with OpenAI-style limits (sol 30k / luna 200k TPM, 429 + Retry-After):
+  10 titles 169 s → 100 s, 4 → 0 rate-limit errors; 3 titles unchanged (65 s → 67 s, nothing to
+  wait for).
+
+**Steam links as titles**
+- Paste `store.steampowered.com/app/<id>/<Name>` (or a steamcommunity.com / s.team / steam://
+  link): the job is named after the link ("Brick_by_Brick_Tidy_Up_the_Small_Town" → "Brick by
+  Brick Tidy Up the Small Town", "DisneyPixar_Toy_Story_3…" → "Disney Pixar Toy Story 3…") and New
+  generation shows that name next to the link.
+- Research gets the app id and store page as a hint and never asks "which game did you mean?".
+  The official title then becomes the job, project and folder name (the one exception to "the
+  folder keeps your title" — a URL is not a title).
+- Games remember the Steam app id (unique): a link matches by app id before any name; a game with
+  the same name but another app id is a different game. The link and the link's title become
+  aliases. A link and the same game typed by name in one batch are duplicates.
+- One-time repair of 1.6.0 rows titled with a URL (Games entries and projects): official title
+  from the saved research, app id stored, URL kept as an alias. Only database titles change;
+  files and folders are not moved.
+
 ## 1.6.0
 
 **Research once, reuse forever (Games)**

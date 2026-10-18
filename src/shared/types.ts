@@ -402,6 +402,22 @@ export interface JobOverrides {
   aliasTitles?: string[]
   /** Audio regeneration: always voice again, even when an identical voiceover/part exists. */
   freshTake?: boolean
+  /** 1.6.1: the title was pasted as a Steam link — the app id identifies the game exactly. */
+  steamAppId?: string
+  /** The store link as pasted (kept as an alias of the game and passed to research as a hint). */
+  storeUrl?: string
+  /** The job title was derived from a link: research's official title replaces it (project/folder too). */
+  titleFromUrl?: boolean
+}
+
+/** Why a job is not sending its next provider request right now (1.6.1, shown in the queue). */
+export interface WaitingFor {
+  provider: 'openai' | 'elevenlabs'
+  /** rate_limit: OpenAI answered 429 and asked us to wait; budget: our own per-model token budget is spent until the window refills. */
+  reason: 'rate_limit' | 'budget'
+  model: string | null
+  /** Epoch ms when the request is expected to go out. */
+  untilMs: number
 }
 
 export interface JobView extends Job {
@@ -412,6 +428,8 @@ export interface JobView extends Job {
   projectFolder: string | null
   scriptCharCount: number | null
   audioFilePath: string | null
+  /** 1.6.1: set while the job's next request waits for a provider limit (in memory, not persisted). */
+  waitingFor?: WaitingFor | null
 }
 
 export interface Batch {
@@ -483,6 +501,25 @@ export interface ProviderLiveStatus {
   /** Circuit breaker: new requests pause until this time after repeated transient failures. */
   coolingDownUntil: string | null
   lastError: string | null
+  /** 1.6.1 (OpenAI): limits are per model; what each model's response headers reported. */
+  models?: OpenAIModelLimit[]
+}
+
+export interface OpenAIModelLimit {
+  model: string
+  /** Requests allowed at once for this model right now (adaptive). */
+  concurrency: number
+  inFlight: number
+  waiting: number
+  tokensPerMinute: number | null
+  requestsPerMinute: number | null
+  /** Estimated tokens available now (refills continuously). */
+  remainingTokens: number | null
+  /** Where the limits come from: headers (detected from OpenAI) or not yet known. */
+  source: 'headers' | 'unknown'
+  detectedAt: string | null
+  /** Set while this model's requests pause after a 429. */
+  blockedUntil: string | null
 }
 
 export type TimingStage = 'research' | 'script' | 'validate' | 'audio' | 'save' | 'waiting'
@@ -773,6 +810,8 @@ export interface GameRecord {
   canonicalTitle: string
   /** Other spellings that resolve to this entry, as they were typed (matched after normalisation). */
   aliases: string[]
+  /** 1.6.1: Steam app id when known (unique); a pasted Steam link matches by id before any name. */
+  steamAppId: string | null
   developer: string
   publisher: string
   genre: string

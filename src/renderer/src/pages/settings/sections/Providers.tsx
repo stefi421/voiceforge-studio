@@ -15,6 +15,7 @@ import { ApiKeyCard, DeferredNumber } from './ProviderShared'
 export function OpenAISection(): JSX.Element {
   const { settings, set } = useSettingsPatch()
   const hasKey = useApp((s) => s.secrets.openai)
+  const limits = useApp((s) => s.stats?.providers?.openai.models ?? [])
   const o = settings.openai
   const models = useAsync(() => api.invoke('openai:listModels', undefined), [hasKey], { enabled: hasKey })
   const options = useMemo(() => {
@@ -52,6 +53,29 @@ export function OpenAISection(): JSX.Element {
         </div>
       </div>
       <div className="settings-group">
+        <div className="settings-group-title">Rate limits per model</div>
+        {limits.length ? (
+          <div className="col gap-1">
+            {limits.map((m) => (
+              <div key={m.model} className="row-between small">
+                <span className="mono">{m.model}</span>
+                <span className={m.source === 'headers' ? '' : 'muted'}>
+                  {m.source === 'headers'
+                    ? `${m.tokensPerMinute !== null ? `${formatNumber(m.tokensPerMinute)} tokens/min` : 'tokens/min unknown'}, ${m.requestsPerMinute !== null ? `${formatNumber(m.requestsPerMinute)} requests/min` : 'requests/min unknown'} — detected from OpenAI${m.detectedAt ? ` ${relativeTime(m.detectedAt)}` : ''}`
+                    : 'not known yet — detected from the first response'}
+                  {m.blockedUntil ? ' · waiting after a rate-limit response' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="small muted">Detected from OpenAI's response headers on the first request of each model.</span>
+        )}
+        <span className="xs muted">
+          OpenAI limits are per model and rise automatically with your usage tier (Settings → Limits on platform.openai.com). Requests are scheduled to fit each model's tokens-per-minute; reserved tokens = prompt + max output tokens.
+        </span>
+      </div>
+      <div className="settings-group">
         <div className="settings-group-title">Request parameters</div>
         <div className="form-grid">
           <Slider label="Temperature" min={0} max={2} step={0.05} value={o.temperature} onChange={(v) => void set('openai', 'temperature', Math.round(v * 100) / 100)} hint="Some models ignore temperature." />
@@ -64,7 +88,7 @@ export function OpenAISection(): JSX.Element {
           <Field label="Max retries">
             <DeferredNumber value={o.maxRetries} onCommit={(v) => void set('openai', 'maxRetries', v ?? 0)} min={0} max={10} />
           </Field>
-          <Field label="Concurrency" hint="Parallel OpenAI requests across all jobs.">
+          <Field label="Concurrency" hint="Parallel OpenAI requests per model (used when automatic tuning is off).">
             <DeferredNumber value={o.concurrency} onCommit={(v) => void set('openai', 'concurrency', v ?? 1)} min={1} max={10} />
           </Field>
         </div>

@@ -1,7 +1,8 @@
 import { memo, type JSX, type MouseEvent } from 'react'
 import { Ban, FolderOpen, Pause, Play, RotateCcw, Trash } from 'lucide-react'
-import type { JobView } from '@shared/types'
-import { fixActionFor, jobAttempts, isActiveStatus, isFinished, needsUser, stageText } from '@/lib/jobs'
+import type { JobView, WaitingFor } from '@shared/types'
+import { fixActionFor, jobAttempts, isActiveStatus, isFinished, needsUser, stageText, waitingText, waitingTooltip } from '@/lib/jobs'
+import { useNow } from '@/lib/hooks'
 import { relativeTime } from '@/lib/format'
 import { Button, ChannelChip, StagePipeline, StatusBadge } from '@/components/ui'
 
@@ -37,9 +38,13 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, selected, n
           <span className="strong truncate" title={job.title} style={{ maxWidth: 380 }}>
             {job.title}
           </span>
-          <span className={`xs truncate ${job.status === 'failed' ? 'text-danger' : waiting ? 'text-warning' : 'muted'}`} title={stageText(job, { modelId, queuePaused })}>
-            {stageText(job, { modelId, queuePaused })}
-          </span>
+          {job.waitingFor && !isFinished(job.status) && job.status !== 'paused' ? (
+            <WaitLine wait={job.waitingFor} />
+          ) : (
+            <span className={`xs truncate ${job.status === 'failed' ? 'text-danger' : waiting ? 'text-warning' : 'muted'}`} title={stageText(job, { modelId, queuePaused })}>
+              {stageText(job, { modelId, queuePaused })}
+            </span>
+          )}
           <span className="xs subtle truncate">
             {job.batchName} · {relativeTime(job.updatedAt, now)}
           </span>
@@ -87,3 +92,13 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, selected, n
     </tr>
   )
 })
+
+/** Live countdown (1 s) while the job's next request waits for a provider limit (1.6.1). */
+export function WaitLine({ wait }: { wait: WaitingFor }): JSX.Element {
+  const now = useNow(1000)
+  return (
+    <span className="xs truncate text-accent" title={waitingTooltip(wait)}>
+      {waitingText(wait, now)}
+    </span>
+  )
+}

@@ -388,5 +388,38 @@ CREATE TABLE IF NOT EXISTS reuse_events (
 );
 CREATE INDEX IF NOT EXISTS idx_reuse_created ON reuse_events(created_at);
 `
+  },
+  {
+    id: 6,
+    name: 'provider_calls_and_steam_ids',
+    // 1.6.1: one compact row per provider request (model, status, latency, rate-limit headers),
+    // pruned to the newest ~5,000 rows; Steam app ids on saved games (unique when present).
+    // URL-titled rows from 1.6.0 are repaired by GameLibrary.repairStoreLinkTitles() on start.
+    sql: `
+CREATE TABLE IF NOT EXISTS provider_calls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT,
+  kind TEXT,
+  job_id TEXT,
+  status INTEGER,
+  error_kind TEXT,
+  latency_ms INTEGER NOT NULL DEFAULT 0,
+  waited_ms INTEGER NOT NULL DEFAULT 0,
+  est_tokens INTEGER,
+  retry INTEGER NOT NULL DEFAULT 0,
+  limit_requests INTEGER,
+  remaining_requests INTEGER,
+  reset_requests_ms INTEGER,
+  limit_tokens INTEGER,
+  remaining_tokens INTEGER,
+  reset_tokens_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_provider_calls_job ON provider_calls(job_id);
+
+ALTER TABLE games ADD COLUMN steam_app_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_games_steam ON games(steam_app_id) WHERE steam_app_id IS NOT NULL;
+`
   }
 ]

@@ -5,10 +5,12 @@ import type { ScopedLogger } from './logger'
 import { GAME_KEY_VERSION, gameKey, matchTitle, type MatchResult } from '../pipeline/gameMatch'
 import { openaiCost } from '../pipeline/cost'
 import { AppError } from '../util/errors'
-import { nowIso } from '../util/common'
+import { looksLikeUrl, parseStoreLink, storeLinkTitle } from '@shared/storeLinks'
+import { normalizeTitle, nowIso } from '../util/common'
 
 const IMPORTED_KEY = 'game_library_imported_v1'
 const KEY_VERSION_KEY = 'game_library_key_version'
+const STORE_LINK_REPAIR_KEY = 'store_link_titles_repaired_v1'
 /** Used when the original research cost is unknown (imported entries): a typical web-search research call. */
 export const TYPICAL_RESEARCH_TOKENS = 9000
 
@@ -97,16 +99,37 @@ export class GameLibrary {
   ) {}
 
   /** Classifies a typed title against the saved entries for the channel's subject (game / product). */
-  match(title: string, category: Channel['category']): MatchResult {
-    return matchTitle(title, this.s.games.allKeys(subjectFor(category)))
+  match(title: string, category: Channel['category'], steamAppId?: string | null): MatchResult {
+    return this.matchWith(title, this.s.games.allKeys(subjectFor(category)), steamAppId)
   }
 
   matchMany(titles: string[], category: Channel['category']): GameMatch[] {
     const entries = this.s.games.allKeys(subjectFor(category))
     return titles.map((title) => {
-      const m = matchTitle(title, entries)
+      const m = this.matchWith(title, entries)
       return { title, kind: m.kind, gameId: m.gameId, canonicalTitle: m.canonicalTitle, candidates: m.candidates }
     })
+  }
+
+  /**
+   * 1.6.1: a pasted Steam link (or a known app id) matches by app id first — exactly — then by the
+   * title in the link. A name match that is a different Steam app is not a match.
+   */
+  private matchWith(title: string, entries: ReturnType<Services['games']['allKeys']>, steamAppId?: string | null): MatchResult {
+    const link = parseStoreLink(title)
+    const appId = steamAppId ?? link?.appId ?? null
+    if (appId) {
+      const g = this.s.games.byAppId(appId)
+      if (g) return { kind: 'exact', gameId: g.id, canonicalTitle: g.canonicalTitle, candidates: [] }
+    }
+    const name = link ? link.slugTitle : title
+    if (!name.trim()) return { kind: 'none', gameId: null, canonicalTitle: null, candidates: [] }
+    const m = matchTitle(name, entries)
+    if (appId && m.gameId && (m.kind === 'exact' || m.kind === 'auto')) {
+      const other = this.s.games.get(m.gameId)?.steamAppId
+      if (other && other !== appId) return { kind: 'none', gameId: null, canonicalTitle: null, candidates: [] }
+    }
+    return m
   }
 
   /** Research data to send to the writer for an entry (compact; user corrections applied). */
@@ -145,17 +168,32 @@ export class GameLibrary {
    * Stores confirmed research. When the typed title or the official title is already known, the
    * existing entry is updated (newer research wins; notes, user facts, aliases and pin are kept).
    */
-  record(input: { typedTitle: string; aliases?: string[]; subject: GameSubject; data: ResearchData; sources: ResearchSource[]; model: string | null; tokens: number }): GameRecord {
+  record(input: { typedTitle: string; aliases?: string[]; steamAppId?: string | null; subject: GameSubject; data: ResearchData; sources: ResearchSource[]; model: string | null; tokens: number }): GameRecord {
     const canonical = input.data.canonicalTitle?.trim() || input.typedTitle.trim()
     const data = compactResearch({ ...input.data, canonicalTitle: canonical })
-    const existing = this.s.games.byKey(input.subject, gameKey(canonical)) ?? this.s.games.byKey(input.subject, gameKey(input.typedTitle))
+    // 1.6.1: a Steam app id beats a name; a name match that is a different Steam app is not the same game.
+    const byApp = input.steamAppId ? this.s.games.byAppId(input.steamAppId) : undefined
+    const byName = byApp ? undefined : (this.s.games.byKey(input.subject, gameKey(canonical)) ?? this.s.games.byKey(input.subject, gameKey(input.typedTitle)))
+    const existing = byApp ?? (byName && input.steamAppId && byName.steamAppId && byName.steamAppId !== input.steamAppId ? undefined : byName)
     const game = existing
       ? this.s.games.replaceResearch(existing.id, { canonicalTitle: canonical, data, sources: input.sources, researchModel: input.model, researchTokens: input.tokens || existing.researchTokens })
-      : this.s.games.create({ subjectType: input.subject, canonicalTitle: canonical, data, sources: input.sources, researchModel: input.model, researchTokens: input.tokens })
+      : this.createUnique({ subjectType: input.subject, canonicalTitle: canonical, data, sources: input.sources, researchModel: input.model, researchTokens: input.tokens })
+    if (input.steamAppId && game.steamAppId !== input.steamAppId && !this.s.games.setSteamAppId(game.id, input.steamAppId)) {
+      this.log.info('Steam app id already belongs to another saved game; not stored', { appId: input.steamAppId, gameId: game.id })
+    }
     for (const a of [input.typedTitle, ...(input.aliases ?? [])]) {
       if (a?.trim() && !this.s.games.addAlias(game.id, a)) this.log.info('Alias already belongs to another saved game; not learned', { alias: a, gameId: game.id })
     }
     return this.s.games.get(game.id)!
+  }
+
+  /** Creates an entry; a canonical-title clash with a different game gets a disambiguated key. */
+  private createUnique(input: Parameters<Services['games']['create']>[0]): GameRecord {
+    if (!this.s.games.byKey(input.subjectType, gameKey(input.canonicalTitle))) return this.s.games.create(input)
+    const dev = input.data.developer?.trim()
+    const year = (input.data.releaseDate ?? '').slice(0, 4)
+    const suffix = [dev, /^\d{4}$/.test(year) ? year : ''].filter(Boolean).join(', ') || 'another game'
+    return this.s.games.create({ ...input, canonicalTitle: `${input.canonicalTitle} (${suffix})` })
   }
 
   /** Estimated cost of the research call an entry saves on reuse. */
@@ -172,6 +210,72 @@ export class GameLibrary {
     this.s.settingsRepo.set(KEY_VERSION_KEY, GAME_KEY_VERSION)
     if (changed) this.log.info('Updated saved game title keys', { changed })
     return changed
+  }
+
+  /**
+   * 1.6.1, one-time repair: titles pasted as Steam links in 1.6.0 became library entries and
+   * projects named after the URL. Entries get their Steam app id and the official title from
+   * their stored research (the URL and the link's title stay as aliases); projects get the
+   * official title in the database. Files and folders are not moved. Idempotent.
+   */
+  repairStoreLinkTitles(): { games: number; projects: number } {
+    if (this.s.settingsRepo.get<boolean>(STORE_LINK_REPAIR_KEY)) return { games: 0, projects: 0 }
+    let games = 0
+    let projects = 0
+    this.s.db.transaction(() => {
+      for (const g of this.s.games.list({ subject: 'all' })) {
+        const links = [g.canonicalTitle, ...g.aliases].map((t) => parseStoreLink(t)).filter((l): l is NonNullable<typeof l> => !!l)
+        const urlTitled = looksLikeUrl(g.canonicalTitle)
+        if (!links.length && !urlTitled) continue
+        let changed = false
+        const link = links[0]
+        if (link && !g.steamAppId && this.s.games.setSteamAppId(g.id, link.appId)) changed = true
+        if (urlTitled) {
+          const official = this.officialTitleFor(g) || (link ? storeLinkTitle(link) : '')
+          if (official && !looksLikeUrl(official)) {
+            this.s.games.update(g.id, { canonicalTitle: official }) // the URL becomes an alias
+            changed = true
+          }
+        }
+        if (link?.slugTitle) this.s.games.addAlias(g.id, link.slugTitle)
+        for (const l of links) this.s.games.addAlias(g.id, l.url)
+        if (changed) games++
+      }
+      const rows = this.s.db.all<{ id: string; channel_id: string; title: string; canonical_title: string | null }>('SELECT id, channel_id, title, canonical_title FROM projects')
+      for (const p of rows) {
+        if (!looksLikeUrl(p.title)) continue
+        const link = parseStoreLink(p.title)
+        const gameId = this.s.db.get<{ game_id: string | null }>("SELECT game_id FROM research_results WHERE project_id = ? AND game_id IS NOT NULL ORDER BY created_at DESC LIMIT 1", p.id)?.game_id
+        const game = (gameId ? this.s.games.get(gameId) : undefined) ?? (link ? this.s.games.byAppId(link.appId) : undefined)
+        const official = [game?.canonicalTitle, p.canonical_title, link ? storeLinkTitle(link) : ''].find((t) => !!t && !looksLikeUrl(t))
+        if (!official) continue
+        const norm = normalizeTitle(official)
+        const clash = this.s.projects.findByTitle(p.channel_id, norm)
+        if (clash && clash.id !== p.id) continue
+        this.s.projects.update(p.id, { title: official, titleNormalized: norm, canonicalTitle: official })
+        this.s.db.run('UPDATE jobs SET title = ? WHERE project_id = ? AND title = ?', official, p.id, p.title)
+        projects++
+      }
+      this.s.settingsRepo.set(STORE_LINK_REPAIR_KEY, true)
+    })
+    if (games || projects) this.log.info('Repaired titles pasted as store links', { games, projects })
+    return { games, projects }
+  }
+
+  /** The official title from an entry's research (its own data, then linked research rows). */
+  private officialTitleFor(g: GameRecord): string {
+    const own = g.data?.canonicalTitle?.trim()
+    if (own && !looksLikeUrl(own)) return own
+    const rows = this.s.db.all<{ data_json: string }>("SELECT data_json FROM research_results WHERE game_id = ? AND status = 'confirmed' ORDER BY created_at DESC LIMIT 5", g.id)
+    for (const r of rows) {
+      try {
+        const t = (JSON.parse(r.data_json) as ResearchData).canonicalTitle?.trim()
+        if (t && !looksLikeUrl(t)) return t
+      } catch {
+        /* skip */
+      }
+    }
+    return ''
   }
 
   /** One-time import of research saved by 1.5 and earlier (confirmed rows, newest wins). */

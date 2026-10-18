@@ -40,6 +40,31 @@ export class ProjectService {
     return { project, created: true }
   }
 
+  /**
+   * 1.6.1: gives a project created from a pasted link its official title, including the output
+   * folder name — only while nothing has been written to the output folder. Returns false (and
+   * changes nothing) when another project of the channel has that title or files already exist.
+   */
+  retitle(projectId: string, title: string): boolean {
+    const project = this.s.projects.get(projectId)
+    if (!project) return false
+    const normalized = normalizeTitle(title)
+    if (!normalized) return false
+    const clash = this.s.projects.findByTitle(project.channelId, normalized)
+    if (clash && clash.id !== project.id) return false
+    const channel = this.s.channels.get(project.channelId)
+    if (!channel) return false
+    const current = this.folderFor(project)
+    const written = project.layout === 'flat' ? fs.existsSync(path.join(current, `${project.folderName}.txt`)) || fs.existsSync(path.join(current, `${project.folderName}.mp3`)) : fs.existsSync(current)
+    if (written) return false
+    const parent = this.channelRoot(channel)
+    const shortId = Math.random().toString(36).slice(2, 7)
+    const folderName = uniqueFolderName(parent, title, shortId, (name) => (name !== project.folderName && this.s.projects.folderNameExists(channel.id, name)) || (project.layout === 'flat' && (fs.existsSync(path.join(parent, `${name}.txt`)) || fs.existsSync(path.join(parent, `${name}.mp3`)))))
+    const folderPath = project.layout === 'flat' ? parent : path.join(parent, folderName)
+    this.s.projects.update(project.id, { title, titleNormalized: normalized, canonicalTitle: title, folderName, folderPath })
+    return true
+  }
+
   /** App-data folder for drafts, chunk parts and metadata. */
   workDir(project: Project): string {
     const dir = path.join(this.s.paths.userData, 'projects', project.id)

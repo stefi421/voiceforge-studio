@@ -39,8 +39,15 @@ export function researchInstructions(category: Channel['category'], settings: { 
     .join('\n\n')
 }
 
-export function researchUserInput(title: string, category: Channel['category'], manualNotes?: string | null): string {
+export function researchUserInput(title: string, category: Channel['category'], manualNotes?: string | null, storeHint?: { appId: string; url: string } | null): string {
   const lines = [`Research this ${category === 'tech' ? 'product' : 'game'}: "${title}"`]
+  if (storeHint?.appId) {
+    // The link identifies the game exactly: no ambiguity, and the store page is the first source.
+    lines.push(
+      `The user pasted its Steam store link, so this exact game is meant: Steam app id ${storeHint.appId}, https://store.steampowered.com/app/${storeHint.appId}/. ` +
+        'The title above was derived from the link and may be missing punctuation; use the official title from the store page as canonicalTitle. Do not list other games as ambiguity candidates.'
+    )
+  }
   if (manualNotes?.trim()) lines.push(`<manual_notes>\n${escapeDataTags(manualNotes.trim())}\n</manual_notes>`)
   return lines.join('\n\n')
 }

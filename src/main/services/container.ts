@@ -5,6 +5,7 @@ import { AudioRepo, ProjectRepo, ResearchRepo, ScriptRepo } from '../db/repos/co
 import { JobRepo } from '../db/repos/jobRepo'
 import { GameRepo, ReuseRepo } from '../db/repos/gameRepo'
 import { BackupRepo, ProviderCacheRepo, SettingsRepo, UsageRepo } from '../db/repos/miscRepo'
+import { ProviderCallRepo } from '../db/repos/providerCallRepo'
 import type { ElevenLabsProvider, OpenAIProvider } from '../providers/types'
 import { Logger } from './logger'
 import type { SecretStore } from './secrets'
@@ -76,6 +77,8 @@ export interface Services {
   scripts: ScriptRepo
   audio: AudioRepo
   usage: UsageRepo
+  /** 1.6.1: one row per provider request (rate-limit visibility). */
+  providerCalls: ProviderCallRepo
   cache: ProviderCacheRepo
   backups: BackupRepo
   settingsRepo: SettingsRepo
@@ -88,7 +91,7 @@ export interface Services {
   appVersion: string
 }
 
-export function buildRepos(db: Database): Pick<Services, 'channels' | 'jobs' | 'projects' | 'research' | 'games' | 'reuse' | 'scripts' | 'audio' | 'usage' | 'cache' | 'backups' | 'settingsRepo' | 'settings'> {
+export function buildRepos(db: Database): Pick<Services, 'channels' | 'jobs' | 'projects' | 'research' | 'games' | 'reuse' | 'scripts' | 'audio' | 'usage' | 'providerCalls' | 'cache' | 'backups' | 'settingsRepo' | 'settings'> {
   const settingsRepo = new SettingsRepo(db)
   return {
     channels: new ChannelRepo(db),
@@ -100,6 +103,7 @@ export function buildRepos(db: Database): Pick<Services, 'channels' | 'jobs' | '
     scripts: new ScriptRepo(db),
     audio: new AudioRepo(db),
     usage: new UsageRepo(db),
+    providerCalls: new ProviderCallRepo(db),
     cache: new ProviderCacheRepo(db),
     backups: new BackupRepo(db),
     settingsRepo,

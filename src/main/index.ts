@@ -301,6 +301,8 @@ app.whenReady().then(() => {
   try {
     engine.pipeline.library.rekeyIfNeeded()
     engine.pipeline.library.importLegacyResearch()
+    // 1.6.1: titles pasted as Steam links get their official title and app id (once).
+    engine.pipeline.library.repairStoreLinkTitles()
   } catch (err) {
     logger.log('warn', 'library', 'Importing earlier research into the Game Library failed', { error: (err as Error).message })
   }

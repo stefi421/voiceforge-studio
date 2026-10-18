@@ -2,6 +2,7 @@ import { memo, useState, type JSX } from 'react'
 import { ArrowDown, ArrowUp, GripVertical, X } from 'lucide-react'
 import type { Channel } from '@shared/types'
 import { Checkbox, Input, Select } from '@/components/ui'
+import { parseStoreLink, storeLinkTitle } from '@shared/storeLinks'
 
 export interface TitleRow {
   id: string
@@ -116,6 +117,8 @@ interface RowProps {
 
 const Row = memo(function Row({ row, index, isFirst, isLast, channels, batchChannelId, dragging, showNotes, note, onUpdate, onRemove, onMove, onDragStart, onDrop, onNote }: RowProps) {
   const batchChannel = channels.find((c) => c.id === batchChannelId)
+  // 1.6.1: a pasted Steam link shows the game name it becomes (the official title replaces it after research).
+  const link = parseStoreLink(row.title)
   return (
     <div
       className={`col ${dragging ? 'dragging' : ''}`}
@@ -159,6 +162,11 @@ const Row = memo(function Row({ row, index, isFirst, isLast, channels, batchChan
           </button>
         </span>
       </div>
+      {link && (
+        <div className="xs muted" style={{ padding: '0 8px 4px 56px' }} title="The Steam app id identifies the game exactly; research uses the store page and the official title becomes the folder name.">
+          Steam link → <span className="strong">{storeLinkTitle(link)}</span> · app {link.appId}
+        </div>
+      )}
       {showNotes && (
         <div style={{ padding: '0 8px 6px 56px' }}>
           <textarea

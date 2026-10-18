@@ -1,4 +1,4 @@
-import type { JobMode, JobStatus, JobView } from '@shared/types'
+import type { JobMode, JobStatus, JobView, WaitingFor } from '@shared/types'
 import { JOB_STATUS_LABELS } from '@shared/defaults'
 
 export type BadgeTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent'
@@ -180,8 +180,26 @@ export const MODE_DESCRIPTIONS: Record<JobMode, string> = {
 }
 
 /** Human description of what a job is doing right now, for queue rows and the detail drawer. */
+/** 1.6.1: "Waiting for OpenAI limit · 18 s" while a request waits for a per-model limit. */
+export function waitingText(w: WaitingFor | null | undefined, now = Date.now()): string | null {
+  if (!w) return null
+  const secs = Math.max(0, Math.ceil((w.untilMs - now) / 1000))
+  const who = w.provider === 'openai' ? 'OpenAI' : 'ElevenLabs'
+  return secs > 0 ? `Waiting for ${who} limit · ${secs} s` : `Waiting for ${who} limit · sending now`
+}
+
+export function waitingTooltip(w: WaitingFor): string {
+  return w.reason === 'rate_limit'
+    ? `${w.model ?? 'The model'} answered "rate limit reached"; the request is sent again when OpenAI said it may be. Nothing is lost.`
+    : `${w.model ?? 'This model'}'s tokens-per-minute budget is used up by requests already sent; this one goes out as soon as the window refills. Limits rise with your OpenAI usage tier.`
+}
+
 export function stageText(job: JobView, extra: { modelId?: string | null; queuePaused?: boolean } = {}): string {
   const chars = job.scriptCharCount != null ? `${job.scriptCharCount.toLocaleString()} chars` : null
+  if (job.waitingFor && !isFinished(job.status) && job.status !== 'paused') {
+    const w = waitingText(job.waitingFor)
+    if (w) return w
+  }
   switch (job.status) {
     case 'pending':
       if (job.nextRunAt && new Date(job.nextRunAt).getTime() > Date.now()) return `Waiting to retry · ${new Date(job.nextRunAt).toLocaleTimeString()}`

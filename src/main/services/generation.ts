@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import type { BatchEstimate, Channel, CreateBatchInput, CreateBatchResult, ParsedTitles } from '@shared/types'
+import type { BatchEstimate, Channel, CreateBatchInput, CreateBatchResult, JobOverrides, ParsedTitles } from '@shared/types'
 import type { Services } from './container'
 import { ProjectService } from './projects'
 import type { QueueEngine } from '../queue/engine'
@@ -10,6 +10,15 @@ import { estimateJobCost } from '../pipeline/cost'
 import { AppError } from '../util/errors'
 import { normalizeTitle } from '../util/common'
 import { StyleService } from './style'
+import { parseStoreLink, storeLinkTitle } from '@shared/storeLinks'
+
+/** How a pasted line becomes a job title (1.6.1: Steam links → the game's name + app id). */
+export interface EntryIdentity {
+  title: string
+  overrides: Pick<JobOverrides, 'steamAppId' | 'storeUrl' | 'titleFromUrl'>
+  /** Duplicate keys within a channel: the normalised title, plus the Steam app id for links. */
+  keys: string[]
+}
 
 export class GenerationService {
   private projectsSvc: ProjectService
@@ -31,6 +40,16 @@ export class GenerationService {
   /** Format gate for one channel of a batch (same rule createBatch enforces). */
   gate(channel: Channel, input: CreateBatchInput): ReturnType<StyleService['gate']> {
     return this.style.gate(channel, input.mode, this.templateFor(input, channel))
+  }
+
+  /** A Steam link becomes the saved game's title (when its app id is known) or the title in the link. */
+  identify(raw: string): EntryIdentity {
+    const text = raw.trim()
+    const link = parseStoreLink(text)
+    if (!link) return { title: text, overrides: {}, keys: [normalizeTitle(text)] }
+    const known = this.s.games.byAppId(link.appId)
+    const title = known?.canonicalTitle ?? storeLinkTitle(link)
+    return { title, overrides: { steamAppId: link.appId, storeUrl: link.url, titleFromUrl: !known }, keys: [normalizeTitle(title), `steam:${link.appId}`] }
   }
 
   parseTitles(text: string): ParsedTitles {
@@ -74,13 +93,14 @@ export class GenerationService {
     const library = this.engine.pipeline?.library
     input.entries.forEach((e, i) => {
       const ch = perEntry[i]!
-      const key = `${ch.id}:${normalizeTitle(e.title)}`
-      if (seen.has(key)) return
-      seen.add(key)
+      const id = this.identify(e.title)
+      const keys = id.keys.map((k) => `${ch.id}:${k}`)
+      if (keys.some((k) => seen.has(k))) return
+      for (const k of keys) seen.add(k)
       const expectedChars = Math.round((ch.minChars + ch.maxChars) / 2) || 4000
       const researches = ch.research.enabled && ch.research.mode !== 'manual'
       // Saved research (Game Library) costs nothing; near matches are counted as new (the user may say "different game").
-      const m = researches && library ? library.match(e.title, ch.category) : null
+      const m = researches && library ? library.match(id.title, ch.category, id.overrides.steamAppId) : null
       const reused = !!m && (m.kind === 'exact' || m.kind === 'auto')
       if (researches) {
         if (reused) savedResearch++
@@ -176,13 +196,16 @@ export class GenerationService {
     this.s.db.transaction(() => {
       input.entries.forEach((entry, i) => {
         const channel = perEntry[i]!
-        const title = entry.title.trim()
-        const key = `${channel.id}:${normalizeTitle(title)}`
-        if (settings.generation.duplicateDetection && seen.has(key)) {
-          skipped.push(`${title} (duplicate in this batch)`)
+        const typed = entry.title.trim()
+        const id = this.identify(typed)
+        const title = id.title
+        // A Steam link and the same game's name (or two links to one app) are duplicates (1.6.1).
+        const keys = id.keys.map((k) => `${channel.id}:${k}`)
+        if (settings.generation.duplicateDetection && keys.some((k) => seen.has(k))) {
+          skipped.push(`${typed === title ? title : `${typed} → ${title}`} (duplicate in this batch)`)
           return
         }
-        seen.add(key)
+        for (const k of keys) seen.add(k)
         const { project, created } = this.projectsSvc.getOrCreate(channel, title)
         if (!created) {
           const active = this.s.jobs.countForProject(project.id, ['pending', 'researching', 'writing_script', 'validating_script', 'script_ready', 'awaiting_approval', 'research_review_required', 'generating_audio', 'saving_files'])
@@ -195,9 +218,10 @@ export class GenerationService {
             return
           }
         }
-        const notes = input.manualResearchNotes?.[title] ?? input.manualResearchNotes?.[normalizeTitle(title)] ?? null
+        const notes = input.manualResearchNotes?.[typed] ?? input.manualResearchNotes?.[title] ?? input.manualResearchNotes?.[normalizeTitle(title)] ?? null
         const templateId = this.style.resolve(channel, this.templateFor(input, channel))?.template.id
-        const job = this.s.jobs.create({ batchId: batch.id, projectId: project.id, channelId: channel.id, title, mode: input.mode, position: i, manualResearchNotes: notes, overrides: templateId ? { templateId } : undefined })
+        const overrides: JobOverrides = { ...(templateId ? { templateId } : {}), ...id.overrides }
+        const job = this.s.jobs.create({ batchId: batch.id, projectId: project.id, channelId: channel.id, title, mode: input.mode, position: i, manualResearchNotes: notes, overrides: Object.keys(overrides).length ? overrides : undefined })
         jobIds.push(job.id)
       })
     })

@@ -27,6 +27,7 @@ interface GameRow {
   use_count: number
   created_at: string
   updated_at: string
+  steam_app_id: string | null
 }
 
 export interface GameInput {
@@ -49,6 +50,7 @@ export class GameRepo {
       subjectType: (r.subject_type === 'product' ? 'product' : 'game') as GameSubject,
       canonicalTitle: r.canonical_title,
       aliases,
+      steamAppId: r.steam_app_id ?? null,
       developer: r.developer,
       publisher: r.publisher,
       genre: r.genre,
@@ -81,6 +83,22 @@ export class GameRepo {
     if (r) return this.toRecord(r)
     const a = this.db.get<{ game_id: string }>('SELECT game_id FROM game_aliases WHERE subject_type = ? AND alias_key = ?', subject, key)
     return a ? this.get(a.game_id) : undefined
+  }
+
+  /** 1.6.1: the entry for a Steam app id (ids are unique). */
+  byAppId(appId: string): GameRecord | undefined {
+    const r = this.db.get<GameRow>('SELECT * FROM games WHERE steam_app_id = ?', String(appId))
+    return r ? this.toRecord(r) : undefined
+  }
+
+  /** Stores the Steam app id. Returns false when another entry already owns it. */
+  setSteamAppId(id: string, appId: string | null): boolean {
+    if (appId) {
+      const owner = this.db.get<{ id: string }>('SELECT id FROM games WHERE steam_app_id = ?', String(appId))
+      if (owner && owner.id !== id) return false
+    }
+    this.db.run('UPDATE games SET steam_app_id = ?, updated_at = ? WHERE id = ?', appId ? String(appId) : null, nowIso(), id)
+    return true
   }
 
   list(opts: { subject?: GameSubject | 'all'; query?: string; limit?: number } = {}): GameRecord[] {

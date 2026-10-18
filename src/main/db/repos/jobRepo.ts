@@ -1,3 +1,4 @@
+import { jobWaits } from '../../queue/callContext'
 import type { Batch, Job, JobError, JobEvent, JobMode, JobOverrides, JobStage, JobStatus, JobView, QueueStats, JobTimings, StageTiming, TimingStage, TimingSummary } from '@shared/types'
 import type { Database } from '../database'
 import { newId, nowIso, parseJson } from '../../util/common'
@@ -81,7 +82,8 @@ function rowToView(r: JobRow): JobView {
     batchName: r.batch_name ?? '',
     projectFolder: r.project_folder ?? null,
     scriptCharCount: r.script_char_count ?? null,
-    audioFilePath: r.audio_file_path ?? null
+    audioFilePath: r.audio_file_path ?? null,
+    waitingFor: jobWaits.get(r.id)
   }
 }
 

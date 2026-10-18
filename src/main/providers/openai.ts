@@ -1,9 +1,11 @@
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai'
 import type { ResponseCreateParamsNonStreaming, Response as OpenAIResponse, Tool } from 'openai/resources/responses/responses'
 import type { ConnectionTestResult, OpenAIModelInfo, ResearchData, ResearchSource, ScriptSection, StyleFinding, ValidationIssue } from '@shared/types'
-import { AppError, parseRetryAfter, toAppError } from '../util/errors'
+import { AppError, toAppError } from '../util/errors'
 import type { ScopedLogger } from '../services/logger'
-import { parseOpenAIRateHeaders, providerTelemetry } from '../queue/limits'
+import { parseOpenAIRateHeaders, providerTelemetry, retryAfterFromHeaders } from '../queue/limits'
+import { currentProviderCall } from '../queue/callContext'
+import { RESEARCH_FULL_OUTPUT_TOKENS } from '../pipeline/tokens'
 import {
   ANALYZE_JSON_SCHEMA,
   REVIEW_JSON_SCHEMA,
@@ -50,6 +52,12 @@ export function isReasoningModel(model: string): boolean {
 }
 
 export function mapOpenAIError(err: unknown): AppError {
+  const e = mapOpenAIErrorInner(err)
+  if (err instanceof APIError && err.status !== undefined && e.httpStatus === undefined) e.httpStatus = err.status
+  return e
+}
+
+function mapOpenAIErrorInner(err: unknown): AppError {
   if (err instanceof APIUserAbortError) return new AppError('cancelled', 'The OpenAI request was cancelled.', { retryable: false })
   if (err instanceof APIConnectionTimeoutError) {
     return new AppError('network', 'The OpenAI request timed out.', { action: 'Increase the OpenAI timeout in Settings or retry; the job will retry automatically.', retryable: true })
@@ -67,7 +75,7 @@ export function mapOpenAIError(err: unknown): AppError {
       return new AppError('quota', 'Your OpenAI account has run out of credit or quota.', { details: body, retryable: false, code: 'OPENAI_QUOTA' })
     }
     if (status === 429) {
-      return new AppError('rate_limit', 'OpenAI rate limit reached.', { details: body, retryable: true, retryAfterMs: parseRetryAfter(err.headers?.get('retry-after')) })
+      return new AppError('rate_limit', 'OpenAI rate limit reached.', { details: body, retryable: true, retryAfterMs: retryAfterFromHeaders(err.headers as unknown as Headers) })
     }
     if (status === 404 && /model/i.test(body)) {
       return new AppError('config', `OpenAI does not know the selected model: ${body}`, { action: 'Pick another model in Settings → OpenAI or in the channel profile.', retryable: false })
@@ -137,7 +145,8 @@ function parseJsonOutput<T>(res: OpenAIResponse, what: string): T {
     const reason = res.incomplete_details?.reason ?? 'unknown'
     throw new AppError('config', `OpenAI stopped the ${what} response early (${reason}).`, {
       action: reason === 'max_output_tokens' ? 'Increase "Max output tokens" in Settings → OpenAI.' : 'Retry; if it repeats, change the model.',
-      retryable: reason !== 'max_output_tokens'
+      retryable: reason !== 'max_output_tokens',
+      code: reason === 'max_output_tokens' ? 'MAX_OUTPUT_TOKENS' : undefined
     })
   }
   try {
@@ -167,10 +176,13 @@ export class OpenAIClientProvider implements OpenAIProvider {
 
   /** One request; response headers (rate limits) are reported to the concurrency governor. */
   private async send(params: ResponseCreateParamsNonStreaming, signal?: AbortSignal, timeoutMs?: number): Promise<OpenAIResponse> {
+    const ctx = currentProviderCall()
+    if (ctx) ctx.requests++
     const { data, response } = await this.client.responses.create(params, { signal, ...(timeoutMs ? { timeout: timeoutMs } : {}) }).withResponse()
     try {
+      if (ctx) ctx.status = response.status
       const info = parseOpenAIRateHeaders(response.headers)
-      if (info) providerTelemetry.onOpenAI?.(info)
+      if (info) providerTelemetry.onOpenAI?.(info, params.model)
     } catch {
       /* telemetry is best-effort */
     }
@@ -183,8 +195,10 @@ export class OpenAIClientProvider implements OpenAIProvider {
     } catch (err) {
       if (err instanceof APIError) {
         try {
+          const ctx = currentProviderCall()
+          if (ctx && err.status !== undefined) ctx.status = err.status
           const info = parseOpenAIRateHeaders(err.headers as unknown as Headers)
-          if (info) providerTelemetry.onOpenAI?.(info)
+          if (info) providerTelemetry.onOpenAI?.(info, params.model)
         } catch {
           /* ignore */
         }
@@ -249,10 +263,12 @@ export class OpenAIClientProvider implements OpenAIProvider {
   async research(req: ResearchRequest): Promise<ResearchResponse> {
     const useWeb = req.settings.mode === 'openai_web_search'
     // Speed: the research JSON is small; a tight cap keeps reasoning short. 'low' context by default.
-    const params = this.baseParams(req.model, { reasoningEffort: 'low', maxOutputTokens: 5000 })
+    // 1.6.1: the queue passes a small cap (1,500 — it is reserved against the model's tokens/min)
+    // and retries once with the full one if the model runs out; other callers keep 5,000.
+    const params = this.baseParams(req.model, { reasoningEffort: 'low', maxOutputTokens: req.maxOutputTokens ?? RESEARCH_FULL_OUTPUT_TOKENS })
     params.prompt_cache_key = `vf:research:${req.category}`
     params.instructions = researchInstructions(req.category, req.settings, useWeb)
-    params.input = researchUserInput(req.title, req.category, req.manualNotes)
+    params.input = researchUserInput(req.title, req.category, req.manualNotes, req.storeHint)
     params.text = { format: { type: 'json_schema', name: 'research_result', schema: RESEARCH_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
     if (useWeb) {
       const tool: Tool = { type: 'web_search', search_context_size: req.settings.searchContextSize }

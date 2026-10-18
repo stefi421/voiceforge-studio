@@ -51,6 +51,9 @@ Drafts, research, `project.json` and `Narration.txt` stay in app data
 * **Games library (1.6.0)** — each game/product is researched once and reused for every later
   script on every channel (no research credits); identical voiceovers and unchanged parts are
   never paid for twice. Notes, corrections, aliases, refresh and import/export on the Games page.
+* **OpenAI limits per model (1.6.1)** — each model has its own token budget learned from OpenAI's
+  headers; waits show in the queue ("Waiting for OpenAI limit · 18 s"); Steam store links can be
+  pasted as titles.
 * **Updates without reinstalling** — Settings → Updates checks GitHub Releases,
   downloads the verified installer on request and upgrades in place; data is kept.
 * **First-run setup wizard** — keys → voices → output folder in a few minutes.
@@ -62,7 +65,7 @@ Drafts, research, `project.json` and `Narration.txt` stay in app data
 | Area | Status |
 |---|---|
 | Core pipeline, queue, libraries, settings, backups | Implemented, covered by 55 automated tests (mocked APIs) + a headless Electron smoke test over all 11 pages |
-| Windows installer + portable exe | Built with electron-builder on Linux + wine (`release/VoiceForge-Studio-Setup-1.6.0-x64.exe`, `release/VoiceForge-Studio-Portable-1.6.0-x64.exe`, checksums in `release/SHA256SUMS.txt`) — unsigned, not yet launched on a Windows machine |
+| Windows installer + portable exe | Built with electron-builder on Linux + wine (`release/VoiceForge-Studio-Setup-1.6.1-x64.exe`, `release/VoiceForge-Studio-Portable-1.6.1-x64.exe`, checksums in `release/SHA256SUMS.txt`) — unsigned, not yet launched on a Windows machine |
 | Live OpenAI / ElevenLabs calls | **Awaiting live verification** — no credentials were available during development; see `docs/E2E_MANUAL_TEST.md` |
 | PlayTopia / VoidPulse / RENVO templates | **Placeholders** — generation is blocked until you paste the approved templates |
 | Multi-PC cloud sync | **Not implemented** — architecture only (`docs/SYNC_ARCHITECTURE.md`) |

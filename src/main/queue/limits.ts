@@ -184,6 +184,167 @@ export function parseOpenAIRateHeaders(h: HeaderBag): OpenAIRateInfo | null {
   return info.limitRequests === null && info.remainingRequests === null && info.remainingTokens === null ? null : info
 }
 
+/**
+ * How long OpenAI asks us to wait after a 429 (1.6.1): `retry-after-ms`, then `retry-after`
+ * (seconds or an HTTP date), then the token/request window reset the headers report.
+ */
+export function retryAfterFromHeaders(h: HeaderBag): number | undefined {
+  const ms = num(header(h, 'retry-after-ms'))
+  if (ms !== null && ms >= 0) return ms
+  const ra = header(h, 'retry-after')
+  if (ra) {
+    const secs = Number(ra)
+    if (Number.isFinite(secs)) return Math.max(0, secs * 1000)
+    const date = Date.parse(ra)
+    if (Number.isFinite(date)) return Math.max(0, date - Date.now())
+  }
+  const info = parseOpenAIRateHeaders(h)
+  if (!info) return undefined
+  const waits: number[] = []
+  if (info.remainingTokens !== null && info.remainingTokens <= 0 && info.resetTokensMs !== null) waits.push(info.resetTokensMs)
+  if (info.remainingRequests !== null && info.remainingRequests <= 0 && info.resetRequestsMs !== null) waits.push(info.resetRequestsMs)
+  if (!waits.length && info.resetTokensMs !== null) waits.push(info.resetTokensMs)
+  return waits.length ? Math.max(...waits) : undefined
+}
+
+// ---------------------------------------------------------------------------
+// Per-model token budget (OpenAI, 1.6.1)
+// ---------------------------------------------------------------------------
+
+interface Reservation {
+  cost: number
+  sentAt: number
+}
+
+/**
+ * OpenAI limits are per model: tokens per minute (TPM) and requests per minute (RPM). OpenAI
+ * counts a request against TPM when it arrives, at (input tokens + max_output_tokens). This keeps
+ * an estimate of what is left: the last response headers (remaining / reset), refilled linearly
+ * up to the limit, minus the reservations of requests sent after the request those headers
+ * belong to (the server had not counted them yet). Until the first headers arrive nothing is
+ * limited — the limits are learned, never guessed.
+ */
+export class ModelBudget {
+  private snap: (OpenAIRateInfo & { sentAt: number }) | null = null
+  private inflight = new Map<number, Reservation>()
+  /** Finished requests the latest headers may not include yet. */
+  private settled: Reservation[] = []
+  private nextId = 1
+  private lastSentAt = 0
+  /** Requests pause until here after a 429. */
+  blockedUntil = 0
+
+  get snapshot(): (OpenAIRateInfo & { sentAt: number }) | null {
+    return this.snap
+  }
+
+  /** Seeds a full bucket from limits seen in an earlier session. */
+  seed(limitTokens: number | null, limitRequests: number | null, now = Date.now()): void {
+    if (this.snap || (!limitTokens && !limitRequests)) return
+    this.snap = { limitTokens, remainingTokens: limitTokens, resetTokensMs: 0, limitRequests, remainingRequests: limitRequests, resetRequestsMs: 0, at: now, sentAt: 0 }
+  }
+
+  /** Response headers of a request sent at `sentAt`. Older information than what we have is ignored. */
+  observe(info: OpenAIRateInfo, sentAt: number): void {
+    if (this.snap && sentAt < this.snap.sentAt) return
+    // Keep known limits when a response omits one of them.
+    const prev = this.snap
+    this.snap = {
+      ...info,
+      limitTokens: info.limitTokens ?? prev?.limitTokens ?? null,
+      limitRequests: info.limitRequests ?? prev?.limitRequests ?? null,
+      sentAt
+    }
+    this.settled = this.settled.filter((r) => r.sentAt > sentAt)
+  }
+
+  private pending(): { tokens: number; requests: number } {
+    const after = this.snap?.sentAt ?? 0
+    let tokens = 0
+    let requests = 0
+    for (const r of this.inflight.values()) {
+      if (r.sentAt > after) {
+        tokens += r.cost
+        requests++
+      }
+    }
+    for (const r of this.settled) {
+      if (r.sentAt > after) {
+        tokens += r.cost
+        requests++
+      }
+    }
+    return { tokens, requests }
+  }
+
+  private static refill(limit: number | null, remaining: number | null, resetMs: number | null, elapsed: number): { value: number; ratePerMs: number } | null {
+    if (limit === null || remaining === null) return null
+    const missing = Math.max(0, limit - remaining)
+    // The reset header is the time until the window is full again; fall back to a per-minute window.
+    const ratePerMs = resetMs && resetMs > 0 && missing > 0 ? missing / resetMs : limit / 60_000
+    return { value: Math.min(limit, remaining + ratePerMs * Math.max(0, elapsed)), ratePerMs }
+  }
+
+  /** Estimated tokens available now (null = unknown). */
+  tokensAvailable(now = Date.now()): number | null {
+    const s = this.snap
+    if (!s) return null
+    const r = ModelBudget.refill(s.limitTokens, s.remainingTokens, s.resetTokensMs, now - s.at)
+    return r ? Math.floor(r.value - this.pending().tokens) : null
+  }
+
+  requestsAvailable(now = Date.now()): number | null {
+    const s = this.snap
+    if (!s) return null
+    const r = ModelBudget.refill(s.limitRequests, s.remainingRequests, s.resetRequestsMs, now - s.at)
+    return r ? Math.floor(r.value - this.pending().requests) : null
+  }
+
+  get inFlight(): number {
+    return this.inflight.size
+  }
+
+  /**
+   * Milliseconds until a request of `cost` tokens fits (0 = send now). A request larger than the
+   * whole limit is let through alone with a full bucket (OpenAI then decides).
+   */
+  waitMs(cost: number, now = Date.now()): number {
+    const blocked = Math.max(0, this.blockedUntil - now)
+    const s = this.snap
+    if (!s) return blocked
+    const pend = this.pending()
+    let wait = 0
+    const t = ModelBudget.refill(s.limitTokens, s.remainingTokens, s.resetTokensMs, now - s.at)
+    if (t && s.limitTokens) {
+      const need = Math.min(cost, s.limitTokens) + pend.tokens - t.value
+      if (need > 0) wait = Math.max(wait, need / t.ratePerMs)
+    }
+    const r = ModelBudget.refill(s.limitRequests, s.remainingRequests, s.resetRequestsMs, now - s.at)
+    if (r && s.limitRequests) {
+      const need = 1 + pend.requests - r.value
+      if (need > 0) wait = Math.max(wait, need / r.ratePerMs)
+    }
+    return Math.max(blocked, Math.ceil(wait))
+  }
+
+  /** Reserves `cost` tokens; `sentAt` is strictly increasing so headers can be ordered exactly. */
+  reserve(cost: number, now = Date.now()): { id: number; sentAt: number } {
+    const id = this.nextId++
+    const sentAt = Math.max(now, this.lastSentAt + 0.001)
+    this.lastSentAt = sentAt
+    this.inflight.set(id, { cost: Math.max(0, cost), sentAt })
+    return { id, sentAt }
+  }
+
+  release(id: number): void {
+    const r = this.inflight.get(id)
+    if (!r) return
+    this.inflight.delete(id)
+    if (!this.snap || r.sentAt > this.snap.sentAt) this.settled.push(r)
+    if (this.settled.length > 500) this.settled.splice(0, this.settled.length - 500)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ElevenLabs concurrency
 // ---------------------------------------------------------------------------
@@ -296,6 +457,7 @@ function clamp(n: number, min: number, max: number): number {
 // ---------------------------------------------------------------------------
 
 export const providerTelemetry: {
-  onOpenAI: ((info: OpenAIRateInfo) => void) | null
+  /** `model` is the model the request asked for (limits are per model). */
+  onOpenAI: ((info: OpenAIRateInfo, model?: string) => void) | null
   onEleven: ((info: ElevenConcurrencyInfo) => void) | null
 } = { onOpenAI: null, onEleven: null }

@@ -8,8 +8,10 @@ export class AppError extends Error {
   retryable: boolean
   retryAfterMs?: number
   code: string
+  /** HTTP status of the provider response, when there was one (1.6.1, provider_calls). */
+  httpStatus?: number
 
-  constructor(kind: ErrorKind, message: string, opts: { action?: string; details?: string; retryable?: boolean; retryAfterMs?: number; code?: string } = {}) {
+  constructor(kind: ErrorKind, message: string, opts: { action?: string; details?: string; retryable?: boolean; retryAfterMs?: number; code?: string; httpStatus?: number } = {}) {
     super(message)
     this.name = 'AppError'
     this.kind = kind
@@ -18,6 +20,7 @@ export class AppError extends Error {
     this.retryable = opts.retryable ?? defaultRetryable(kind)
     this.retryAfterMs = opts.retryAfterMs
     this.code = opts.code ?? kind.toUpperCase()
+    this.httpStatus = opts.httpStatus
   }
 
   toJobError(): JobError {

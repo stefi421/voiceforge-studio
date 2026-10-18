@@ -55,6 +55,16 @@ console was empty (no errors or warnings).
 | 29 | Installer build | `npm run package:win` — artifact in `release/` (see `BUILD.md`); CI workflow builds on Windows |
 | 30 | Portable application build | same |
 
+1.6.1 (`tests/v161.test.ts`): Steam link parsing (store/community/s.team/steam:// variants, slug
+→ title), link jobs researched with the app id and retitled to the official name, app id beats
+name, URL-vs-name duplicates, the 1.6.0 URL-title repair, script/research token caps and the
+one-time full-cap fallback, per-model token budget (refill, ordering, isolation between models),
+SDK `maxRetries: 0`, `retry-after-ms`/`retry-after`/reset parsing, `waitingFor` set and cleared,
+provider_calls rows (429 then 200 with retry 1) and pruning.
+
+`VF_BENCH=1 npx vitest run tests/ratelimit.bench.test.ts` runs 3 and 10 titles against a mock
+OpenAI that enforces tokens/min per model (sol 30k, luna 200k, 429 + Retry-After, scaled 100×).
+
 Additional coverage: review-before-voice approval flow, scripts-only mode, placeholder
 template blocking, research cache, spending limits pausing the queue, per-provider
 concurrency with 100 queued jobs, never sending an invalid script to TTS, channel

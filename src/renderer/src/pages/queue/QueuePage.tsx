@@ -11,7 +11,7 @@ import { toast } from '@/store/toasts'
 import { Alert, Badge, Button, ConfirmDialog, EmptyState, PageHeader, ProgressBar, SearchInput, Select } from '@/components/ui'
 import { ResearchReviewDialog } from '@/components/dialogs/ResearchReviewDialog'
 import { ScriptReviewDialog } from '@/components/dialogs/ScriptReviewDialog'
-import { JobRow, type JobAction } from './JobRow'
+import { JobRow, WaitLine, type JobAction } from './JobRow'
 import { JobDetailDrawer } from './JobDetailDrawer'
 import { BatchMedians } from '@/components/SpeedViews'
 
@@ -452,6 +452,9 @@ export function QueuePage(): JSX.Element {
           const gPaused = g.jobs.some((j) => j.status === 'paused')
           const gPct = stageProgress(g.jobs)
           const finished = g.jobs.every((j) => isFinished(j.status))
+          // 1.6.1: the soonest provider wait in this batch, for the header.
+          const gWait = g.jobs.filter((j) => j.waitingFor && !isFinished(j.status) && j.status !== 'paused').map((j) => j.waitingFor!)
+          const gWaitFirst = gWait.length ? gWait.reduce((a, b) => (b.untilMs < a.untilMs ? b : a)) : null
           return (
             <section key={g.id} className={`batch-group ${isCollapsed ? 'collapsed' : ''}`}>
               <header className="batch-header" onClick={() => setCollapsed({ ...collapsed, [g.id]: !isCollapsed })}>
@@ -465,6 +468,12 @@ export function QueuePage(): JSX.Element {
                     {gFailed ? ` · ${gFailed} failed` : ''}
                     {gNeeds ? ` · ${gNeeds} need you` : ''}
                   </span>
+                  {gWaitFirst && (
+                    <span className="xs">
+                      <WaitLine wait={gWaitFirst} />
+                      {gWait.length > 1 ? <span className="xs muted"> · {gWait.length} titles waiting</span> : null}
+                    </span>
+                  )}
                   <BatchMedians batchId={g.id} doneCount={gDone} />
                 </div>
                 <div className="batch-progress">

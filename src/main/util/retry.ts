@@ -3,6 +3,8 @@ import { AppError, toAppError } from './errors'
 
 export interface RetryOptions {
   maxRetries: number
+  /** Retries allowed for rate-limit errors (default: maxRetries); each honours Retry-After. */
+  maxRateLimitRetries?: number
   baseDelayMs?: number
   maxDelayMs?: number
   signal?: AbortSignal
@@ -23,14 +25,21 @@ export async function withRetry<T>(fn: (attempt: number) => Promise<T>, opts: Re
   const max = opts.maxDelayMs ?? 60000
   const random = opts.random ?? Math.random
   let attempt = 0
+  let rateLimited = 0
+  let other = 0
   while (true) {
     try {
       if (opts.signal?.aborted) throw new AppError('cancelled', 'Cancelled before the request started.', { retryable: false })
       return await fn(attempt)
     } catch (e) {
       const err = toAppError(e)
-      if (!err.retryable || attempt >= opts.maxRetries || opts.signal?.aborted) throw err
-      const delay = computeBackoffMs(attempt, base, max, random, err.retryAfterMs)
+      if (!err.retryable || opts.signal?.aborted) throw err
+      const isRateLimit = err.kind === 'rate_limit'
+      if (isRateLimit ? rateLimited >= (opts.maxRateLimitRetries ?? opts.maxRetries) : other >= opts.maxRetries) throw err
+      if (opts.maxRateLimitRetries === undefined && attempt >= opts.maxRetries) throw err
+      if (isRateLimit) rateLimited++
+      else other++
+      const delay = computeBackoffMs(isRateLimit ? rateLimited - 1 : other - 1, base, max, random, err.retryAfterMs)
       opts.onRetry?.(attempt + 1, delay, err)
       await sleep(delay, opts.signal)
       attempt++

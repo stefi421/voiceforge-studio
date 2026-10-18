@@ -31,6 +31,10 @@ export interface ResearchRequest {
   signal?: AbortSignal
   /** Per-call timeout (v1.5: research 120 s). */
   timeoutMs?: number
+  /** 1.6.1: max_output_tokens (default 5,000). */
+  maxOutputTokens?: number
+  /** 1.6.1: the title came from a store link — research exactly this app. */
+  storeHint?: { appId: string; url: string } | null
 }
 
 export interface ResearchResponse {
