@@ -7,6 +7,7 @@ import { computeBackoffMs } from '../util/retry'
 import { ACTIVE_STATUSES, USER_WAIT_STATUSES } from '../db/repos/jobRepo'
 import { newId, normalizeTitle } from '../util/common'
 import fs from 'node:fs'
+import { DatabaseClosedError } from '../db/database'
 
 interface Running {
   controller: AbortController
@@ -65,11 +66,13 @@ export class QueueEngine {
     s.settings.onChange(() => this.tick())
     // Live slot changes (adaptive limits, cool-downs) are pushed to the UI, coalesced to ≤ 4/s.
     this.pipeline.governor.onChange(() => {
-      if (this.statsTimer) return
+      if (this.statsTimer || this.stopped) return
       this.statsTimer = setTimeout(() => {
         this.statsTimer = null
         if (!this.stopped) this.publishStats()
       }, 250)
+      // Never keep the process alive just to publish stats.
+      this.statsTimer.unref?.()
     })
   }
 
@@ -352,7 +355,14 @@ export class QueueEngine {
   }
 
   private publishStats(force = false): void {
-    const st = this.stats()
+    let st: QueueStats
+    try {
+      st = this.stats()
+    } catch (err) {
+      // The database can close (shutdown, restore, tests) while a coalesced stats timer is pending.
+      if (err instanceof DatabaseClosedError) return
+      throw err
+    }
     const json = JSON.stringify(st)
     if (force || json !== this.lastStatsJson) {
       this.lastStatsJson = json
