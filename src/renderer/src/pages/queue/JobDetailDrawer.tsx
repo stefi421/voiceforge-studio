@@ -1,4 +1,4 @@
-import { useMemo, type JSX } from 'react'
+import { useMemo, useState, type JSX } from 'react'
 import { Ban, ExternalLink, FileText, FolderOpen, Pause, Play, RotateCcw } from 'lucide-react'
 import type { JobView } from '@shared/types'
 import { api, audioUrl } from '@/lib/api'
@@ -7,6 +7,7 @@ import { isFinished, needsUser, stageText } from '@/lib/jobs'
 import { formatDateTime, formatDuration, formatNumber, formatPercent, relativeTime } from '@/lib/format'
 import { useApp } from '@/store/app'
 import { Alert, AudioPlayer, Badge, Button, ChannelChip, Drawer, KeyValue, SkeletonRows, StagePipelineLarge, StatusBadge } from '@/components/ui'
+import { NarrationToggle, narrationOf, ScriptProvenance, type ScriptView } from '@/components/ScriptMeta'
 import { ValidationIssues } from '@/components/dialogs/ScriptReviewDialog'
 import type { JobAction } from './JobRow'
 
@@ -28,6 +29,7 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
 
   const research = useAsync(() => api.invoke('queue:getResearch', { jobId: jobId ?? '' }), [jobId, job?.researchId], { enabled: Boolean(jobId && job?.researchId) })
   const script = useAsync(() => api.invoke('scripts:get', { id: scriptId ?? '' }), [scriptId], { enabled: Boolean(scriptId) })
+  const [scriptView, setScriptView] = useState<ScriptView>('script')
   const audio = useAsync(() => api.invoke('audio:get', { id: audioId ?? '' }), [audioId], { enabled: Boolean(audioId) })
   const events = useAsync(() => api.invoke('history:list', { jobId: jobId ?? '', limit: 200 }), [jobId, job?.updatedAt], { enabled: Boolean(jobId), fallback: [] })
 
@@ -189,7 +191,19 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
               <SkeletonRows rows={5} />
             ) : script.data ? (
               <div className="col gap-3">
-                <pre className="script-preview">{script.data.text.slice(0, 1200)}{script.data.text.length > 1200 ? '\n…' : ''}</pre>
+                <div className="row wrap" style={{ gap: 6 }}>
+                  <ScriptProvenance script={script.data} />
+                </div>
+                <NarrationToggle value={scriptView} onChange={setScriptView} />
+                {(() => {
+                  const body = scriptView === 'narration' ? narrationOf(script.data) : script.data.text
+                  return (
+                    <pre className="script-preview">
+                      {body.slice(0, 1200)}
+                      {body.length > 1200 ? '\n…' : ''}
+                    </pre>
+                  )
+                })()}
                 {script.data.validation && !script.data.validation.ok && <ValidationIssues report={script.data.validation} />}
                 <div className="row">
                   <Button size="sm" icon={<FileText size={13} />} onClick={() => onAction('viewScript', job)}>

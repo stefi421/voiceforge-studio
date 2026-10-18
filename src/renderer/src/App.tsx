@@ -96,6 +96,13 @@ export function App(): JSX.Element {
         else useOverlays.getState().setShortcuts(true)
         return
       }
+      if (detail.startsWith('__scroll:')) {
+        // Smoke-test helper: scroll the page, e.g. '__scroll:900' or '__scroll:bottom'.
+        const arg = detail.slice('__scroll:'.length)
+        const el = document.querySelector('.page')
+        if (el) el.scrollTop = arg === 'bottom' ? el.scrollHeight : Number(arg) || 0
+        return
+      }
       if (detail === '__closeOverlays') {
         useOverlays.getState().setPalette(false)
         useOverlays.getState().setShortcuts(false)
@@ -111,6 +118,15 @@ export function App(): JSX.Element {
       if (pageId && (DASHBOARD_PAGES as readonly string[]).includes(pageId)) {
         const params: Record<string, string> = {}
         if (query) for (const [k, v] of new URLSearchParams(query)) params[k] = v
+        // "channels?edit=__name:Game Vault&tab=formats" → resolve the channel by name.
+        for (const key of ['edit', 'channelId'] as const) {
+          const v = params[key]
+          if (!v?.startsWith('__name:')) continue
+          const name = v.slice('__name:'.length).toLowerCase()
+          const ch = useApp.getState().channels.find((c) => c.name.toLowerCase() === name)
+          if (ch) params[key] = ch.id
+          else delete params[key]
+        }
         navigate(pageId as PageId, params)
       }
     }

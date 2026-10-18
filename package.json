@@ -1,7 +1,7 @@
 {
   "name": "voiceforge-studio",
   "productName": "VoiceForge Studio",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "YouTube AI voiceover production manager: channel-specific scripts via OpenAI and voiceovers via ElevenLabs.",
   "main": "./out/main/index.js",
   "author": "Stefan Ignjatović",

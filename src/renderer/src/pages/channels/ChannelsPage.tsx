@@ -1,13 +1,26 @@
-import { useMemo, useState, type JSX } from 'react'
-import { ArrowDown, ArrowUp, Copy, Download, FileText, Pencil, Plus, Trash, Tv, Upload } from 'lucide-react'
+import { useEffect, useMemo, useState, type JSX } from 'react'
+import { ArrowDown, ArrowUp, Copy, Download, Layers, Pencil, Plus, Trash, Tv, Upload } from 'lucide-react'
 import type { Channel } from '@shared/types'
 import { api } from '@/lib/api'
 import { useAsync } from '@/lib/hooks'
+import { channelStatus, contentTypeLabel, GROUP_LABEL, loadFormats, statusGroup, type ChannelFormat, type StatusGroup } from '@/lib/formats'
 import { activeChannels, useApp } from '@/store/app'
 import { useRouter } from '@/store/router'
 import { toast } from '@/store/toasts'
-import { Badge, Button, Card, ChannelIcon, Checkbox, ConfirmDialog, EmptyState, PageHeader } from '@/components/ui'
+import { Badge, Button, Card, ChannelIcon, Checkbox, ConfirmDialog, EmptyState, PageHeader, SearchInput } from '@/components/ui'
+import { FormatStatusPill } from '@/components/FormatStatus'
 import { ChannelEditor } from './ChannelEditor'
+
+const GROUPS: StatusGroup[] = ['ready', 'provisional', 'needs_approval', 'needs_references']
+const CATEGORIES: Array<{ id: Channel['category']; label: string }> = [
+  { id: 'gaming', label: 'Gaming' },
+  { id: 'tech', label: 'Tech' },
+  { id: 'other', label: 'Other' }
+]
+
+function isGroup(v: string | undefined): v is StatusGroup {
+  return GROUPS.includes(v as StatusGroup)
+}
 
 export function ChannelsPage(): JSX.Element {
   const channels = useApp((s) => s.channels)
@@ -17,36 +30,42 @@ export function ChannelsPage(): JSX.Element {
   const [showArchived, setShowArchived] = useState(false)
   const [deleting, setDeleting] = useState<Channel | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+  const [group, setGroup] = useState<StatusGroup | null>(isGroup(params.status) ? params.status : null)
+  const [category, setCategory] = useState<Channel['category'] | null>(null)
+
+  useEffect(() => {
+    if (isGroup(params.status)) setGroup(params.status)
+  }, [params.status])
 
   const editId = params.edit ?? null
-  const list = useMemo(() => (showArchived ? [...channels].sort((a, b) => a.position - b.position) : activeChannels(channels)), [channels, showArchived])
+  const base = useMemo(() => (showArchived ? [...channels].sort((a, b) => a.position - b.position) : activeChannels(channels)), [channels, showArchived])
 
-  // Template status per channel (placeholder / missing).
-  const templateStatus = useAsync(async () => {
-    const out: Record<string, { placeholder: boolean; missing: boolean; name: string | null }> = {}
-    await Promise.all(
-      channels.map(async (c) => {
-        if (!c.activeTemplateVersionId) {
-          out[c.id] = { placeholder: false, missing: true, name: null }
-          return
-        }
-        try {
-          const v = await api.invoke('templates:getVersion', { versionId: c.activeTemplateVersionId })
-          const ts = await api.invoke('templates:list', { channelId: c.id })
-          out[c.id] = { placeholder: v.placeholder, missing: false, name: ts.find((t) => t.id === v.templateId)?.name ?? null }
-        } catch {
-          out[c.id] = { placeholder: false, missing: true, name: null }
-        }
-      })
-    )
-    return out
-  }, [channels.map((c) => `${c.id}:${c.activeTemplateVersionId}`).join('|')])
+  const formats = useAsync(() => loadFormats(base), [base.map((c) => `${c.id}:${c.activeTemplateVersionId}:${c.updatedAt}`).join('|'), editId], { fallback: {} })
+  const formatsOf = (c: Channel): ChannelFormat[] | undefined => formats.data?.[c.id]
+
+  const groupCounts = useMemo(() => {
+    const m: Record<StatusGroup, number> = { ready: 0, provisional: 0, needs_approval: 0, needs_references: 0 }
+    if (!formats.data) return m
+    for (const c of base) m[statusGroup(channelStatus(formats.data[c.id]))]++
+    return m
+  }, [base, formats.data])
+
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return base.filter((c) => {
+      if (q && !`${c.name} ${c.description}`.toLowerCase().includes(q)) return false
+      if (category && c.category !== category) return false
+      if (group && formats.data && statusGroup(channelStatus(formats.data[c.id])) !== group) return false
+      return true
+    })
+  }, [base, query, category, group, formats.data])
+  const filtered = list.length !== base.length || Boolean(query || group || category)
 
   const jobCounts = useMemo(() => {
-    const m: Record<string, { active: number; failed: number; total: number }> = {}
+    const m: Record<string, { active: number; failed: number }> = {}
     for (const j of Object.values(jobs)) {
-      const e = (m[j.channelId] ??= { active: 0, failed: 0, total: 0 })
-      e.total++
+      const e = (m[j.channelId] ??= { active: 0, failed: 0 })
       if (j.status === 'failed') e.failed++
       else if (j.status !== 'completed' && j.status !== 'cancelled') e.active++
     }
@@ -54,7 +73,11 @@ export function ChannelsPage(): JSX.Element {
   }, [jobs])
 
   const openEditor = (id: string, tab?: string): void => setParams({ edit: id, tab })
-  const closeEditor = (): void => setParams({})
+  const closeEditor = (): void => setParams(group ? { status: group } : {})
+  const pickGroup = (g: StatusGroup | null): void => {
+    setGroup(g)
+    setParams(g ? { status: g } : {})
+  }
 
   const duplicate = async (c: Channel): Promise<void> => {
     setBusy(`dup:${c.id}`)
@@ -129,14 +152,14 @@ export function ChannelsPage(): JSX.Element {
   }
 
   if (editId) {
-    return <ChannelEditor channelId={editId === 'new' ? null : editId} initialTab={params.tab} onClose={closeEditor} />
+    return <ChannelEditor key={editId} channelId={editId === 'new' ? null : editId} initialTab={params.tab} initialFormat={params.format} onClose={closeEditor} />
   }
 
   return (
     <div className="page fade-in">
       <PageHeader
         title="Channels"
-        subtitle="Each channel carries its own writing rules, template, voice and output folder."
+        subtitle="Each channel keeps its own formats, voice and output folder. A format only runs unattended after you approve it."
         actions={
           <>
             <Checkbox checked={showArchived} onChange={setShowArchived} label="Show archived" />
@@ -150,79 +173,107 @@ export function ChannelsPage(): JSX.Element {
         }
       />
 
-      {list.length === 0 ? (
+      <div className="channels-toolbar">
+        <SearchInput value={query} onChange={setQuery} placeholder="Search channels…" style={{ width: 240 }} />
+        <div className="filter-chips" role="group" aria-label="Filter by format status">
+          <button type="button" className={`filter-chip ${group === null ? 'active' : ''}`} onClick={() => pickGroup(null)}>
+            All <span className="segment-count">{base.length}</span>
+          </button>
+          {GROUPS.map((g) => (
+            <button key={g} type="button" className={`filter-chip filter-chip-${g} ${group === g ? 'active' : ''}`} onClick={() => pickGroup(group === g ? null : g)}>
+              {GROUP_LABEL[g]} <span className="segment-count">{groupCounts[g]}</span>
+            </button>
+          ))}
+        </div>
+        <div className="filter-chips" role="group" aria-label="Filter by category">
+          {CATEGORIES.map((c) => (
+            <button key={c.id} type="button" className={`filter-chip ${category === c.id ? 'active' : ''}`} onClick={() => setCategory(category === c.id ? null : c.id)}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {base.length === 0 ? (
         <Card>
           <EmptyState icon={<Tv size={22} />} title="No channels yet" description="Create a channel to define how its scripts are written and voiced." actions={<Button variant="primary" onClick={() => openEditor('new')}>Add channel</Button>} />
         </Card>
+      ) : list.length === 0 ? (
+        <Card>
+          <EmptyState
+            compact
+            icon={<Tv size={20} />}
+            title="No channels match"
+            description="Try another search or clear the filters."
+            actions={
+              <Button
+                onClick={() => {
+                  setQuery('')
+                  setCategory(null)
+                  pickGroup(null)
+                }}
+              >
+                Clear filters
+              </Button>
+            }
+          />
+        </Card>
       ) : (
-        <div className="grid grid-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))' }}>
+        <div className="channel-list">
           {list.map((c, i) => {
-            const ts = templateStatus.data?.[c.id]
+            const fs = formatsOf(c)
             const jc = jobCounts[c.id]
             return (
-              <Card key={c.id} padded>
-                <div className="row gap-3" style={{ alignItems: 'flex-start' }}>
-                  <ChannelIcon icon={c.icon} color={c.color} size="lg" />
-                  <div className="col grow" style={{ gap: 2 }}>
-                    <div className="row">
-                      <span className="strong" style={{ fontSize: 15 }}>
-                        {c.name}
-                      </span>
-                      {c.archived && <Badge>archived</Badge>}
-                    </div>
+              <div key={c.id} className="channel-row">
+                <button type="button" className="channel-row-main" onClick={() => openEditor(c.id)} title={`Edit ${c.name}`}>
+                  <ChannelIcon icon={c.icon} color={c.color} />
+                  <span className="channel-row-name">
+                    <span className="strong">{c.name}</span>
+                    {c.archived && <Badge>archived</Badge>}
                     <span className="xs muted">
                       {c.category} · {c.language.toUpperCase()} · {c.minChars.toLocaleString()}–{c.maxChars.toLocaleString()} chars
                     </span>
-                    <span className="small muted" style={{ marginTop: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {c.description || 'No description.'}
-                    </span>
-                  </div>
-                  {!showArchived && (
-                    <div className="col" style={{ gap: 0 }}>
-                      <Button variant="ghost" size="sm" iconOnly icon={<ArrowUp size={12} />} disabled={i === 0} onClick={() => reorder(c, -1)} title="Move up" />
-                      <Button variant="ghost" size="sm" iconOnly icon={<ArrowDown size={12} />} disabled={i === list.length - 1} onClick={() => reorder(c, 1)} title="Move down" />
-                    </div>
-                  )}
-                </div>
-                <div className="row wrap mt-3" style={{ gap: 6 }}>
+                  </span>
+                </button>
+                <div className="channel-row-voice">
                   <Badge tone={c.elevenVoiceId ? 'success' : 'warning'} dot>
                     {c.elevenVoiceName ?? (c.elevenVoiceId ? c.elevenVoiceId : 'No voice')}
                   </Badge>
-                  {ts ? (
-                    ts.missing ? (
-                      <Badge tone="danger">no template</Badge>
-                    ) : ts.placeholder ? (
-                      <Badge tone="warning" title={ts.name ?? ''}>placeholder template</Badge>
-                    ) : (
-                      <Badge tone="info" title={ts.name ?? ''}>template ready</Badge>
-                    )
-                  ) : (
-                    <Badge>template…</Badge>
-                  )}
-                  {jc && jc.total > 0 && (
-                    <Badge title={`${jc.total} jobs loaded`}>
+                  {jc && (jc.active > 0 || jc.failed > 0) && (
+                    <span className="xs muted">
                       {jc.active} active{jc.failed ? ` · ${jc.failed} failed` : ''}
-                    </Badge>
+                    </span>
                   )}
                 </div>
-                <div className="row wrap mt-4" style={{ gap: 4 }}>
-                  <Button size="sm" variant="primary" icon={<Pencil size={12} />} onClick={() => openEditor(c.id)}>
-                    Edit
-                  </Button>
-                  <Button size="sm" icon={<FileText size={12} />} onClick={() => openEditor(c.id, 'templates')}>
-                    Templates
-                  </Button>
-                  <Button size="sm" variant="ghost" icon={<Copy size={12} />} loading={busy === `dup:${c.id}`} onClick={() => duplicate(c)}>
-                    Duplicate
-                  </Button>
-                  <Button size="sm" variant="ghost" icon={<Download size={12} />} onClick={() => exportChannel(c)}>
-                    Export
-                  </Button>
-                  <Button size="sm" variant="ghost" icon={<Trash size={12} />} onClick={() => setDeleting(c)} style={{ marginLeft: 'auto' }}>
-                    Delete
-                  </Button>
+                <div className="channel-row-formats">
+                  {!fs ? (
+                    <span className="xs subtle">Loading formats…</span>
+                  ) : fs.length === 0 ? (
+                    <FormatStatusPill status="not_configured" />
+                  ) : (
+                    fs.map((f) => (
+                      <button key={f.template.id} type="button" className="format-link" onClick={() => setParams({ edit: c.id, tab: 'formats', format: f.template.id })} title={`${f.template.name} — open in the Formats tab`}>
+                        <FormatStatusPill status={f.status} prefix={fs.length > 1 ? contentTypeLabel(f.template.contentType) : undefined} />
+                      </button>
+                    ))
+                  )}
                 </div>
-              </Card>
+                <div className="channel-row-actions">
+                  <Button size="sm" icon={<Layers size={12} />} onClick={() => openEditor(c.id, 'formats')}>
+                    Formats
+                  </Button>
+                  <Button size="sm" variant="ghost" iconOnly icon={<Pencil size={13} />} onClick={() => openEditor(c.id)} title="Edit channel" />
+                  <Button size="sm" variant="ghost" iconOnly icon={<Copy size={13} />} loading={busy === `dup:${c.id}`} onClick={() => duplicate(c)} title="Duplicate" />
+                  <Button size="sm" variant="ghost" iconOnly icon={<Download size={13} />} onClick={() => exportChannel(c)} title="Export" />
+                  <Button size="sm" variant="ghost" iconOnly icon={<Trash size={13} />} onClick={() => setDeleting(c)} title="Delete" />
+                  {!showArchived && !filtered && (
+                    <span className="channel-row-order">
+                      <Button variant="ghost" size="sm" iconOnly icon={<ArrowUp size={12} />} disabled={i === 0} onClick={() => reorder(c, -1)} title="Move up" />
+                      <Button variant="ghost" size="sm" iconOnly icon={<ArrowDown size={12} />} disabled={i === list.length - 1} onClick={() => reorder(c, 1)} title="Move down" />
+                    </span>
+                  )}
+                </div>
+              </div>
             )
           })}
         </div>
@@ -239,7 +290,7 @@ export function ChannelsPage(): JSX.Element {
         checkboxDefault={false}
         message={
           <>
-            The channel, its templates and its job history will be removed from the database. <strong>Project files on disk are preserved</strong> unless you tick the option below. This cannot be undone.
+            The channel, its formats, reference scripts and job history will be removed from the database. <strong>Project files on disk are preserved</strong> unless you tick the option below. This cannot be undone.
           </>
         }
       />

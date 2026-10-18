@@ -9,9 +9,9 @@ import { toast } from '@/store/toasts'
 import { Alert, Badge, Button, Card, ChannelIcon, PageHeader, Tabs, type TabItem } from '@/components/ui'
 import { IdentityTab, OutputTab, ResearchTab, ValidationTab, WritingTab } from './tabs/BasicTabs'
 import { VoiceTab } from './tabs/VoiceTab'
-import { TemplateEditor } from './TemplateEditor'
+import { StyleStudio } from './studio/StyleStudio'
 
-export type EditorTab = 'identity' | 'writing' | 'voice' | 'research' | 'validation' | 'output' | 'templates'
+export type EditorTab = 'identity' | 'writing' | 'voice' | 'research' | 'validation' | 'output' | 'formats'
 
 const TABS: TabItem<EditorTab>[] = [
   { id: 'identity', label: 'Identity' },
@@ -20,7 +20,7 @@ const TABS: TabItem<EditorTab>[] = [
   { id: 'research', label: 'Research' },
   { id: 'validation', label: 'Validation' },
   { id: 'output', label: 'Output' },
-  { id: 'templates', label: 'Templates' }
+  { id: 'formats', label: 'Formats' }
 ]
 
 export type FieldErrors = Record<string, string>
@@ -63,16 +63,24 @@ function isTab(v: string | undefined): v is EditorTab {
   return TABS.some((t) => t.id === v)
 }
 
+/** Old links (and the smoke-test hooks) still say "templates". */
+function initial(v: string | undefined): EditorTab {
+  if (v === 'templates') return 'formats'
+  return isTab(v) ? v : 'identity'
+}
+
 export interface ChannelEditorProps {
   channelId: string | null
   initialTab?: string | undefined
+  /** Template id to open in the Formats tab. */
+  initialFormat?: string | undefined
   onClose: () => void
 }
 
-export function ChannelEditor({ channelId, initialTab, onClose }: ChannelEditorProps): JSX.Element {
+export function ChannelEditor({ channelId, initialTab, initialFormat, onClose }: ChannelEditorProps): JSX.Element {
   const settings = useApp((s) => s.settings)
   const existing = useApp((s) => (channelId ? s.channels.find((c) => c.id === channelId) : undefined))
-  const [tab, setTab] = useState<EditorTab>(isTab(initialTab) ? initialTab : 'identity')
+  const [tab, setTab] = useState<EditorTab>(initial(initialTab))
   const [form, setForm] = useState<ChannelInput>(() => (existing ? toInput(existing) : emptyChannelInput(settings)))
   const [saved, setSaved] = useState<ChannelInput>(form)
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -207,12 +215,12 @@ export function ChannelEditor({ channelId, initialTab, onClose }: ChannelEditorP
         {tab === 'research' && <ResearchTab form={form} patch={patch} errors={errors} />}
         {tab === 'validation' && <ValidationTab form={form} patch={patch} errors={errors} />}
         {tab === 'output' && <OutputTab form={form} patch={patch} errors={errors} />}
-        {tab === 'templates' &&
+        {tab === 'formats' &&
           (createdId ? (
-            <TemplateEditor channelId={createdId} activeVersionId={existing?.activeTemplateVersionId ?? null} channelInstructions={form.writingInstructions} />
+            <StyleStudio key={createdId} channelId={createdId} channelName={form.name || existing?.name || 'Channel'} activeVersionId={existing?.activeTemplateVersionId ?? null} channelInstructions={form.writingInstructions} initialTemplateId={initialFormat} minChars={form.minChars} maxChars={form.maxChars} />
           ) : (
             <Alert tone="info" title="Save the channel first" actions={<Button size="sm" variant="primary" onClick={() => void save()}>Create channel</Button>}>
-              Templates are stored per channel, so the channel must exist before you can add one.
+              Formats are stored per channel, so the channel must exist before you can add one.
             </Alert>
           ))}
       </Card>

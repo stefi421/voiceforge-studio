@@ -9,6 +9,8 @@ import { navigate } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { Alert, AudioPlayer, Badge, Button, Card, ChannelChip, CostLabel, EmptyState, PageHeader, ProgressBar, Skeleton, Stat } from '@/components/ui'
 import { formatCompact, formatDuration, formatNumber, formatPercent, relativeTime } from '@/lib/format'
+import { channelStatus, loadFormats, statusGroup, type StatusGroup } from '@/lib/formats'
+import type { Channel } from '@shared/types'
 
 export function DashboardPage(): JSX.Element {
   const channels = useApp((s) => s.channels)
@@ -316,6 +318,8 @@ export function DashboardPage(): JSX.Element {
         </Card>
       </div>
 
+      {live.length > 0 && <ChannelFormatsCard channels={live} />}
+
       {!setupNeeded && live.length > 0 && stats.total === 0 && (
         <Alert tone="info" title="Ready when you are" actions={<Button size="sm" variant="primary" onClick={() => navigate('generate')}>Start a generation</Button>}>
           <span className="row">
@@ -324,5 +328,52 @@ export function DashboardPage(): JSX.Element {
         </Alert>
       )}
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------------ */
+
+function ChannelFormatsCard({ channels }: { channels: Channel[] }): JSX.Element {
+  const formats = useAsync(() => loadFormats(channels), [channels.map((c) => `${c.id}:${c.activeTemplateVersionId}:${c.updatedAt}`).join('|')], { fallback: {} })
+  const counts = useMemo(() => {
+    const m: Record<StatusGroup, number> = { ready: 0, provisional: 0, needs_approval: 0, needs_references: 0 }
+    if (!formats.data) return m
+    for (const c of channels) m[statusGroup(channelStatus(formats.data[c.id]))]++
+    return m
+  }, [channels, formats.data])
+  const loaded = Boolean(formats.data && Object.keys(formats.data).length > 0)
+  const items: Array<{ group: StatusGroup; label: string; hint: string; tone: string }> = [
+    { group: 'ready', label: 'Approved', hint: 'Run fully automatic', tone: 'success' },
+    { group: 'provisional', label: 'Provisional', hint: 'Review before voice', tone: 'warning' },
+    { group: 'needs_approval', label: 'Awaiting approval', hint: 'Extracted, not approved', tone: 'accent' },
+    { group: 'needs_references', label: 'Needs references', hint: 'Import approved scripts', tone: 'danger' }
+  ]
+  return (
+    <Card
+      title="Channel formats"
+      actions={
+        counts.needs_references > 0 ? (
+          <Button size="sm" onClick={() => navigate('channels', { status: 'needs_references' })}>
+            Import references
+          </Button>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => navigate('channels')}>
+            Open channels
+          </Button>
+        )
+      }
+    >
+      <div className="card-body">
+        <div className="formats-summary">
+          {items.map((it) => (
+            <button key={it.group} type="button" className={`formats-summary-item tone-${it.tone}`} onClick={() => navigate('channels', { status: it.group })}>
+              <span className="formats-summary-value tnum">{loaded ? counts[it.group] : '–'}</span>
+              <span className="small strong">{it.label}</span>
+              <span className="xs muted">{it.hint}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </Card>
   )
 }

@@ -1,4 +1,4 @@
-# Known limitations (v1.1.1)
+# Known limitations (v1.2.0)
 
 Honest list of what is not done, partially done, or unverified.
 
@@ -82,3 +82,14 @@ Honest list of what is not done, partially done, or unverified.
   `sprintf-js` ReDoS, no upstream fix). 0 in production dependencies.
 * `node:sqlite` prints an "experimental feature" warning in Node 22 test runs; in
   Electron 44 (Node 24) it is stable.
+
+## Channel formats (1.2.0)
+
+* Only Game Vault (review), RENVO (YouTube review) and RiftForge Tech (full review) start as
+  *provisional* (built from the written rules, usable in Review before voice). Every other
+  channel/format needs approved reference scripts before it can generate — by design, so no
+  intro, outro or section order is invented.
+* Length limits are per channel, not per format (RiftForge short reviews: lower the channel
+  limits for that batch).
+* Dropping .docx/.pdf onto the window cannot pass file paths through the sandbox; use
+  *Choose files* (TXT/MD paste and drop work).

@@ -48,9 +48,19 @@ export function IdentityTab({ form, patch, errors }: TabProps): JSX.Element {
           </div>
         </Field>
       </div>
-      <Field label="Description" className="span-2" error={errors.description}>
-        <Textarea value={form.description} onChange={(e) => patch({ description: e.target.value })} rows={3} placeholder="What this channel is about and how scripts should feel." />
+      <Field label="Description" className="span-2" error={errors.description} hint="Description / branding only — never inserted into narration. Lines from your YouTube descriptions (taglines, subscribe requests, business contacts) belong here, not in a format.">
+        <Textarea value={form.description} onChange={(e) => patch({ description: e.target.value })} rows={3} placeholder="What this channel is about. Branding lines such as a description tagline can be kept here." />
       </Field>
+      {(() => {
+        const branding = (form as unknown as { brandingText?: string | null }).brandingText
+        return branding ? (
+          <div className="span-2 branding-note">
+            <span className="field-label">Branding text from your descriptions</span>
+            <blockquote>{branding}</blockquote>
+            <span className="xs muted">Description / branding only — never inserted into narration unless an approved reference script contains it.</span>
+          </div>
+        ) : null
+      })()}
       <Field label="Category" error={errors.category}>
         <Select
           value={form.category}

@@ -7,6 +7,7 @@ import './styles/global.css'
 import './styles/components.css'
 import './styles/queue.css'
 import './styles/shell.css'
+import './styles/studio.css'
 
 import { toast } from './store/toasts'
 

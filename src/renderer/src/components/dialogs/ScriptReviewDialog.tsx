@@ -8,6 +8,7 @@ import { useApp } from '@/store/app'
 import { Alert, Badge, Button, ConfirmDialog, Dialog, Field, SkeletonRows, Textarea } from '@/components/ui'
 import { estimateDurationSec, formatDuration, formatNumber, wordCount } from '@/lib/format'
 import { CharCounter, countIssues, ValidationIssues } from '@/components/ScriptQuality'
+import { NarrationToggle, NarrationView, ScriptProvenance, type ScriptView } from '@/components/ScriptMeta'
 
 export { ValidationIssues } from '@/components/ScriptQuality'
 
@@ -30,6 +31,7 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
   const [busy, setBusy] = useState<string | null>(null)
   const [validation, setValidation] = useState<ValidationReport | null>(null)
   const [confirmForce, setConfirmForce] = useState(false)
+  const [view, setView] = useState<ScriptView>('script')
 
   useEffect(() => {
     if (script.data) {
@@ -43,6 +45,7 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
       setFeedback('')
       setBusy(null)
       setConfirmForce(false)
+      setView('script')
     }
   }, [job])
 
@@ -209,11 +212,12 @@ export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): J
                 ~{formatDuration(stats.dur)} at {wpm} wpm
               </Badge>
               {dirty && <Badge tone="accent">unsaved edits</Badge>}
-              {script.data.templateVersionNumber != null && <Badge>template v{script.data.templateVersionNumber}</Badge>}
+              <ScriptProvenance script={script.data} />
               {issues.errors > 0 && <Badge tone="danger">{issues.errors} error(s)</Badge>}
               {issues.warnings > 0 && <Badge tone="warning">{issues.warnings} warning(s)</Badge>}
             </div>
-            <Textarea className="script-editor" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} />
+            <NarrationToggle value={view} onChange={setView} />
+            {view === 'script' ? <Textarea className="script-editor" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} /> : <NarrationView script={script.data} dirty={dirty} />}
             <ValidationIssues report={validation} />
             {interactive && (
               <Field label="Feedback for the rewrite" hint="Used by Reject; Fix with AI also sends it when present.">

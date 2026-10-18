@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
 import { ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, ListChecks, Sparkles, TriangleAlert, Zap } from 'lucide-react'
-import type { BatchEstimate, CreateBatchInput, JobMode, TemplateVersion } from '@shared/types'
+import type { BatchEstimate, CreateBatchInput, JobMode } from '@shared/types'
 import { modeLabel } from '@/lib/jobs'
+import { allowsAuto, allowsMode, allowsSupervised, blockReason, contentTypeLabel, loadFormats } from '@/lib/formats'
+import { FormatStatusPill } from '@/components/FormatStatus'
 import { api } from '@/lib/api'
 import { useAsync, useDebouncedValue } from '@/lib/hooks'
 import { formatCost, formatNumber } from '@/lib/format'
@@ -17,12 +19,6 @@ const MODES: Array<{ id: JobMode; icon: JSX.Element; line: string }> = [
   { id: 'review_before_voice', icon: <Eye size={15} />, line: 'Same, but every script waits for your approval before ElevenLabs characters are spent.' },
   { id: 'scripts_only', icon: <FileText size={15} />, line: 'Research and write the scripts only. Voice any of them later from the Scripts page.' }
 ]
-
-interface ChannelTemplateInfo {
-  name: string | null
-  placeholder: boolean
-  missing: boolean
-}
 
 export function GeneratePage(): JSX.Element {
   const channels = useApp((s) => s.channels)
@@ -52,29 +48,32 @@ export function GeneratePage(): JSX.Element {
     if (!channelId && live[0]) setChannelId(live[0].id)
   }, [live, channelId])
 
-  // Template status per channel (placeholder detection).
-  const templateInfo = useAsync(async () => {
-    const out: Record<string, ChannelTemplateInfo> = {}
-    await Promise.all(
-      live.map(async (c) => {
-        if (!c.activeTemplateVersionId) {
-          out[c.id] = { name: null, placeholder: false, missing: true }
-          return
-        }
-        try {
-          const [templates, version] = await Promise.all([api.invoke('templates:list', { channelId: c.id }), api.invoke('templates:getVersion', { versionId: c.activeTemplateVersionId })])
-          const t = templates.find((x) => x.id === (version as TemplateVersion).templateId)
-          out[c.id] = { name: t?.name ?? null, placeholder: version.placeholder, missing: false }
-        } catch {
-          out[c.id] = { name: null, placeholder: false, missing: true }
-        }
-      })
-    )
-    return out
-  }, [live.map((c) => `${c.id}:${c.activeTemplateVersionId}`).join('|')])
+  // Formats (content types) per channel with their approval status.
+  const formatsKey = live.map((c) => `${c.id}:${c.activeTemplateVersionId}:${c.updatedAt}`).join('|')
+  const formats = useAsync(() => loadFormats(live), [formatsKey], { fallback: {} })
+  const channelFormats = useMemo(() => formats.data?.[channelId] ?? [], [formats.data, channelId])
+  const [templateId, setTemplateId] = useState<string | null>(params.templateId ?? null)
+
+  // Keep the chosen format valid for the chosen channel (default format otherwise).
+  useEffect(() => {
+    if (channelFormats.length === 0) return
+    if (templateId && channelFormats.some((f) => f.template.id === templateId)) return
+    setTemplateId((channelFormats.find((f) => f.isDefault) ?? channelFormats[0])!.template.id)
+  }, [channelFormats, templateId])
 
   const selectedChannel = live.find((c) => c.id === channelId)
-  const selectedTemplate = templateInfo.data?.[channelId]
+  const selectedFormat = channelFormats.find((f) => f.template.id === templateId) ?? null
+  const formatStatus = selectedFormat?.status ?? (formats.data && !formats.loading ? 'not_configured' : null)
+  const formatsReady = Boolean(formats.data && formats.data[channelId])
+
+  // A format that is not approved cannot run unattended: fall back to Review before voice.
+  useEffect(() => {
+    if (!formatStatus || mode !== 'auto') return
+    if (!allowsAuto(formatStatus) && allowsSupervised(formatStatus)) {
+      setMode('review_before_voice')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formatStatus, templateId])
 
   /** Sync textarea → rows (keeps per-row channel assignments for titles that still exist). */
   const syncRows = useCallback((nextText: string) => {
@@ -182,14 +181,15 @@ export function GeneratePage(): JSX.Element {
       mode,
       entries,
       skipExisting,
-      manualResearchNotes: Object.keys(cleanNotes).length ? cleanNotes : undefined
+      manualResearchNotes: Object.keys(cleanNotes).length ? cleanNotes : undefined,
+      templateId: templateId ?? undefined
     }
-  }, [channelId, rows, notes, batchName, mode, skipExisting])
+  }, [channelId, rows, notes, batchName, mode, skipExisting, templateId])
 
   const selectedCount = rows.filter((r) => r.selected && r.title.trim()).length
 
   // Live estimate line under the titles box (debounced, never blocks).
-  const estimateKey = useDebouncedValue(`${channelId}|${mode}|${rows.filter((r) => r.selected).map((r) => `${r.title}@${r.channelId ?? ''}`).join('\n')}`, 500)
+  const estimateKey = useDebouncedValue(`${channelId}|${templateId ?? ''}|${mode}|${rows.filter((r) => r.selected).map((r) => `${r.title}@${r.channelId ?? ''}`).join('\n')}`, 500)
   useEffect(() => {
     let cancelled = false
     const input = buildInput()
@@ -214,8 +214,8 @@ export function GeneratePage(): JSX.Element {
   const blockers: string[] = []
   if (!secrets.openai) blockers.push('OpenAI API key is missing (Settings → OpenAI).')
   if (!secrets.elevenlabs && mode !== 'scripts_only') blockers.push('ElevenLabs API key is missing (Settings → ElevenLabs).')
-  if (selectedTemplate?.placeholder) blockers.push(`The active template "${selectedTemplate.name ?? ''}" is a placeholder. Open the channel's Templates tab and create a real version first.`)
-  if (selectedTemplate?.missing) blockers.push('This channel has no active template version.')
+  const formatBlock = formatsReady && formatStatus && !allowsSupervised(formatStatus) ? blockReason(formatStatus, mode) : formatsReady && channelFormats.length === 0 ? 'This channel has no format yet. Add one and import approved reference scripts.' : null
+  if (formatBlock) blockers.push(formatBlock)
   if (selectedChannel && !selectedChannel.elevenVoiceId && mode !== 'scripts_only') blockers.push(`${selectedChannel.name} has no ElevenLabs voice selected.`)
 
   const startEstimate = async (): Promise<void> => {
@@ -308,10 +308,21 @@ export function GeneratePage(): JSX.Element {
           </div>
           <div className="channel-chips">
             {live.map((c) => {
-              const info = templateInfo.data?.[c.id]
-              const warn = !c.elevenVoiceId || info?.placeholder || info?.missing
+              const fs = formats.data?.[c.id]
+              const def = fs ? (fs.find((f) => f.isDefault) ?? fs[0]) : undefined
+              const notReady = Boolean(fs) && (!def || !allowsSupervised(def.status))
+              const warn = !c.elevenVoiceId || notReady
               return (
-                <button key={c.id} type="button" className={`channel-chip ${c.id === channelId ? 'selected' : ''}`} onClick={() => setChannelId(c.id)} title={warn ? (info?.placeholder ? 'Placeholder template' : info?.missing ? 'No template' : 'No voice') : `${c.elevenVoiceName ?? 'No voice'} · ${c.elevenModelId}`}>
+                <button
+                  key={c.id}
+                  type="button"
+                  className={`channel-chip ${c.id === channelId ? 'selected' : ''}`}
+                  onClick={() => {
+                    setChannelId(c.id)
+                    setTemplateId(null)
+                  }}
+                  title={warn ? (notReady ? 'Format needs references or approval' : 'No voice') : `${c.elevenVoiceName ?? 'No voice'} · ${c.elevenModelId}`}
+                >
                   <ChannelIcon icon={c.icon} color={c.color} size="sm" />
                   <span className="channel-chip-name">{c.name}</span>
                   {warn ? <TriangleAlert size={12} className="text-warning" /> : <span className="channel-chip-voice">{c.elevenVoiceName ?? ''}</span>}
@@ -319,9 +330,27 @@ export function GeneratePage(): JSX.Element {
               )
             })}
           </div>
+          {selectedChannel && channelFormats.length > 1 && (
+            <div className="format-picker" role="radiogroup" aria-label="Format">
+              <span className="xs muted">Format</span>
+              {channelFormats.map((f) => (
+                <button key={f.template.id} type="button" role="radio" aria-checked={f.template.id === templateId} className={`filter-chip ${f.template.id === templateId ? 'active' : ''}`} onClick={() => setTemplateId(f.template.id)} title={f.template.name}>
+                  {contentTypeLabel(f.template.contentType)}
+                </button>
+              ))}
+            </div>
+          )}
           {selectedChannel && (
-            <div className="xs muted">
-              {selectedTemplate && !selectedTemplate.placeholder && !selectedTemplate.missing ? `Template: ${selectedTemplate.name ?? 'active'}` : 'Template: not ready'} · Voice: {selectedChannel.elevenVoiceName ?? 'none'} · {formatNumber(selectedChannel.minChars)}–{formatNumber(selectedChannel.maxChars)} chars
+            <div className="row wrap gen-channel-meta">
+              {formatStatus && <FormatStatusPill status={formatStatus} prefix={selectedFormat ? contentTypeLabel(selectedFormat.template.contentType) : undefined} />}
+              <span className="xs muted">
+                Voice: {selectedChannel.elevenVoiceName ?? 'none'} · {formatNumber(selectedChannel.minChars)}–{formatNumber(selectedChannel.maxChars)} chars
+              </span>
+              {formatStatus && allowsSupervised(formatStatus) && !allowsAuto(formatStatus) && (
+                <Button size="sm" variant="ghost" onClick={() => navigate('channels', { edit: channelId, tab: 'formats', format: templateId ?? undefined })}>
+                  Approve this format
+                </Button>
+              )}
             </div>
           )}
           {blocked && (
@@ -329,9 +358,9 @@ export function GeneratePage(): JSX.Element {
               tone="warning"
               title="Before you can generate"
               actions={
-                selectedTemplate?.placeholder || selectedTemplate?.missing ? (
-                  <Button size="sm" onClick={() => navigate('channels', { edit: channelId, tab: 'templates' })}>
-                    Open template editor
+                formatBlock ? (
+                  <Button size="sm" variant="primary" onClick={() => navigate('channels', { edit: channelId, tab: 'formats', format: templateId ?? undefined })}>
+                    Import references
                   </Button>
                 ) : !secrets.openai || !secrets.elevenlabs ? (
                   <Button size="sm" onClick={() => navigate('settings', { tab: !secrets.openai ? 'openai' : 'elevenlabs' })}>
@@ -425,15 +454,20 @@ export function GeneratePage(): JSX.Element {
             <span>How much do you want to check?</span>
           </div>
           <div className="mode-cards">
-            {MODES.map((m) => (
-              <button key={m.id} type="button" className={`mode-card ${mode === m.id ? 'selected' : ''}`} onClick={() => setMode(m.id)}>
-                <span className="mode-card-title">
-                  {m.icon} {modeLabel(m.id)}
-                  {settings.generation.defaultMode === m.id && <Badge>default</Badge>}
-                </span>
-                <span className="mode-card-desc">{m.line}</span>
-              </button>
-            ))}
+            {MODES.map((m) => {
+              const disabled = Boolean(formatStatus) && !allowsMode(formatStatus!, m.id)
+              const why = disabled && formatStatus ? blockReason(formatStatus, m.id) : null
+              return (
+                <button key={m.id} type="button" className={`mode-card ${mode === m.id ? 'selected' : ''} ${disabled ? 'disabled' : ''}`} onClick={() => !disabled && setMode(m.id)} aria-disabled={disabled} title={why ?? undefined}>
+                  <span className="mode-card-title">
+                    {m.icon} {modeLabel(m.id)}
+                    {settings.generation.defaultMode === m.id && !disabled && <Badge>default</Badge>}
+                    {disabled && <Badge tone="warning">{formatStatus && allowsSupervised(formatStatus) ? 'needs approval' : 'not available'}</Badge>}
+                  </span>
+                  <span className="mode-card-desc">{disabled && m.id === 'auto' && formatStatus && allowsSupervised(formatStatus) ? 'Available once this format is approved in the Formats tab.' : m.line}</span>
+                </button>
+              )
+            })}
           </div>
         </section>
 
@@ -479,7 +513,7 @@ export function GeneratePage(): JSX.Element {
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title={needsConfirm ? 'Confirm this batch' : 'Ready to start'}
-        description={estimate ? `${estimate.jobs} job(s) · ${modeLabel(mode)} · ${selectedChannel?.name ?? ''}` : undefined}
+        description={estimate ? `${estimate.jobs} job(s) · ${modeLabel(mode)} · ${selectedChannel?.name ?? ''}${selectedFormat && channelFormats.length > 1 ? ` · ${contentTypeLabel(selectedFormat.template.contentType)}` : ''}` : undefined}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={busy === 'create'}>

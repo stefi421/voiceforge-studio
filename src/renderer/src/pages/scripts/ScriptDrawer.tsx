@@ -7,10 +7,11 @@ import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { estimateDurationSec, formatDateTime, formatDuration, formatNumber, wordCount } from '@/lib/format'
 import { Alert, Badge, Button, ConfirmDialog, DiffView, Drawer, Field, Select, SkeletonRows, Tabs, Textarea } from '@/components/ui'
+import { NarrationView, ScriptProvenance } from '@/components/ScriptMeta'
 import { CharCounter, countIssues, ValidationIssues } from '@/components/ScriptQuality'
 import { RegenerateAudioDialog, type RegenerateAudioTarget } from '@/components/dialogs/RegenerateAudioDialog'
 
-type DrawerTab = 'editor' | 'validation' | 'versions'
+type DrawerTab = 'editor' | 'narration' | 'validation' | 'versions'
 
 export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: string | null; onClose: () => void; onChanged: () => void }): JSX.Element {
   const script = useAsync(() => api.invoke('scripts:get', { id: scriptId ?? '' }), [scriptId], { enabled: Boolean(scriptId) })
@@ -193,7 +194,7 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
               <Badge>~{formatDuration(stats.dur)} at {wpm} wpm</Badge>
               {issueCounts.errors > 0 && <Badge tone="danger">{issueCounts.errors} error(s)</Badge>}
               {issueCounts.warnings > 0 && <Badge tone="warning">{issueCounts.warnings} warning(s)</Badge>}
-              {s.templateVersionNumber != null && <Badge>template v{s.templateVersionNumber}</Badge>}
+              <ScriptProvenance script={s} />
               {dirty && <Badge tone="accent">unsaved edits</Badge>}
             </div>
             <Tabs
@@ -201,12 +202,14 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
               value={tab}
               onChange={setTab}
               tabs={[
-                { id: 'editor', label: 'Editor' },
+                { id: 'editor', label: 'Script' },
+                { id: 'narration', label: 'Narration (sent to ElevenLabs)' },
                 { id: 'validation', label: 'Validation', badge: issueCounts.errors > 0 ? <Badge tone="danger">{issueCounts.errors}</Badge> : issueCounts.warnings > 0 ? <Badge tone="warning">{issueCounts.warnings}</Badge> : undefined },
                 { id: 'versions', label: 'Versions', badge: <Badge>{vlist.length}</Badge> }
               ]}
             />
             {tab === 'editor' && <Textarea className="script-editor" value={text} onChange={(e) => setText(e.target.value)} style={{ minHeight: 480 }} spellCheck={false} />}
+            {tab === 'narration' && <NarrationView script={s} dirty={dirty} />}
             {tab === 'validation' &&
               (validation ? (
                 <div className="col gap-3">
