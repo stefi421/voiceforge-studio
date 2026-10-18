@@ -31,7 +31,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      - name: Run tests
+        shell: bash
+        run: |
+          set -o pipefail
+          npx vitest run --reporter=verbose 2>&1 | tee test.log
       - run: npm run build
       # Releases go to this repository by default. To keep the source private while the
       # updater reads from a PUBLIC releases-only repository, set the repository variable
@@ -95,12 +99,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          [ -f build.log ] || exit 0
+          [ -f build.log ] || [ -f test.log ] || exit 0
           mkdir -p /tmp/cilogs && cd /tmp/cilogs
           git init -q && git config user.name "github-actions" && git config user.email "actions@github.com"
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch -q origin ci-logs 2>/dev/null && git checkout -q ci-logs || git checkout -q -b ci-logs
-          cp "$GITHUB_WORKSPACE/build.log" "run-${GITHUB_RUN_ID}.log"
+          if [ -f "$GITHUB_WORKSPACE/build.log" ]; then cp "$GITHUB_WORKSPACE/build.log" "run-${GITHUB_RUN_ID}.log"; fi
+          if [ -f "$GITHUB_WORKSPACE/test.log" ]; then cp "$GITHUB_WORKSPACE/test.log" "run-${GITHUB_RUN_ID}-tests.log"; fi
           git add . && git commit -q -m "Build log for run ${GITHUB_RUN_ID} (status ${BUILD_STATUS:-?})" && git push -q origin ci-logs
       - name: Fail the job if packaging failed
         if: ${{ env.BUILD_STATUS != '0' }}
