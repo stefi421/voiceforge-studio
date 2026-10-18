@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { FolderOpen, Wand2 } from 'lucide-react'
 import type { AppSettings, JobMode } from '@shared/types'
-import { JOB_MODE_LABELS } from '@shared/defaults'
+import { modeLabel } from '@/lib/jobs'
 import { api } from '@/lib/api'
 import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
@@ -95,7 +95,7 @@ export function GenerationSection(): JSX.Element {
         <div className="settings-group-title">Defaults</div>
         <div className="form-grid">
           <Field label="Default mode">
-            <Select value={g.defaultMode} onChange={(v) => void set('generation', 'defaultMode', v as JobMode)} options={(['auto', 'review_before_voice', 'scripts_only'] as JobMode[]).map((m) => ({ value: m, label: JOB_MODE_LABELS[m] ?? m }))} />
+            <Select value={g.defaultMode} onChange={(v) => void set('generation', 'defaultMode', v as JobMode)} options={(['auto', 'review_before_voice', 'scripts_only'] as JobMode[]).map((m) => ({ value: m, label: modeLabel(m) }))} />
           </Field>
           <Field label="Validation strictness" hint="Strict treats warnings as errors; relaxed only fails on hard rules.">
             <Select

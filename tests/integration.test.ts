@@ -248,6 +248,119 @@ describe('batch creation and generation pipeline', () => {
     expect(env.eleven.calls).toHaveLength(0)
   }, 20000)
 
+  it('converges on length: strict inside the loop, one tighten pass, tolerance only for the final verdict', async () => {
+    const gv = env.s.channels.getByName('Game Vault')!
+    env.s.settings.update({ generation: { maxRewriteAttempts: 1, lengthToleranceChars: 150 } })
+    env.s.channels.update(gv.id, { minChars: 3000, maxChars: 4500, validation: { ...gv.validation, maxRewriteAttempts: 1, aiReviewPass: false } })
+    // Every draft is 4536 chars (36 over). Expected: strict rewrite (told exactly what to cut) →
+    // tighten pass → still 36 over → accepted as a WARNING under the 150-char tolerance.
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title, undefined, 4536).slice(0, 4536).trimEnd().padEnd(4536, 'x'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const a = await runBatch(['Slightly Long'], gv.id, 'scripts_only')
+    await settle(a.jobIds, ['completed', 'failed'])
+    const jobA = env.s.jobs.get(a.jobIds[0]!)!
+    expect(jobA.status).toBe('completed')
+    const scriptA = env.s.scripts.get(jobA.scriptId!)!
+    expect(scriptA.status).toBe('validated')
+    expect(scriptA.validation!.issues.some((i) => i.code === 'too_long' && i.severity === 'warning')).toBe(true)
+    const callsA = env.openai.calls.filter((c) => c.kind === 'script').map((c) => c.req as { issues?: string; tighten?: { cut: number; max: number; target: number } })
+    expect(callsA).toHaveLength(3)
+    expect(callsA[1]!.issues).toMatch(/Cut at least 37 characters — aim for about \d+ characters/)
+    expect(callsA[2]!.tighten).toMatchObject({ cut: 36, max: 4500 })
+    expect(callsA[2]!.tighten!.target).toBeLessThanOrEqual(4140)
+    expect(env.s.jobs.listEvents({ jobId: jobA.id }).some((e) => e.event === 'tighten')).toBe(true)
+    expect(env.s.jobs.listEvents({ jobId: jobA.id }).some((e) => e.event === 'validation_warnings')).toBe(true)
+
+    // Far too long every time: after the attempts a single "tighten" request is sent; when that
+    // still fails the job fails (nothing is force-accepted beyond the tolerance).
+    env.openai.calls.length = 0
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title, undefined, 5300).slice(0, 5300).trimEnd().padEnd(5300, 'x'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const b = await runBatch(['Way Too Long'], gv.id, 'scripts_only')
+    await settle(b.jobIds, ['completed', 'failed'])
+    const jobB = env.s.jobs.get(b.jobIds[0]!)!
+    expect(jobB.status).toBe('failed')
+    const scriptCalls = env.openai.calls.filter((c) => c.kind === 'script').map((c) => c.req as { tighten?: { cut: number; max: number } })
+    expect(scriptCalls).toHaveLength(3) // first draft + 1 rewrite + tighten
+    expect(scriptCalls[2]!.tighten).toMatchObject({ max: 4500, cut: 800 })
+    expect(env.s.scripts.get(jobB.scriptId!)!.status).toBe('invalid')
+
+    // Strict mode never tolerates overshoot.
+    env.s.settings.update({ generation: { validationStrictness: 'strict' } })
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title, undefined, 4536).slice(0, 4536).trimEnd().padEnd(4536, 'x'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const c = await runBatch(['Strict Long'], gv.id, 'scripts_only')
+    await settle(c.jobIds, ['completed', 'failed'])
+    expect(env.s.jobs.get(c.jobIds[0]!)!.status).toBe('failed')
+  }, 30000)
+
+  it('lets the user approve a failed script anyway (force) and records it; audio regeneration accepts it', async () => {
+    const gv = env.s.channels.getByName('Game Vault')!
+    env.openai.scriptImpl = (req) => ({ text: goodScript(req.title).replace('Cons\n', 'Cons\nSee https://example.com.\n'), usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const { jobIds } = await runBatch(['Force Me'], gv.id)
+    await settle(jobIds, ['failed'])
+    const jobId = jobIds[0]!
+    let err: AppError | null = null
+    try {
+      engine.approveScript(jobId)
+    } catch (e) {
+      err = e as AppError
+    }
+    expect(err?.code).toBe('APPROVE_NEEDS_FORCE')
+    engine.approveScript(jobId, true)
+    await settle(jobIds, ['completed', 'failed'])
+    const job = env.s.jobs.get(jobId)!
+    expect(job.status).toBe('completed')
+    expect(env.eleven.calls).toHaveLength(1)
+    const script = env.s.scripts.get(job.scriptId!)!
+    expect(script.status).toBe('approved')
+    expect(script.approvedWithIssues).toBe(true)
+    expect(env.s.jobs.listEvents({ jobId }).some((e) => e.event === 'approved_with_issues')).toBe(true)
+    // Re-validation keeps the forced approval instead of flipping the script back to invalid.
+    const report = engine.pipeline.revalidate(script.id)
+    expect(report.ok).toBe(false)
+    expect(env.s.scripts.get(script.id)!.status).toBe('approved')
+    // Audio-only regeneration of the force-approved script is allowed.
+    const regen = engine.regenerateAudio({ projectId: job.projectId, scriptId: script.id })
+    await settle([regen.id], ['completed', 'failed'])
+    expect(env.s.jobs.get(regen.id)!.status).toBe('completed')
+    expect(env.eleven.calls).toHaveLength(2)
+  }, 30000)
+
+  it('reports stage-level progress and an ETA while a single job runs', async () => {
+    const gv = env.s.channels.getByName('Game Vault')!
+    expect(engine.stats().progressPercent).toBe(0)
+    env.openai.delayMs = 150
+    const { jobIds } = await runBatch(['Progress'], gv.id)
+    const seen: number[] = []
+    await waitFor(() => {
+      const st = engine.stats()
+      seen.push(st.progressPercent)
+      return env.s.jobs.get(jobIds[0]!)!.status === 'completed'
+    }, 15000)
+    // Progress moved through intermediate values before reaching 100 (never stuck at 0 while running).
+    expect(seen.some((p) => p > 0 && p < 100)).toBe(true)
+    expect(engine.stats().progressPercent).toBe(100)
+    // ETA: defaults give a number immediately; after one completed job the medians come from history.
+    env.openai.delayMs = 0
+    const r2 = await runBatch(['Progress 2'], gv.id)
+    const st = engine.stats()
+    expect(st.estimatedSecondsRemaining).not.toBeNull()
+    expect(st.estimatedSecondsRemaining!).toBeGreaterThan(0)
+    await settle(r2.jobIds, ['completed', 'failed'])
+    expect(engine.stageSeconds().research).toBeGreaterThan(0)
+  }, 30000)
+
+  it('keeps the user title as the project/folder name; research only stores the canonical title', async () => {
+    const gv = env.s.channels.getByName('Game Vault')!
+    env.openai.researchImpl = (req) => ({ data: researchFor(req.title, { canonicalTitle: `${req.title}: Definitive Edition` }), sources: [], usage: { inputTokens: 1, outputTokens: 1 }, model: 'gpt-test' })
+    const { jobIds } = await runBatch(['Canon Test'], gv.id, 'scripts_only')
+    await settle(jobIds, ['completed', 'failed'])
+    const job = env.s.jobs.get(jobIds[0]!)!
+    const project = env.s.projects.get(job.projectId)!
+    expect(job.title).toBe('Canon Test')
+    expect(project.title).toBe('Canon Test')
+    expect(project.folderName).toBe('Canon Test')
+    expect(project.canonicalTitle).toBe('Canon Test: Definitive Edition')
+  }, 20000)
+
   it('asks the user when the title is ambiguous and continues after resolution', async () => {
     const gv = env.s.channels.getByName('Game Vault')!
     let call = 0
@@ -275,6 +388,12 @@ describe('batch creation and generation pipeline', () => {
     expect(job.status).toBe('completed')
     expect(job.title).toBe('Dark Quest 4')
     expect(call).toBe(2)
+    // An explicit choice renames the project and its folder; the script lives in the renamed folder.
+    const project = env.s.projects.get(job.projectId)!
+    expect(project.title).toBe('Dark Quest 4')
+    expect(project.folderName).toBe('Dark Quest 4')
+    expect(fs.existsSync(path.join(project.folderPath!, 'Script.txt'))).toBe(true)
+    expect(env.s.jobs.listEvents({ jobId: job.id }).some((e) => e.event === 'title_changed')).toBe(true)
   })
 
   it('stops when research is insufficient instead of inventing a review', async () => {
@@ -574,5 +693,29 @@ describe('backup and restore', () => {
     const result = backup.importData(json)
     expect(result.channels).toBe(5)
     expect(env.s.channels.list().length).toBe(before + 5)
+  })
+})
+
+describe('upgrade from 1.0.0', () => {
+  it('fills new settings fields and keeps the stored values of an older database', () => {
+    const legacy = JSON.parse(JSON.stringify(env.s.settings.get())) as Record<string, Record<string, unknown>>
+    delete legacy.updates
+    delete legacy.general!.onboardingCompleted
+    delete legacy.generation!.lengthToleranceChars
+    legacy.openai!.defaultModel = 'gpt-5'
+    ;(legacy.spending!.pricing as { openai: Record<string, unknown> }).openai = { default: { input: 2.5, output: 10 }, 'gpt-5': { input: 1.25, output: 10 } }
+    env.s.settingsRepo.set('app_settings', legacy)
+    const reopened = env.reopen()
+    const st = reopened.s.settings.get()
+    expect(st.openai.defaultModel).toBe('gpt-5')
+    expect(st.general.onboardingCompleted).toBe(false)
+    expect(st.updates.owner).toBe('stefi421')
+    expect(st.generation.lengthToleranceChars).toBe(150)
+    expect(st.spending.pricing.openai['gpt-6.1-sol']).toBeDefined()
+    expect(st.spending.pricing.openai['gpt-5']).toEqual({ input: 1.25, output: 10 })
+    // New columns exist on an upgraded database.
+    expect(reopened.s.db.all<{ name: string }>("SELECT name FROM pragma_table_info('scripts')").some((c) => c.name === 'approved_with_issues')).toBe(true)
+    expect(reopened.s.db.all<{ name: string }>("SELECT name FROM pragma_table_info('projects')").some((c) => c.name === 'canonical_title')).toBe(true)
+    boot(reopened)
   })
 })

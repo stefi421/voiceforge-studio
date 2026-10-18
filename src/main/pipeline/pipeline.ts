@@ -12,7 +12,7 @@ import { countWords, estimateDurationSec, normalizeTitle, nowIso } from '../util
 import { elevenCost, openaiCost } from './cost'
 import { chunksCoverText, splitIntoChunks } from './chunker'
 import { concatMp3, isMp3Format, parseMp3, pcmDuration } from './mp3'
-import { applyPronunciation, describeIssuesForRewrite, stripSectionHeadings, validateScript } from './validator'
+import { applyPronunciation, describeIssuesForRewrite, onlyLengthErrors, stripSectionHeadings, targetChars, validateScript } from './validator'
 import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenlabs'
 
 const RESEARCH_CACHE_MS = 7 * 24 * 60 * 60 * 1000
@@ -33,6 +33,10 @@ export type StageOutcome = 'continue' | 'wait' | 'done'
  */
 export class Pipeline {
   private projectsSvc: ProjectService
+  /** Project/folder helpers shared with the queue engine. */
+  get projects(): ProjectService {
+    return this.projectsSvc
+  }
   readonly openaiSem: Semaphore
   readonly elevenSem: Semaphore
 
@@ -229,6 +233,9 @@ export class Pipeline {
     if (status === 'confirmed') {
       this.s.research.cacheSet(cacheKey, row.id)
       this.s.jobs.update(job.id, { stage: 'script' })
+      // The official title is kept alongside the user's title; it never renames the project/folder.
+      const canonical = data.canonicalTitle?.trim()
+      if (canonical && normalizeTitle(canonical) !== normalizeTitle(job.title)) this.s.projects.update(job.projectId, { canonicalTitle: canonical })
       return 'continue'
     }
     const detail = ambiguous ? `Ambiguous title: ${candidates.map((c) => c.title).join(' / ')}` : data.insufficientReason || `Low confidence (${data.confidence.toFixed(2)} < ${research.minConfidence})`
@@ -288,13 +295,8 @@ export class Pipeline {
     this.setStatus(job.id, 'writing_script')
     this.s.jobs.update(job.id, { scriptAttempts: job.scriptAttempts + 1 })
 
-    let previous: string | undefined
-    let issuesText: string | undefined
-    let lastReport: ValidationReport | null = null
-    let lastText = ''
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      this.throwIfAborted(ctx.signal)
-      if (attempt > 1) this.setStatus(job.id, 'writing_script', { event: 'rewrite', detail: `Rewrite attempt ${attempt - 1}` })
+    const tolerance = settings.generation.lengthToleranceChars
+    const callWriter = async (opts: { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }, kind: string) => {
       const release = await this.openaiSem.acquire(ctx.signal)
       let out
       try {
@@ -310,9 +312,10 @@ export class Pipeline {
               temperature: settings.openai.temperature,
               maxOutputTokens: settings.openai.maxOutputTokens,
               reasoningEffort: settings.openai.reasoningEffort,
-              previousScript: previous,
-              issues: issuesText,
-              feedback: attempt === 1 ? feedback : undefined,
+              previousScript: opts.previousScript,
+              issues: opts.issues,
+              feedback: opts.feedback,
+              tighten: opts.tighten,
               signal: ctx.signal
             }),
           {
@@ -328,16 +331,21 @@ export class Pipeline {
         release()
       }
       ctx.heartbeat()
-      this.recordOpenAIUsage(job, attempt === 1 ? 'script' : 'script_rewrite', out.model, out.usage)
-      lastText = out.text
+      this.recordOpenAIUsage(job, kind, out.model, out.usage)
+      return out
+    }
 
+    /** Deterministic checks + optional AI review. `finalVerdict` applies the length tolerance. */
+    const evaluate = async (text: string, finalVerdict: boolean): Promise<ValidationReport> => {
       this.setStatus(job.id, 'validating_script')
-      const report = validateScript(out.text, {
+      const report = validateScript(text, {
         channel,
         template,
         expectedTitle: researchData?.canonicalTitle || job.title,
         researchConfirmed: false,
-        strictness
+        strictness,
+        lengthToleranceChars: tolerance,
+        strictLength: !finalVerdict
       })
       let aiIssues: ValidationIssue[] = []
       if (report.ok && channel.validation.aiReviewPass && strictness !== 'relaxed') {
@@ -345,7 +353,7 @@ export class Pipeline {
           const r2 = await this.openaiSem.acquire(ctx.signal)
           let review
           try {
-            review = await withRetry(() => this.s.providers.openai().reviewScript({ channel, title: job.title, script: out.text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal }), {
+            review = await withRetry(() => this.s.providers.openai().reviewScript({ channel, title: job.title, script: text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal }), {
               maxRetries: 1,
               signal: ctx.signal
             })
@@ -361,29 +369,67 @@ export class Pipeline {
           this.s.jobs.addEvent(job.id, 'review_skipped', null, null, e.message)
         }
       }
-      const combined: ValidationReport = { ...report, issues: [...report.issues, ...aiIssues], ok: report.ok && aiIssues.every((i) => i.severity !== 'error') }
-      lastReport = combined
-      const script = await this.persistScript(job, channel, template, out.text, combined, attempt === 1 ? 'ai' : 'rewrite', out.model)
+      return { ...report, issues: [...report.issues, ...aiIssues], ok: report.ok && aiIssues.every((i) => i.severity !== 'error') }
+    }
+
+    const finish = async (text: string, report: ValidationReport, source: Script['source'], usedModel: string): Promise<StageOutcome> => {
+      const script = await this.persistScript(job, channel, template, text, report, source, usedModel)
       this.s.jobs.update(job.id, { scriptId: script.id })
-      if (combined.ok) {
-        const next = this.nextStageAfterScript(job)
-        if (next === 'approval') {
-          this.s.jobs.update(job.id, { stage: 'approval' })
-          this.setStatus(job.id, 'awaiting_approval', { event: 'script_ready', detail: `Script v${script.version} ready for approval` })
-          return 'wait'
-        }
-        this.s.jobs.update(job.id, { stage: next })
-        this.setStatus(job.id, 'script_ready', { event: 'script_validated', detail: `Script v${script.version} validated` })
-        return 'continue'
+      const warnings = report.issues.filter((i) => i.severity === 'warning')
+      if (warnings.length) this.s.jobs.addEvent(job.id, 'validation_warnings', null, null, warnings.map((w) => w.message).join(' | '))
+      const next = this.nextStageAfterScript(job)
+      if (next === 'approval') {
+        this.s.jobs.update(job.id, { stage: 'approval' })
+        this.setStatus(job.id, 'awaiting_approval', { event: 'script_ready', detail: `Script v${script.version} ready for approval` })
+        return 'wait'
       }
+      this.s.jobs.update(job.id, { stage: next })
+      this.setStatus(job.id, 'script_ready', { event: 'script_validated', detail: `Script v${script.version} validated` })
+      return 'continue'
+    }
+
+    let previous: string | undefined
+    let issuesText: string | undefined
+    let lastReport: ValidationReport | null = null
+    let lastText = ''
+    let lastModel = model
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      this.throwIfAborted(ctx.signal)
+      if (attempt > 1) this.setStatus(job.id, 'writing_script', { event: 'rewrite', detail: `Rewrite attempt ${attempt - 1}: ${issuesText?.split('\n')[0] ?? ''}`.slice(0, 300) })
+      const out = await callWriter({ previousScript: previous, issues: issuesText, feedback: attempt === 1 ? feedback : undefined }, attempt === 1 ? 'script' : 'script_rewrite')
+      lastText = out.text
+      lastModel = out.model
+      // Strict length inside the loop so the model keeps converging; the tolerance only decides the final verdict.
+      const strictReport = await evaluate(out.text, false)
+      if (strictReport.ok) return finish(out.text, strictReport, attempt === 1 ? 'ai' : 'rewrite', out.model)
+      lastReport = strictReport
+      const failedScript = await this.persistScript(job, channel, template, out.text, strictReport, attempt === 1 ? 'ai' : 'rewrite', out.model)
+      this.s.jobs.update(job.id, { scriptId: failedScript.id })
       previous = out.text
-      issuesText = describeIssuesForRewrite(combined)
+      issuesText = describeIssuesForRewrite(strictReport, channel)
       this.s.jobs.addEvent(job.id, 'validation_failed', null, null, issuesText)
     }
+
+    // Last resort for a draft that is good except for being too long: one targeted "tighten" pass,
+    // judged with the length tolerance (relaxed/standard) so a few characters over become a warning.
+    if (lastReport && previous && onlyLengthErrors(lastReport) && lastReport.issues.filter((i) => i.severity === 'error').every((i) => i.code === 'too_long') && channel.maxChars > 0) {
+      this.throwIfAborted(ctx.signal)
+      const cut = lastReport.charCount - channel.maxChars
+      this.setStatus(job.id, 'writing_script', { event: 'tighten', detail: `Tightening: cutting ${cut} characters to fit ${channel.maxChars}` })
+      const out = await callWriter({ previousScript: previous, tighten: { cut, target: targetChars(channel), max: channel.maxChars } }, 'script_tighten')
+      lastText = out.text
+      lastModel = out.model
+      const finalReport = await evaluate(out.text, true)
+      if (finalReport.ok) return finish(out.text, finalReport, 'rewrite', out.model)
+      lastReport = finalReport
+      const failedScript = await this.persistScript(job, channel, template, out.text, finalReport, 'rewrite', out.model)
+      this.s.jobs.update(job.id, { scriptId: failedScript.id })
+    }
     void lastText
-    const summary = lastReport ? describeIssuesForRewrite(lastReport) : 'Validation failed.'
+    void lastModel
+    const summary = lastReport ? describeIssuesForRewrite(lastReport, channel) : 'Validation failed.'
     throw new AppError('validation', `The script failed validation after ${maxAttempts} attempt(s):\n${summary}`, {
-      action: 'Open the script in the Scripts Library, edit it or regenerate with feedback, then approve it to continue.',
+      action: 'Open the script (Review script), edit it or regenerate with feedback, or approve it anyway to continue.',
       retryable: false
     })
   }
@@ -435,7 +481,8 @@ export class Pipeline {
     if (!channel) throw new AppError('config', 'Channel not found.', { retryable: false })
     const base = baseScriptId ? this.s.scripts.get(baseScriptId) : this.s.scripts.latestForProject(projectId)
     const template = base?.templateVersionId ? this.s.channels.getVersion(base.templateVersionId) ?? null : channel.activeTemplateVersionId ? this.s.channels.getVersion(channel.activeTemplateVersionId) ?? null : null
-    const report = validateScript(text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: this.s.settings.get().generation.validationStrictness })
+    const gen = this.s.settings.get().generation
+    const report = validateScript(text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
     const dir = this.projectsSvc.ensureFolder(project)
     const script = this.s.scripts.create({
       projectId,
@@ -463,8 +510,11 @@ export class Pipeline {
     const project = this.s.projects.get(script.projectId)!
     const channel = this.s.channels.get(project.channelId)!
     const template = script.templateVersionId ? this.s.channels.getVersion(script.templateVersionId) ?? null : null
-    const report = validateScript(script.text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: this.s.settings.get().generation.validationStrictness })
-    this.s.scripts.update(scriptId, { validation: report, status: report.ok ? (script.status === 'approved' ? 'approved' : 'validated') : 'invalid' })
+    const gen = this.s.settings.get().generation
+    const report = validateScript(script.text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
+    // A force-approved script keeps its approval even when the rules still flag it.
+    const status = report.ok ? (script.status === 'approved' ? 'approved' : 'validated') : script.status === 'approved' && script.approvedWithIssues ? 'approved' : 'invalid'
+    this.s.scripts.update(scriptId, { validation: report, status })
     return report
   }
 

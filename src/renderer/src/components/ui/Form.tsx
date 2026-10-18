@@ -1,6 +1,9 @@
 import {
   forwardRef,
+  useEffect,
   useId,
+  useRef,
+  useState,
   type CSSProperties,
   type InputHTMLAttributes,
   type JSX,
@@ -59,19 +62,62 @@ export interface NumberInputProps extends Omit<InputProps, 'value' | 'onChange' 
   integer?: boolean
 }
 
-export function NumberInput({ value, onChange, allowEmpty = false, integer = false, ...rest }: NumberInputProps): JSX.Element {
+export function NumberInput({ value, onChange, allowEmpty = false, integer = false, onBlur, onKeyDown, invalid, ...rest }: NumberInputProps): JSX.Element {
+  // Keep the text the user is typing locally; only commit values that are valid and in range,
+  // and clamp on blur. This stops "1" (on the way to "1500") from being saved and rejected.
+  const [draft, setDraft] = useState<string>(value == null ? '' : String(value))
+  const focused = useRef(false)
+  useEffect(() => {
+    if (!focused.current) setDraft(value == null ? '' : String(value))
+  }, [value])
+  const min = rest.min !== undefined ? Number(rest.min) : undefined
+  const max = rest.max !== undefined ? Number(rest.max) : undefined
+  const parse = (raw: string): number | null => {
+    if (raw.trim() === '') return null
+    const n = integer ? parseInt(raw, 10) : parseFloat(raw)
+    return Number.isNaN(n) ? null : n
+  }
+  const inRange = (n: number): boolean => (min === undefined || n >= min) && (max === undefined || n <= max)
+  const commit = (): void => {
+    const n = parse(draft)
+    if (n == null) {
+      if (allowEmpty) {
+        if (value !== null) onChange(null)
+        setDraft('')
+      } else setDraft(value == null ? '' : String(value))
+      return
+    }
+    let c = n
+    if (min !== undefined && c < min) c = min
+    if (max !== undefined && c > max) c = max
+    if (c !== value) onChange(c)
+    setDraft(String(c))
+  }
+  const n = parse(draft)
+  const invalidDraft = draft.trim() !== '' && (n == null || !inRange(n))
   return (
     <Input
       type="number"
-      value={value == null ? '' : String(value)}
+      value={draft}
+      invalid={invalid || invalidDraft}
+      onFocus={() => {
+        focused.current = true
+      }}
       onChange={(e) => {
         const raw = e.target.value
-        if (raw === '') {
-          onChange(allowEmpty ? null : 0)
-          return
-        }
-        const n = integer ? parseInt(raw, 10) : parseFloat(raw)
-        if (!Number.isNaN(n)) onChange(n)
+        setDraft(raw)
+        const parsed = parse(raw)
+        if (parsed != null && inRange(parsed) && parsed !== value) onChange(parsed)
+        else if (raw === '' && allowEmpty && value !== null) onChange(null)
+      }}
+      onBlur={(e) => {
+        focused.current = false
+        commit()
+        onBlur?.(e)
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') commit()
+        onKeyDown?.(e)
       }}
       step={integer ? 1 : rest.step}
       {...rest}

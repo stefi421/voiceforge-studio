@@ -125,7 +125,7 @@ export interface IpcContract {
     req: { jobId: string; candidateIndex?: number; manualTitle?: string; manualNotes?: string }
     res: JobView
   }
-  'queue:approveScript': { req: { jobId: string }; res: JobView }
+  'queue:approveScript': { req: { jobId: string; force?: boolean }; res: JobView }
   'queue:rejectScript': { req: { jobId: string; feedback: string }; res: JobView }
   'queue:regenerateScript': { req: { jobId: string; feedback?: string }; res: JobView }
   'queue:regenerateAudio': { req: unknown; res: JobView }
@@ -138,7 +138,7 @@ export interface IpcContract {
   'scripts:saveEdit': { req: { projectId: string; text: string; baseScriptId?: string }; res: Script }
   'scripts:restore': { req: { scriptId: string }; res: Script }
   'scripts:validate': { req: { scriptId: string }; res: ValidationReport }
-  'scripts:approve': { req: { scriptId: string }; res: Script }
+  'scripts:approve': { req: { scriptId: string; force?: boolean }; res: Script }
   'scripts:export': { req: { scriptId: string; path: string }; res: { ok: true } }
 
   // Audio

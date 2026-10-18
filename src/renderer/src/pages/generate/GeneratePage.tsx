@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
-import { Bot, ClipboardPaste, Eraser, FileInput, ListChecks, Sparkles, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, ListChecks, Sparkles, TriangleAlert, Zap } from 'lucide-react'
 import type { BatchEstimate, CreateBatchInput, JobMode, TemplateVersion } from '@shared/types'
-import { JOB_MODE_LABELS } from '@shared/defaults'
+import { modeLabel } from '@/lib/jobs'
 import { api } from '@/lib/api'
-import { useAsync } from '@/lib/hooks'
-import { MODE_DESCRIPTIONS } from '@/lib/jobs'
+import { useAsync, useDebouncedValue } from '@/lib/hooks'
 import { formatCost, formatNumber } from '@/lib/format'
 import { activeChannels, useApp } from '@/store/app'
 import { navigate, useRouter } from '@/store/router'
@@ -13,7 +12,11 @@ import { Alert, Badge, Button, Card, ChannelIcon, Checkbox, Dialog, EmptyState, 
 import { TitleList, newRowId, type TitleRow } from './TitleList'
 import { E2EChecklist } from './E2EChecklist'
 
-const MODES: JobMode[] = ['auto', 'review_before_voice', 'scripts_only']
+const MODES: Array<{ id: JobMode; icon: JSX.Element; line: string }> = [
+  { id: 'auto', icon: <Zap size={15} />, line: 'Research, write, validate, voice and save — no stops unless a title is ambiguous.' },
+  { id: 'review_before_voice', icon: <Eye size={15} />, line: 'Same, but every script waits for your approval before ElevenLabs characters are spent.' },
+  { id: 'scripts_only', icon: <FileText size={15} />, line: 'Research and write the scripts only. Voice any of them later from the Scripts page.' }
+]
 
 interface ChannelTemplateInfo {
   name: string | null
@@ -35,10 +38,12 @@ export function GeneratePage(): JSX.Element {
   const [skipExisting, setSkipExisting] = useState(true)
   const [batchName, setBatchName] = useState('')
   const [showNotes, setShowNotes] = useState(false)
+  const [advanced, setAdvanced] = useState(false)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [parseInfo, setParseInfo] = useState<string | null>(null)
   const [over, setOver] = useState(false)
   const [estimate, setEstimate] = useState<BatchEstimate | null>(null)
+  const [liveEstimate, setLiveEstimate] = useState<BatchEstimate | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -57,10 +62,7 @@ export function GeneratePage(): JSX.Element {
           return
         }
         try {
-          const [templates, version] = await Promise.all([
-            api.invoke('templates:list', { channelId: c.id }),
-            api.invoke('templates:getVersion', { versionId: c.activeTemplateVersionId })
-          ])
+          const [templates, version] = await Promise.all([api.invoke('templates:list', { channelId: c.id }), api.invoke('templates:getVersion', { versionId: c.activeTemplateVersionId })])
           const t = templates.find((x) => x.id === (version as TemplateVersion).templateId)
           out[c.id] = { name: t?.name ?? null, placeholder: version.placeholder, missing: false }
         } catch {
@@ -75,22 +77,19 @@ export function GeneratePage(): JSX.Element {
   const selectedTemplate = templateInfo.data?.[channelId]
 
   /** Sync textarea → rows (keeps per-row channel assignments for titles that still exist). */
-  const syncRows = useCallback(
-    (nextText: string) => {
-      const lines = nextText
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean)
-      setRows((prev) => {
-        const byTitle = new Map(prev.map((r) => [r.title, r]))
-        return lines.map((title) => {
-          const existing = byTitle.get(title)
-          return existing ? { ...existing } : { id: newRowId(), title, channelId: null, selected: true }
-        })
+  const syncRows = useCallback((nextText: string) => {
+    const lines = nextText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+    setRows((prev) => {
+      const byTitle = new Map(prev.map((r) => [r.title, r]))
+      return lines.map((title) => {
+        const existing = byTitle.get(title)
+        return existing ? { ...existing } : { id: newRowId(), title, channelId: null, selected: true }
       })
-    },
-    []
-  )
+    })
+  }, [])
 
   const onTextChange = (v: string): void => {
     setText(v)
@@ -141,10 +140,7 @@ export function GeneratePage(): JSX.Element {
     setBusy('dedupe')
     try {
       const parsed = await api.invoke('generation:parseTitles', { text })
-      applyTitles(
-        parsed.titles,
-        `${parsed.titles.length} unique title(s). Removed ${parsed.duplicatesRemoved.length} duplicate(s)${parsed.blankLinesRemoved ? ` and ${parsed.blankLinesRemoved} blank line(s)` : ''}.`
-      )
+      applyTitles(parsed.titles, `${parsed.titles.length} unique title(s). Removed ${parsed.duplicatesRemoved.length} duplicate(s)${parsed.blankLinesRemoved ? ` and ${parsed.blankLinesRemoved} blank line(s)` : ''}.`)
     } catch (err) {
       toast.error('Could not parse titles', err)
     } finally {
@@ -159,7 +155,7 @@ export function GeneratePage(): JSX.Element {
     if (!file) return
     const name = file.name.toLowerCase()
     if (name.endsWith('.xlsx') || name.endsWith('.xls')) {
-      toast.info('Excel files', 'Use the Import file button for .xlsx so the main process can parse it.')
+      toast.info('Excel files', 'Use Import file for .xlsx so the main process can parse it.')
       return
     }
     try {
@@ -171,7 +167,7 @@ export function GeneratePage(): JSX.Element {
     }
   }
 
-  const buildInput = (): CreateBatchInput | null => {
+  const buildInput = useCallback((): CreateBatchInput | null => {
     if (!channelId) return null
     const entries = rows.filter((r) => r.selected && r.title.trim()).map((r) => ({ title: r.title.trim(), channelId: r.channelId }))
     if (entries.length === 0) return null
@@ -188,20 +184,44 @@ export function GeneratePage(): JSX.Element {
       skipExisting,
       manualResearchNotes: Object.keys(cleanNotes).length ? cleanNotes : undefined
     }
-  }
+  }, [channelId, rows, notes, batchName, mode, skipExisting])
 
   const selectedCount = rows.filter((r) => r.selected && r.title.trim()).length
+
+  // Live estimate line under the titles box (debounced, never blocks).
+  const estimateKey = useDebouncedValue(`${channelId}|${mode}|${rows.filter((r) => r.selected).map((r) => `${r.title}@${r.channelId ?? ''}`).join('\n')}`, 500)
+  useEffect(() => {
+    let cancelled = false
+    const input = buildInput()
+    if (!input) {
+      setLiveEstimate(null)
+      return
+    }
+    api
+      .invoke('generation:estimate', input)
+      .then((est) => {
+        if (!cancelled) setLiveEstimate(est)
+      })
+      .catch(() => {
+        if (!cancelled) setLiveEstimate(null)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [estimateKey])
+
   const blockers: string[] = []
   if (!secrets.openai) blockers.push('OpenAI API key is missing (Settings → OpenAI).')
   if (!secrets.elevenlabs && mode !== 'scripts_only') blockers.push('ElevenLabs API key is missing (Settings → ElevenLabs).')
-  if (selectedTemplate?.placeholder) blockers.push(`The active template "${selectedTemplate.name ?? ''}" is a placeholder. Open the channel's Template Editor and create a real version first.`)
+  if (selectedTemplate?.placeholder) blockers.push(`The active template "${selectedTemplate.name ?? ''}" is a placeholder. Open the channel's Templates tab and create a real version first.`)
   if (selectedTemplate?.missing) blockers.push('This channel has no active template version.')
   if (selectedChannel && !selectedChannel.elevenVoiceId && mode !== 'scripts_only') blockers.push(`${selectedChannel.name} has no ElevenLabs voice selected.`)
 
   const startEstimate = async (): Promise<void> => {
     const input = buildInput()
     if (!input) {
-      toast.warning('Nothing to generate', 'Add at least one title and select it.')
+      toast.warning('Nothing to generate', 'Add at least one title.')
       return
     }
     setBusy('estimate')
@@ -233,7 +253,7 @@ export function GeneratePage(): JSX.Element {
     }
   }
 
-  // Ctrl+Enter = Generate all
+  // Ctrl+Enter = Generate
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -247,6 +267,7 @@ export function GeneratePage(): JSX.Element {
   }, [confirmOpen, busy, selectedCount, rows, channelId, mode, skipExisting, batchName, notes])
 
   const needsConfirm = Boolean(estimate && (estimate.warnings.length > 0 || estimate.jobs >= settings.generation.largeBatchWarningThreshold))
+  const blocked = blockers.length > 0
 
   if (live.length === 0) {
     return (
@@ -259,62 +280,70 @@ export function GeneratePage(): JSX.Element {
     )
   }
 
+  const generateButton = (size: 'md' | 'lg'): JSX.Element => (
+    <Button variant="primary" size={size} icon={<Sparkles size={15} />} loading={busy === 'estimate'} disabled={selectedCount === 0 || busy != null || blocked} onClick={startEstimate} title={blocked ? blockers[0] : undefined}>
+      Generate{selectedCount > 0 ? ` ${selectedCount} ${selectedCount === 1 ? 'title' : 'titles'}` : ''}
+      <span style={{ opacity: 0.7, marginLeft: 8 }}>
+        <Kbd>Ctrl</Kbd> <Kbd>↵</Kbd>
+      </span>
+    </Button>
+  )
+
   return (
-    <div className="page fade-in">
-      <PageHeader
-        title="New generation"
-        subtitle="Paste titles, pick a channel and a mode, review the estimate, go."
-        actions={
-          <Button variant="primary" size="lg" icon={<Sparkles size={15} />} loading={busy === 'estimate'} disabled={selectedCount === 0 || busy != null} onClick={startEstimate}>
-            Generate {selectedCount > 0 ? `${selectedCount} ` : ''}
-            <span style={{ opacity: 0.7, marginLeft: 6 }}>
-              <Kbd>Ctrl</Kbd> <Kbd>↵</Kbd>
-            </span>
-          </Button>
-        }
-      />
+    <div className="page fade-in gen-page">
+      <PageHeader title="New generation" subtitle="Pick a channel, paste titles, choose how much you want to check, go." actions={generateButton('md')} />
 
       {settings.advanced.manualE2EMode && <E2EChecklist />}
 
-      {/* Step 1 */}
-      <Card>
-        <div className="card-header">
-          <div className="card-title">
-            <span className="step-badge">1</span> Choose channel
+      <div className="gen-column">
+        {/* Channel */}
+        <section className="gen-section">
+          <div className="gen-label">
+            <span>Channel</span>
+            {selectedChannel && (
+              <Button size="sm" variant="ghost" onClick={() => navigate('channels', { edit: selectedChannel.id })}>
+                Edit {selectedChannel.name}
+              </Button>
+            )}
           </div>
-          {selectedChannel && (
-            <Button size="sm" variant="ghost" onClick={() => navigate('channels', { edit: selectedChannel.id })}>
-              Edit channel
-            </Button>
-          )}
-        </div>
-        <div className="card-body">
-          <div className="grid grid-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+          <div className="channel-chips">
             {live.map((c) => {
               const info = templateInfo.data?.[c.id]
               const warn = !c.elevenVoiceId || info?.placeholder || info?.missing
               return (
-                <Card key={c.id} padded="sm" hover selected={c.id === channelId} onClick={() => setChannelId(c.id)}>
-                  <div className="row gap-3">
-                    <ChannelIcon icon={c.icon} color={c.color} />
-                    <div className="col" style={{ gap: 2, minWidth: 0 }}>
-                      <span className="strong truncate">{c.name}</span>
-                      <span className="xs muted truncate">{c.elevenVoiceName ?? 'No voice'} · {c.category}</span>
-                    </div>
-                    {warn && <TriangleAlert size={14} className="text-warning" style={{ marginLeft: 'auto', flex: '0 0 auto' }} />}
-                  </div>
-                  <div className="row wrap mt-2" style={{ gap: 4 }}>
-                    {!c.elevenVoiceId && <Badge tone="warning">no voice</Badge>}
-                    {info?.placeholder && <Badge tone="warning" title={info.name ?? ''}>placeholder template</Badge>}
-                    {info?.missing && <Badge tone="danger">no template</Badge>}
-                    {info && !info.placeholder && !info.missing && <Badge tone="success">{info.name ?? 'template ok'}</Badge>}
-                  </div>
-                </Card>
+                <button key={c.id} type="button" className={`channel-chip ${c.id === channelId ? 'selected' : ''}`} onClick={() => setChannelId(c.id)} title={warn ? (info?.placeholder ? 'Placeholder template' : info?.missing ? 'No template' : 'No voice') : `${c.elevenVoiceName ?? 'No voice'} · ${c.elevenModelId}`}>
+                  <ChannelIcon icon={c.icon} color={c.color} size="sm" />
+                  <span className="channel-chip-name">{c.name}</span>
+                  {warn ? <TriangleAlert size={12} className="text-warning" /> : <span className="channel-chip-voice">{c.elevenVoiceName ?? ''}</span>}
+                </button>
               )
             })}
           </div>
-          {blockers.length > 0 && (
-            <Alert tone="warning" title="Before you start" style={{ marginTop: 16 }}>
+          {selectedChannel && (
+            <div className="xs muted">
+              {selectedTemplate && !selectedTemplate.placeholder && !selectedTemplate.missing ? `Template: ${selectedTemplate.name ?? 'active'}` : 'Template: not ready'} · Voice: {selectedChannel.elevenVoiceName ?? 'none'} · {formatNumber(selectedChannel.minChars)}–{formatNumber(selectedChannel.maxChars)} chars
+            </div>
+          )}
+          {blocked && (
+            <Alert
+              tone="warning"
+              title="Before you can generate"
+              actions={
+                selectedTemplate?.placeholder || selectedTemplate?.missing ? (
+                  <Button size="sm" onClick={() => navigate('channels', { edit: channelId, tab: 'templates' })}>
+                    Open template editor
+                  </Button>
+                ) : !secrets.openai || !secrets.elevenlabs ? (
+                  <Button size="sm" onClick={() => navigate('settings', { tab: !secrets.openai ? 'openai' : 'elevenlabs' })}>
+                    Open settings
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => navigate('channels', { edit: channelId, tab: 'voice' })}>
+                    Pick a voice
+                  </Button>
+                )
+              }
+            >
               <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
                 {blockers.map((b, i) => (
                   <li key={i}>{b}</li>
@@ -322,41 +351,36 @@ export function GeneratePage(): JSX.Element {
               </ul>
             </Alert>
           )}
-        </div>
-      </Card>
+        </section>
 
-      {/* Step 2 */}
-      <Card>
-        <div className="card-header">
-          <div className="card-title">
-            <span className="step-badge">2</span> Titles
-            <Badge>{rows.length}</Badge>
+        {/* Titles */}
+        <section className="gen-section">
+          <div className="gen-label">
+            <span>Titles</span>
+            <div className="row">
+              <Button size="sm" variant="ghost" icon={<ClipboardPaste size={13} />} onClick={paste}>
+                Paste
+              </Button>
+              <Button size="sm" variant="ghost" icon={<FileInput size={13} />} onClick={importFile}>
+                Import file
+              </Button>
+              <Button size="sm" variant="ghost" icon={<ListChecks size={13} />} loading={busy === 'dedupe'} disabled={!text.trim()} onClick={dedupe}>
+                Remove duplicates
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                icon={<Eraser size={13} />}
+                disabled={!text}
+                onClick={() => {
+                  onTextChange('')
+                  setNotes({})
+                }}
+              >
+                Clear
+              </Button>
+            </div>
           </div>
-          <div className="row">
-            <Button size="sm" icon={<ClipboardPaste size={13} />} onClick={paste}>
-              Paste from clipboard
-            </Button>
-            <Button size="sm" icon={<FileInput size={13} />} onClick={importFile}>
-              Import file
-            </Button>
-            <Button size="sm" icon={<ListChecks size={13} />} loading={busy === 'dedupe'} disabled={!text.trim()} onClick={dedupe}>
-              Remove duplicates
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon={<Eraser size={13} />}
-              disabled={!text}
-              onClick={() => {
-                onTextChange('')
-                setNotes({})
-              }}
-            >
-              Clear
-            </Button>
-          </div>
-        </div>
-        <div className="card-body col gap-4">
           <div
             className={`dropzone ${over ? 'over' : ''}`}
             onDragOver={(e) => {
@@ -366,67 +390,96 @@ export function GeneratePage(): JSX.Element {
             onDragLeave={() => setOver(false)}
             onDrop={onDrop}
           >
-            <Textarea
-              ref={textareaRef}
-              value={text}
-              onChange={(e) => onTextChange(e.target.value)}
-              rows={8}
-              placeholder={'One title per line, e.g.\nHollow Knight: Silksong\nKeychron Q1 HE\nClair Obscur: Expedition 33\n\n…or drop a .txt / .csv file here.'}
-              style={{ minHeight: 160 }}
-            />
+            <Textarea ref={textareaRef} className="titles-box" value={text} onChange={(e) => onTextChange(e.target.value)} rows={8} placeholder={'One title per line, e.g.\nHollow Knight: Silksong\nKeychron Q1 HE\nClair Obscur: Expedition 33\n\n…or drop a .txt / .csv file here.'} spellCheck={false} />
           </div>
-          {parseInfo && <div className="small muted">{parseInfo}</div>}
-          {rows.length > 0 && (
-            <>
-              <div className="row-between">
-                <span className="small muted">
-                  {selectedCount} of {rows.length} selected. Each row can target a different channel.
+          <div className="gen-live-line">
+            <span className="tnum">
+              {selectedCount} {selectedCount === 1 ? 'title' : 'titles'}
+            </span>
+            {liveEstimate && selectedCount > 0 && (
+              <>
+                <span className="muted">·</span>
+                <span className="tnum" title="Estimated from your pricing table and average script length">
+                  ~{formatCost(liveEstimate.estimatedTotal)} est.
                 </span>
-                <Checkbox checked={showNotes} onChange={setShowNotes} label="Manual research notes per title" />
-              </div>
-              <TitleList rows={rows} channels={live} batchChannelId={channelId} onChange={setRows} notes={notes} onNotesChange={setNotes} showNotes={showNotes} />
-            </>
-          )}
-        </div>
-      </Card>
+                {mode !== 'scripts_only' && (
+                  <>
+                    <span className="muted">·</span>
+                    <span className="muted tnum">~{formatNumber(liveEstimate.estimatedCharacters)} ElevenLabs characters</span>
+                  </>
+                )}
+              </>
+            )}
+            {parseInfo && (
+              <>
+                <span className="muted">·</span>
+                <span className="muted">{parseInfo}</span>
+              </>
+            )}
+          </div>
+        </section>
 
-      {/* Step 3 */}
-      <Card>
-        <div className="card-header">
-          <div className="card-title">
-            <span className="step-badge">3</span> Mode & options
+        {/* Mode */}
+        <section className="gen-section">
+          <div className="gen-label">
+            <span>How much do you want to check?</span>
           </div>
-        </div>
-        <div className="card-body col gap-4">
-          <div className="grid grid-3">
+          <div className="mode-cards">
             {MODES.map((m) => (
-              <button key={m} type="button" className={`mode-card ${mode === m ? 'selected' : ''}`} onClick={() => setMode(m)}>
+              <button key={m.id} type="button" className={`mode-card ${mode === m.id ? 'selected' : ''}`} onClick={() => setMode(m.id)}>
                 <span className="mode-card-title">
-                  <Bot size={14} /> {JOB_MODE_LABELS[m]}
-                  {settings.generation.defaultMode === m && <Badge>default</Badge>}
+                  {m.icon} {modeLabel(m.id)}
+                  {settings.generation.defaultMode === m.id && <Badge>default</Badge>}
                 </span>
-                <span className="mode-card-desc">{MODE_DESCRIPTIONS[m]}</span>
+                <span className="mode-card-desc">{m.line}</span>
               </button>
             ))}
           </div>
-          <div className="form-grid">
-            <Field label="Batch name (optional)">
-              <Input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder={`e.g. ${selectedChannel?.name ?? 'Channel'} – ${new Date().toLocaleDateString('en-GB')}`} maxLength={120} />
-            </Field>
-            <div className="field">
-              <span className="field-label">Duplicates</span>
-              <Checkbox checked={skipExisting} onChange={setSkipExisting} label="Skip titles that already have a completed project in this channel" />
-              <span className="field-hint">Titles are matched case-insensitively against existing project titles.</span>
+        </section>
+
+        {/* Advanced */}
+        <section className="gen-section">
+          <button type="button" className="gen-advanced-toggle" onClick={() => setAdvanced(!advanced)}>
+            {advanced ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            Advanced options
+            <span className="xs muted">batch name · per-title channel · research notes · duplicates</span>
+          </button>
+          {advanced && (
+            <div className="col gap-4 mt-2">
+              <div className="form-grid">
+                <Field label="Batch name (optional)">
+                  <Input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder={`e.g. ${selectedChannel?.name ?? 'Channel'} – ${new Date().toLocaleDateString('en-GB')}`} maxLength={120} />
+                </Field>
+                <div className="field">
+                  <span className="field-label">Duplicates</span>
+                  <Checkbox checked={skipExisting} onChange={setSkipExisting} label="Skip titles that already have a completed project in this channel" />
+                </div>
+              </div>
+              {rows.length > 0 ? (
+                <>
+                  <div className="row-between">
+                    <span className="small muted">
+                      {selectedCount} of {rows.length} selected. Each row can target a different channel.
+                    </span>
+                    <Checkbox checked={showNotes} onChange={setShowNotes} label="Manual research notes per title" />
+                  </div>
+                  <TitleList rows={rows} channels={live} batchChannelId={channelId} onChange={setRows} notes={notes} onNotesChange={setNotes} showNotes={showNotes} />
+                </>
+              ) : (
+                <span className="small muted">Add titles above to assign channels or research notes per title.</span>
+              )}
             </div>
-          </div>
-        </div>
-      </Card>
+          )}
+        </section>
+
+        <div className="gen-footer">{generateButton('lg')}</div>
+      </div>
 
       <Dialog
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title={needsConfirm ? 'Confirm this batch' : 'Ready to start'}
-        description={estimate ? `${estimate.jobs} job(s) · ${JOB_MODE_LABELS[mode]} · ${selectedChannel?.name ?? ''}` : undefined}
+        description={estimate ? `${estimate.jobs} job(s) · ${modeLabel(mode)} · ${selectedChannel?.name ?? ''}` : undefined}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={busy === 'create'}>
@@ -443,22 +496,28 @@ export function GeneratePage(): JSX.Element {
             <div className="grid grid-3">
               <div className="stat" style={{ padding: 0 }}>
                 <span className="stat-label">OpenAI</span>
-                <span className="stat-value" style={{ fontSize: 20 }}>{formatCost(estimate.estimatedOpenAICost)}</span>
+                <span className="stat-value" style={{ fontSize: 20 }}>
+                  {formatCost(estimate.estimatedOpenAICost)}
+                </span>
               </div>
               <div className="stat" style={{ padding: 0 }}>
                 <span className="stat-label">ElevenLabs</span>
-                <span className="stat-value" style={{ fontSize: 20 }}>{formatCost(estimate.estimatedElevenCost)}</span>
-                <span className="stat-sub">~{formatNumber(estimate.estimatedCharacters)} characters</span>
+                <span className="stat-value" style={{ fontSize: 20 }}>
+                  {formatCost(estimate.estimatedElevenCost)}
+                </span>
+                <span className="stat-sub">~{formatNumber(estimate.estimatedCharacters)} characters from your plan</span>
               </div>
               <div className="stat" style={{ padding: 0 }}>
                 <span className="stat-label">Total</span>
-                <span className="stat-value" style={{ fontSize: 20 }}>{formatCost(estimate.estimatedTotal)}</span>
+                <span className="stat-value" style={{ fontSize: 20 }}>
+                  {formatCost(estimate.estimatedTotal)}
+                </span>
               </div>
             </div>
-            <div className="xs subtle">Costs are estimates derived from your pricing table and average script length; actual provider billing may differ.</div>
+            <div className="xs subtle">Estimates from your pricing table and average script length. ElevenLabs characters come out of your subscription; OpenAI is billed per token.</div>
             {estimate.jobs >= settings.generation.largeBatchWarningThreshold && (
               <Alert tone="warning" title="Large batch">
-                {estimate.jobs} jobs is at or above your large-batch threshold ({settings.generation.largeBatchWarningThreshold}). Consider splitting the batch or using Review Before Voice.
+                {estimate.jobs} jobs is at or above your large-batch threshold ({settings.generation.largeBatchWarningThreshold}). Consider splitting it or using Review before voice.
               </Alert>
             )}
             {estimate.warnings.map((w, i) => (

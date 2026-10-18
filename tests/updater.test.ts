@@ -45,7 +45,16 @@ class FakeAutoUpdater extends EventEmitter {
   }
 }
 const fake = new FakeAutoUpdater()
-vi.mock('electron-updater', () => ({ autoUpdater: fake }))
+// The packaged (CommonJS) bundle receives `{ default: module }` from `import('electron-updater')`
+// because electron-updater defines `autoUpdater` with a getter the CJS lexer cannot see.
+// `moduleShape` lets one test exercise that shape; the others use the named export.
+let moduleShape: 'named' | 'default' = 'named'
+vi.mock('electron-updater', () => ({
+  get autoUpdater() {
+    return moduleShape === 'named' ? fake : undefined
+  },
+  default: { autoUpdater: fake }
+}))
 
 // process.resourcesPath does not exist under Node; the service checks for app-update.yml there.
 vi.mock('node:fs', async (orig) => {
@@ -101,6 +110,33 @@ describe('UpdateService', () => {
     await new Promise((r) => setTimeout(r, 10))
     expect(shutdowns).toBe(1)
     expect(fake.installs).toBe(1)
+  })
+
+  it('loads electron-updater when the dynamic import yields a { default } namespace (packaged CJS bundle)', async () => {
+    const { UpdateService } = await import('../src/main/services/updater')
+    moduleShape = 'default'
+    try {
+      const svc = new UpdateService(env.s, env.s.logger.child('upd'))
+      const st = await svc.check()
+      expect(st.state).toBe('available')
+      expect(fake.checks).toBe(1)
+    } finally {
+      moduleShape = 'named'
+    }
+  })
+
+  it('never throws from the startup check, even when the updater is broken', async () => {
+    vi.useFakeTimers()
+    try {
+      const { UpdateService } = await import('../src/main/services/updater')
+      const svc = new UpdateService(env.s, env.s.logger.child('upd'))
+      fake.failCheck = new Error('boom')
+      svc.scheduleStartupCheck(10)
+      await vi.advanceTimersByTimeAsync(50)
+      expect(svc.getStatus().state).toBe('error')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reports "up to date", turns provider errors into actionable messages and refuses download before check', async () => {

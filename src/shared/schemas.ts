@@ -188,6 +188,7 @@ export const appSettingsSchema = z.object({
     maxRewriteAttempts: z.number().int().min(0).max(10),
     maxStageRetries: z.number().int().min(0).max(10),
     validationStrictness: z.enum(['relaxed', 'standard', 'strict']),
+    lengthToleranceChars: z.number().int().min(0).max(2000),
     duplicateDetection: z.boolean(),
     largeBatchWarningThreshold: z.number().int().min(1).max(1000),
     confirmExpensiveRegeneration: z.boolean()

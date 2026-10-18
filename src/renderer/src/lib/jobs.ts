@@ -178,3 +178,63 @@ export const MODE_DESCRIPTIONS: Record<JobMode, string> = {
     'Research → write script → validate → wait for your approval → generate audio → save. You read and edit every script before ElevenLabs characters are spent.',
   scripts_only: 'Research → write script → validate → save the script file. No audio is generated; you can voice any script later from the Scripts Library.'
 }
+
+/** Human description of what a job is doing right now, for queue rows and the detail drawer. */
+export function stageText(job: JobView, extra: { modelId?: string | null; queuePaused?: boolean } = {}): string {
+  const chars = job.scriptCharCount != null ? `${job.scriptCharCount.toLocaleString()} chars` : null
+  switch (job.status) {
+    case 'pending':
+      if (job.nextRunAt && new Date(job.nextRunAt).getTime() > Date.now()) return `Waiting to retry · ${new Date(job.nextRunAt).toLocaleTimeString()}`
+      return extra.queuePaused ? 'Waiting · queue is paused' : 'Waiting for a free slot'
+    case 'researching':
+      return job.researchAttempts > 1 ? `Researching · attempt ${job.researchAttempts}` : 'Researching the title'
+    case 'research_review_required':
+      return 'Needs you: choose the right title or add notes'
+    case 'writing_script':
+      return job.scriptAttempts > 1 ? `Rewriting script · attempt ${job.scriptAttempts}` : 'Writing the script'
+    case 'validating_script':
+      return ['Validating script', chars].filter(Boolean).join(' · ')
+    case 'script_ready':
+      return ['Script ready', chars].filter(Boolean).join(' · ')
+    case 'awaiting_approval':
+      return ['Needs you: review the script', chars].filter(Boolean).join(' · ')
+    case 'generating_audio':
+      return ['Generating audio', chars, extra.modelId ?? null].filter(Boolean).join(' · ')
+    case 'saving_files':
+      return 'Saving files'
+    case 'completed':
+      return job.mode === 'scripts_only' ? 'Script saved' : 'Script and voice saved'
+    case 'failed':
+      return job.lastError ? `Failed at ${job.stage}: ${job.lastError.message}` : `Failed at ${job.stage}`
+    case 'paused':
+      return job.resumeStatus ? `Paused before ${statusLabel(job.resumeStatus).toLowerCase()}` : 'Paused'
+    case 'cancelled':
+      return 'Cancelled'
+    default:
+      return statusLabel(job.status)
+  }
+}
+
+/** "stage 5 of 6" for a running job (approval/audio counted only when the mode uses them). */
+export function stageOrdinal(job: Pick<JobView, 'status' | 'stage' | 'mode' | 'resumeStatus'>): { index: number; total: number } | null {
+  const states = pipelineStates(job)
+  const total = states.filter((s) => s !== 'skipped').length
+  const idx = states.findIndex((s) => s === 'current' || s === 'waiting' || s === 'failed')
+  if (idx < 0) return null
+  const index = states.slice(0, idx + 1).filter((s) => s !== 'skipped').length
+  return { index, total }
+}
+
+/** Sentence-case mode label ("Review before voice"). */
+export function modeLabel(mode: string): string {
+  switch (mode) {
+    case 'auto':
+      return 'Fully automatic'
+    case 'review_before_voice':
+      return 'Review before voice'
+    case 'scripts_only':
+      return 'Scripts only'
+    default:
+      return mode.replace(/_/g, ' ')
+  }
+}

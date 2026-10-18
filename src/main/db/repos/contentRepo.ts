@@ -25,6 +25,7 @@ interface ProjectRow {
   channel_id: string
   title: string
   title_normalized: string
+  canonical_title?: string | null
   folder_name: string
   folder_path: string | null
   archived: number
@@ -44,6 +45,7 @@ function rowToProject(r: ProjectRow): Project {
     id: r.id,
     channelId: r.channel_id,
     title: r.title,
+    canonicalTitle: r.canonical_title ?? null,
     folderName: r.folder_name,
     folderPath: r.folder_path,
     archived: toBool(r.archived),
@@ -145,13 +147,14 @@ export class ProjectRepo {
     return this.db.all<ProjectRow>('SELECT * FROM projects WHERE channel_id = ?', channelId).map(rowToProject)
   }
 
-  update(id: string, patch: Partial<{ title: string; titleNormalized: string; folderName: string; folderPath: string | null; archived: boolean }>): Project {
+  update(id: string, patch: Partial<{ title: string; titleNormalized: string; canonicalTitle: string | null; folderName: string; folderPath: string | null; archived: boolean }>): Project {
     const cur = this.get(id)
     if (!cur) throw new Error(`Project not found: ${id}`)
     this.db.run(
-      'UPDATE projects SET title = ?, title_normalized = ?, folder_name = ?, folder_path = ?, archived = ?, updated_at = ? WHERE id = ?',
+      'UPDATE projects SET title = ?, title_normalized = ?, canonical_title = ?, folder_name = ?, folder_path = ?, archived = ?, updated_at = ? WHERE id = ?',
       patch.title ?? cur.title,
       patch.titleNormalized ?? (this.db.get<ProjectRow>('SELECT title_normalized FROM projects WHERE id = ?', id)?.title_normalized ?? ''),
+      patch.canonicalTitle === undefined ? cur.canonicalTitle : patch.canonicalTitle,
       patch.folderName ?? cur.folderName,
       patch.folderPath === undefined ? cur.folderPath : patch.folderPath,
       (patch.archived ?? cur.archived) ? 1 : 0,
@@ -279,6 +282,7 @@ interface ScriptRow {
   model: string | null
   validation_json: string | null
   file_path: string | null
+  approved_with_issues?: number
   created_at: string
   title?: string
   channel_id?: string
@@ -303,6 +307,7 @@ function rowToScript(r: ScriptRow): Script {
     model: r.model,
     validation: parseJson<ValidationReport | null>(r.validation_json, null),
     filePath: r.file_path,
+    approvedWithIssues: toBool(r.approved_with_issues ?? 0),
     createdAt: r.created_at
   }
 }
@@ -329,15 +334,15 @@ export class ScriptRepo {
   constructor(private db: Database) {}
 
   create(
-    input: Omit<Script, 'id' | 'version' | 'createdAt' | 'charCount' | 'wordCount'> & { charCount: number; wordCount: number },
+    input: Omit<Script, 'id' | 'version' | 'createdAt' | 'charCount' | 'wordCount' | 'approvedWithIssues'> & { charCount: number; wordCount: number; approvedWithIssues?: boolean },
     id = newId()
   ): Script {
     return this.db.transaction(() => {
       const next = (this.db.get<{ m: number | null }>('SELECT MAX(version) AS m FROM scripts WHERE project_id = ?', input.projectId)?.m ?? 0) + 1
       this.db.run(
         `INSERT INTO scripts (id, project_id, job_id, version, template_version_id, template_version_number, text, char_count, word_count,
-          estimated_duration_sec, status, source, model, validation_json, file_path, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          estimated_duration_sec, status, source, model, validation_json, file_path, approved_with_issues, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         input.projectId,
         input.jobId,
@@ -353,6 +358,7 @@ export class ScriptRepo {
         input.model,
         input.validation ? JSON.stringify(input.validation) : null,
         input.filePath,
+        input.approvedWithIssues ? 1 : 0,
         nowIso()
       )
       this.db.run('UPDATE projects SET updated_at = ? WHERE id = ?', nowIso(), input.projectId)
@@ -410,16 +416,17 @@ export class ScriptRepo {
     return this.db.get<{ c: number }>('SELECT COUNT(*) AS c FROM scripts')?.c ?? 0
   }
 
-  update(id: string, patch: Partial<{ status: ScriptStatus; validation: ValidationReport | null; filePath: string | null; text: string }>): Script {
+  update(id: string, patch: Partial<{ status: ScriptStatus; validation: ValidationReport | null; filePath: string | null; text: string; approvedWithIssues: boolean }>): Script {
     const cur = this.get(id)
     if (!cur) throw new Error(`Script not found: ${id}`)
     const m = { ...cur, ...patch }
     this.db.run(
-      'UPDATE scripts SET status = ?, validation_json = ?, file_path = ?, text = ? WHERE id = ?',
+      'UPDATE scripts SET status = ?, validation_json = ?, file_path = ?, text = ?, approved_with_issues = ? WHERE id = ?',
       m.status,
       m.validation ? JSON.stringify(m.validation) : null,
       m.filePath,
       m.text,
+      m.approvedWithIssues ? 1 : 0,
       id
     )
     return this.get(id)!

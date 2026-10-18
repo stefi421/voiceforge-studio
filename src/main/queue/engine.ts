@@ -4,8 +4,8 @@ import type { ScopedLogger } from '../services/logger'
 import { LEASE_MS, Pipeline } from '../pipeline/pipeline'
 import { AppError, toAppError } from '../util/errors'
 import { computeBackoffMs } from '../util/retry'
-import { ACTIVE_STATUSES } from '../db/repos/jobRepo'
-import { newId } from '../util/common'
+import { ACTIVE_STATUSES, USER_WAIT_STATUSES } from '../db/repos/jobRepo'
+import { newId, normalizeTitle } from '../util/common'
 import fs from 'node:fs'
 
 interface Running {
@@ -13,6 +13,15 @@ interface Running {
   pauseRequested: boolean
   owner: string
   promise: Promise<void>
+}
+
+/** Rough per-stage durations used for the ETA until the history has real samples. */
+const STAGE_DEFAULT_SECONDS = { research: 40, script: 60, validate: 10, audio: 30, save: 2 }
+
+const STAGES_FOR_MODE: Record<string, JobStage[]> = {
+  auto: ['research', 'script', 'audio', 'save'],
+  review_before_voice: ['research', 'script', 'approval', 'audio', 'save'],
+  scripts_only: ['research', 'script', 'save']
 }
 
 const STAGE_START_STATUS: Record<JobStage, JobStatus> = {
@@ -227,12 +236,73 @@ export class QueueEngine {
   // ---------------------------------------------------------------------------
 
   stats(): QueueStats {
-    const avg = this.s.jobs.averageCompletionSeconds()
     const base = this.s.jobs.stats(this.queuePaused, this.spendingPaused, null)
-    const remaining = base.pending + base.processing
+    const { progressPercent, remainingSeconds } = this.progress()
     const conc = Math.max(1, this.s.settings.get().generation.maxConcurrentJobs)
-    const eta = avg && remaining > 0 ? Math.round((avg * remaining) / conc) : remaining > 0 ? null : 0
-    return { ...base, estimatedSecondsRemaining: eta }
+    const remaining = base.pending + base.processing
+    const eta = remaining > 0 ? Math.round(remainingSeconds / conc) : 0
+    return { ...base, estimatedSecondsRemaining: eta, progressPercent }
+  }
+
+  private stageMediansCache: { at: number; value: Record<string, number> } | null = null
+
+  /** Median seconds per stage from history, falling back to rough defaults until data exists. */
+  stageSeconds(): Record<JobStage, number> {
+    const now = Date.now()
+    if (!this.stageMediansCache || now - this.stageMediansCache.at > 30_000) {
+      const samples = this.s.jobs.stageDurationSamples()
+      const median = (list: number[] | undefined): number | null => {
+        if (!list || !list.length) return null
+        const sorted = [...list].sort((a, b) => a - b)
+        const mid = Math.floor(sorted.length / 2)
+        return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+      }
+      const m: Record<string, number> = {}
+      for (const k of ['researching', 'writing_script', 'validating_script', 'generating_audio', 'saving_files']) {
+        const v = median(samples[k])
+        if (v !== null) m[k] = v
+      }
+      this.stageMediansCache = { at: now, value: m }
+    }
+    const m = this.stageMediansCache.value
+    return {
+      research: m.researching ?? STAGE_DEFAULT_SECONDS.research,
+      script: (m.writing_script ?? STAGE_DEFAULT_SECONDS.script) + (m.validating_script ?? STAGE_DEFAULT_SECONDS.validate),
+      approval: 0,
+      audio: m.generating_audio ?? STAGE_DEFAULT_SECONDS.audio,
+      save: m.saving_files ?? STAGE_DEFAULT_SECONDS.save,
+      done: 0
+    }
+  }
+
+  /**
+   * Progress across the batches that still have work: finished stages / total stages,
+   * so a single running job advances the bar at every stage instead of sitting at 0 %.
+   * Also returns the estimated automatic work left (user-wait and paused jobs excluded).
+   */
+  progress(): { progressPercent: number; remainingSeconds: number } {
+    const jobs = this.s.jobs.listForProgress()
+    if (!jobs.length) return { progressPercent: this.s.jobs.stats(false, false, null).total > 0 ? 100 : 0, remainingSeconds: 0 }
+    const secs = this.stageSeconds()
+    let doneUnits = 0
+    let totalUnits = 0
+    let remainingSeconds = 0
+    for (const j of jobs) {
+      const stages: JobStage[] = STAGES_FOR_MODE[j.mode] ?? STAGES_FOR_MODE.auto!
+      totalUnits += stages.length
+      if (j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled') {
+        doneUnits += stages.length
+        continue
+      }
+      const idx = Math.max(0, stages.indexOf(j.stage))
+      const inProgress = (ACTIVE_STATUSES as string[]).includes(j.status)
+      doneUnits += idx + (inProgress ? 0.5 : 0)
+      const waiting = (USER_WAIT_STATUSES as string[]).includes(j.status) || j.status === 'paused' || j.status === 'script_ready'
+      if (!waiting) {
+        for (let i = idx; i < stages.length; i++) remainingSeconds += (secs[stages[i]!] ?? 0) * (i === idx && inProgress ? 0.5 : 1)
+      }
+    }
+    return { progressPercent: totalUnits ? Math.round((doneUnits / totalUnits) * 100) : 0, remainingSeconds: Math.round(remainingSeconds) }
   }
 
   private publishStats(force = false): void {
@@ -349,7 +419,11 @@ export class QueueEngine {
     return finished.length
   }
 
-  /** User chose a research candidate / provided notes. Re-runs research with the hint. */
+  /**
+   * User chose a research candidate / provided notes. Re-runs research with the hint.
+   * Choosing a candidate (or typing a title) is an explicit rename: the job AND its
+   * project/folder take the chosen title. Research on its own never renames anything.
+   */
   resolveResearch(jobId: string, opts: { candidateIndex?: number; manualTitle?: string; manualNotes?: string }): Job {
     const job = this.s.jobs.get(jobId)
     if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
@@ -361,10 +435,22 @@ export class QueueEngine {
       const c = research.data.ambiguityCandidates?.[opts.candidateIndex]
       if (!c) throw new AppError('config', 'That candidate does not exist.', { retryable: false })
       notes = `The user confirmed the correct title is "${c.title}"${c.developer ? ` by ${c.developer}` : ''}${c.year ? ` (${c.year})` : ''}. ${c.note ?? ''}`.trim()
-      title = c.title || title
+      title = c.title?.trim() || title
     }
     if (opts.manualTitle?.trim()) title = opts.manualTitle.trim()
     if (opts.manualNotes?.trim()) notes = [notes, opts.manualNotes.trim()].filter(Boolean).join('\n')
+    if (title !== job.title) {
+      const project = this.s.projects.get(job.projectId)
+      if (project && project.title !== title) {
+        try {
+          this.pipeline.projects.rename(project.id, title)
+        } catch (err) {
+          this.log.warn('Could not rename the project folder after the user chose a title', { jobId, error: toAppError(err).message })
+          this.s.projects.update(project.id, { title, titleNormalized: normalizeTitle(title) })
+        }
+      }
+      this.s.jobs.addEvent(jobId, 'title_changed', null, null, `${job.title} → ${title}`)
+    }
     this.s.jobs.update(jobId, { title, manualResearchNotes: notes || null, researchId: null, lastError: null, stage: 'research' })
     if (channel?.research.mode === 'manual' && !notes.trim()) {
       throw new AppError('insufficient_info', 'Manual research notes are required for this channel.', { retryable: false })
@@ -375,20 +461,38 @@ export class QueueEngine {
     return this.s.jobs.get(jobId)!
   }
 
-  approveScript(jobId: string): Job {
+  /**
+   * Approves the newest script of the job's project and moves on to audio (or save).
+   * `force` lets the user approve a script that still has validation errors — the
+   * decision is recorded on the script and in the job history, and the audio stage
+   * accepts it. Without `force`, a script with errors is rejected here.
+   */
+  approveScript(jobId: string, force = false): Job {
     const job = this.s.jobs.get(jobId)
     if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
+    const running = this.running.get(jobId)
+    if (running) throw new AppError('config', 'The job is still running; wait for it to pause or finish before approving.', { retryable: false })
     const latest = this.s.scripts.latestForProject(job.projectId)
     const script = latest && latest.createdAt >= (job.scriptId ? this.s.scripts.get(job.scriptId)?.createdAt ?? '' : '') ? latest : job.scriptId ? this.s.scripts.get(job.scriptId) : undefined
     if (!script) throw new AppError('config', 'There is no script to approve.', { retryable: false })
-    if (script.status === 'invalid') {
-      const errs = script.validation?.issues.filter((i) => i.severity === 'error').map((i) => i.message).join('; ') ?? ''
-      throw new AppError('validation', `The script still fails validation: ${errs}`, { action: 'Edit the script to fix the issues, then approve.', retryable: false })
+    const errors = script.validation?.issues.filter((i) => i.severity === 'error') ?? []
+    const hasErrors = script.status === 'invalid' || errors.length > 0
+    if (hasErrors && !force) {
+      throw new AppError('validation', `The script still fails validation: ${errors.map((i) => i.message).join('; ')}`, {
+        action: 'Edit the script to fix the issues, or approve it anyway to continue with the script as it is.',
+        retryable: false,
+        code: 'APPROVE_NEEDS_FORCE'
+      })
     }
-    this.s.scripts.update(script.id, { status: 'approved' })
+    this.s.scripts.update(script.id, { status: 'approved', approvedWithIssues: hasErrors })
     const stage: JobStage = job.mode === 'scripts_only' ? 'save' : 'audio'
     this.s.jobs.update(jobId, { scriptId: script.id, lastError: null, stage })
-    this.s.jobs.setStatus(jobId, 'pending', { stage, event: 'approved', detail: `Script v${script.version} approved` })
+    this.s.jobs.setStatus(jobId, 'pending', {
+      stage,
+      event: hasErrors ? 'approved_with_issues' : 'approved',
+      detail: hasErrors ? `Script v${script.version} approved despite: ${errors.map((i) => i.message).join('; ')}`.slice(0, 500) : `Script v${script.version} approved`
+    })
+    if (hasErrors) this.log.warn('Script approved with validation errors', { jobId, scriptId: script.id, errors: errors.map((e) => e.code) })
     this.emitJob(jobId)
     this.tick()
     return this.s.jobs.get(jobId)!
@@ -426,8 +530,8 @@ export class QueueEngine {
     if (!project) throw new AppError('config', 'Project not found.', { retryable: false })
     const script = opts.scriptId ? this.s.scripts.get(opts.scriptId) : this.s.scripts.latestForProject(opts.projectId)
     if (!script) throw new AppError('config', 'This project has no script yet.', { retryable: false })
-    if (script.status === 'invalid' || script.status === 'rejected') {
-      throw new AppError('validation', 'The selected script version did not pass validation.', { action: 'Choose a validated version or fix the script first.', retryable: false })
+    if (script.status === 'rejected' || (script.status === 'invalid' && !script.approvedWithIssues)) {
+      throw new AppError('validation', 'The selected script version did not pass validation.', { action: 'Open the script, fix or approve it (approving is allowed even with warnings), then regenerate.', retryable: false, code: 'SCRIPT_NOT_APPROVED' })
     }
     const batch = this.s.jobs.createBatch(`Regenerate audio: ${project.title}`, 'auto')
     const job = this.s.jobs.create({

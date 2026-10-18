@@ -3,6 +3,7 @@ import type { AppInfo, AppSettings, Channel, JobView, QueueStats, SecretsStatus,
 import { DEFAULT_SETTINGS } from '@shared/defaults'
 import { api, toIpcError } from '@/lib/api'
 import { toast } from './toasts'
+import { useRouter } from './router'
 
 /** Deep-merges a possibly partial settings object over the defaults so pages can always read every field. */
 function mergeSettings(s: Partial<AppSettings> | null | undefined): AppSettings {
@@ -59,7 +60,8 @@ const EMPTY_STATS: QueueStats = {
   cancelled: 0,
   queuePaused: false,
   spendingPaused: false,
-  estimatedSecondsRemaining: null
+  estimatedSecondsRemaining: null,
+  progressPercent: 0
 }
 
 const EMPTY_SECRETS: SecretsStatus = { openai: false, elevenlabs: false, backend: 'unknown', encryptionAvailable: false }
@@ -85,7 +87,15 @@ export const useApp = create<AppState>((set, get) => ({
       subscribed = true
       try {
         api.on('job:changed', (job) => {
-          if (job && typeof job.id === 'string') get().upsertJob(job)
+          if (!job || typeof job.id !== 'string') return
+          const prev = get().jobs[job.id]
+          get().upsertJob(job)
+          if (prev && prev.status !== job.status && (job.status === 'awaiting_approval' || job.status === 'research_review_required')) {
+            toast.withAction('info', job.status === 'awaiting_approval' ? 'Script ready for review' : 'Choose the right title', job.title, {
+              label: 'Open',
+              onClick: () => useRouter.getState().navigate('queue', { highlight: job.id })
+            })
+          }
         })
         api.on('queue:stats', (stats) => set({ stats: { ...EMPTY_STATS, ...stats } }))
         api.on('settings:changed', (settings) => set({ settings: mergeSettings(settings) }))
@@ -99,7 +109,10 @@ export const useApp = create<AppState>((set, get) => ({
         })
         api.on('batch:completed', (b) => {
           const level = b.failed > 0 ? 'warning' : 'success'
-          toast[level](`Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`)
+          toast.withAction(level, `Batch "${b.name}" finished`, `${b.completed} completed, ${b.failed} failed.`, {
+            label: 'View',
+            onClick: () => useRouter.getState().navigate('queue', { batchId: b.batchId })
+          })
         })
       } catch (err) {
         toast.warning('Live updates unavailable', toIpcError(err).message)

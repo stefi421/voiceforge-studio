@@ -118,8 +118,12 @@ export class UpdateService {
     }
     if (!this.updater) {
       // Lazy import keeps startup cheap and lets tests substitute electron-updater.
-      const mod = (await import('electron-updater')) as ElectronUpdater
-      const u = mod.autoUpdater
+      // The main bundle is CommonJS, so a dynamic import of a CJS package may arrive as
+      // { default: module } — read the export from either shape (v1.1.0 shipped with only the
+      // first form and the startup check crashed with "Cannot set properties of undefined").
+      const mod = (await import('electron-updater')) as ElectronUpdater & { default?: ElectronUpdater }
+      const u = mod.autoUpdater ?? mod.default?.autoUpdater
+      if (!u) throw new AppError('config', 'The update module could not be loaded in this build.', { retryable: false })
       u.autoDownload = false
       u.autoInstallOnAppQuit = false
       u.logger = {
@@ -239,12 +243,23 @@ export class UpdateService {
   scheduleStartupCheck(delayMs = 20_000): void {
     if (!this.supported) return
     setTimeout(() => {
-      if (!this.s.settings.get().updates.checkOnStartup) return
-      void this.check().then((st) => {
-        if (st.state === 'available') {
-          this.s.events.notify('info', 'Update available', `VoiceForge Studio ${st.latestVersion} is available. Open Settings → Updates to download it.`)
-        }
-      })
+      try {
+        if (!this.s.settings.get().updates.checkOnStartup) return
+        this.check()
+          .then((st) => {
+            if (st.state === 'available') {
+              this.s.events.notify('info', 'Update available', `VoiceForge Studio ${st.latestVersion} is available. Open Settings → Updates to download it.`)
+            }
+          })
+          .catch((err: unknown) => {
+            // Never let a background check surface as an unhandled rejection; the status panel shows the error.
+            const message = err instanceof Error ? err.message : String(err)
+            this.log.warn('Startup update check failed', { error: message })
+            this.patch({ state: 'error', error: message })
+          })
+      } catch (err) {
+        this.log.warn('Startup update check could not start', { error: (err as Error).message })
+      }
     }, delayMs)
   }
 }

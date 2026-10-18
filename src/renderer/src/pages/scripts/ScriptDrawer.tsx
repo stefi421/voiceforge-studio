@@ -6,8 +6,8 @@ import { useAsync } from '@/lib/hooks'
 import { useApp } from '@/store/app'
 import { toast } from '@/store/toasts'
 import { estimateDurationSec, formatDateTime, formatDuration, formatNumber, wordCount } from '@/lib/format'
-import { Alert, Badge, Button, DiffView, Drawer, Field, Select, SkeletonRows, Tabs, Textarea } from '@/components/ui'
-import { ValidationIssues } from '@/components/dialogs/ScriptReviewDialog'
+import { Alert, Badge, Button, ConfirmDialog, DiffView, Drawer, Field, Select, SkeletonRows, Tabs, Textarea } from '@/components/ui'
+import { CharCounter, countIssues, ValidationIssues } from '@/components/ScriptQuality'
 import { RegenerateAudioDialog, type RegenerateAudioTarget } from '@/components/dialogs/RegenerateAudioDialog'
 
 type DrawerTab = 'editor' | 'validation' | 'versions'
@@ -23,6 +23,7 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
   const [busy, setBusy] = useState<string | null>(null)
   const [compare, setCompare] = useState<{ a: string; b: string } | null>(null)
   const [regen, setRegen] = useState<RegenerateAudioTarget | null>(null)
+  const [confirmForce, setConfirmForce] = useState(false)
 
   useEffect(() => {
     if (script.data) {
@@ -85,7 +86,7 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
     }
   }
 
-  const approve = async (): Promise<void> => {
+  const approve = async (force = false): Promise<void> => {
     if (!s) return
     setBusy('approve')
     try {
@@ -95,15 +96,20 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
         applySaved(saved)
         id = saved.id
       }
-      const approved = await api.invoke('scripts:approve', { scriptId: id })
+      const approved = await api.invoke('scripts:approve', { scriptId: id, force: force || undefined })
       applySaved(approved)
-      toast.success('Script approved')
+      setConfirmForce(false)
+      toast.success(force ? 'Approved with open issues' : 'Script approved')
     } catch (err) {
-      toast.error('Could not approve', err)
+      const e = err as { message?: string }
+      if (!force && /validation/i.test(e?.message ?? '')) setConfirmForce(true)
+      else toast.error('Could not approve', err)
     } finally {
       setBusy(null)
     }
   }
+  const issueCounts = countIssues(validation)
+  const outOfRange = channel ? stats.chars < channel.minChars || stats.chars > channel.maxChars : false
 
   const restore = async (v: Script): Promise<void> => {
     setBusy(`restore:${v.id}`)
@@ -160,7 +166,12 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
               <Button loading={busy === 'save'} disabled={busy != null || !dirty} onClick={() => void saveEdit()}>
                 Save as new version
               </Button>
-              <Button loading={busy === 'approve'} disabled={busy != null || s.status === 'approved'} onClick={approve}>
+              {(issueCounts.errors > 0 || outOfRange) && s.status !== 'approved' && (
+                <Button variant="secondary" disabled={busy != null} onClick={() => setConfirmForce(true)} title="Approve even though validation reported errors">
+                  Approve anyway
+                </Button>
+              )}
+              <Button loading={busy === 'approve'} disabled={busy != null || s.status === 'approved'} onClick={() => void approve(false)}>
                 {dirty ? 'Save & approve' : 'Approve'}
               </Button>
               <Button variant="primary" icon={<Mic size={13} />} disabled={busy != null} onClick={() => setRegen({ projectId: s.projectId, scriptId: s.id, title: s.title, channelId: s.channelId, characters: text.length })}>
@@ -176,11 +187,12 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
           <Alert tone="danger" title="Could not load script">{script.error.message}</Alert>
         ) : s ? (
           <>
-            <div className="row wrap">
-              <Badge>{formatNumber(stats.chars)} chars</Badge>
+            <div className="row wrap" style={{ gap: 10 }}>
+              {channel ? <CharCounter chars={stats.chars} min={channel.minChars} max={channel.maxChars} /> : <Badge>{formatNumber(stats.chars)} chars</Badge>}
               <Badge>{formatNumber(stats.words)} words</Badge>
               <Badge>~{formatDuration(stats.dur)} at {wpm} wpm</Badge>
-              {channel && <Badge tone={stats.chars < channel.minChars || stats.chars > channel.maxChars ? 'warning' : 'success'}>target {formatNumber(channel.minChars)}–{formatNumber(channel.maxChars)}</Badge>}
+              {issueCounts.errors > 0 && <Badge tone="danger">{issueCounts.errors} error(s)</Badge>}
+              {issueCounts.warnings > 0 && <Badge tone="warning">{issueCounts.warnings} warning(s)</Badge>}
               {s.templateVersionNumber != null && <Badge>template v{s.templateVersionNumber}</Badge>}
               {dirty && <Badge tone="accent">unsaved edits</Badge>}
             </div>
@@ -190,11 +202,11 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
               onChange={setTab}
               tabs={[
                 { id: 'editor', label: 'Editor' },
-                { id: 'validation', label: 'Validation', badge: validation && !validation.ok ? <Badge tone="danger">{validation.issues.length}</Badge> : undefined },
+                { id: 'validation', label: 'Validation', badge: issueCounts.errors > 0 ? <Badge tone="danger">{issueCounts.errors}</Badge> : issueCounts.warnings > 0 ? <Badge tone="warning">{issueCounts.warnings}</Badge> : undefined },
                 { id: 'versions', label: 'Versions', badge: <Badge>{vlist.length}</Badge> }
               ]}
             />
-            {tab === 'editor' && <Textarea className="script-editor" value={text} onChange={(e) => setText(e.target.value)} style={{ minHeight: 480 }} />}
+            {tab === 'editor' && <Textarea className="script-editor" value={text} onChange={(e) => setText(e.target.value)} style={{ minHeight: 480 }} spellCheck={false} />}
             {tab === 'validation' &&
               (validation ? (
                 <div className="col gap-3">
@@ -257,6 +269,14 @@ export function ScriptDrawer({ scriptId, onClose, onChanged }: { scriptId: strin
         ) : null}
       </Drawer>
       <RegenerateAudioDialog target={regen} onClose={() => setRegen(null)} />
+      <ConfirmDialog
+        open={confirmForce}
+        onClose={() => setConfirmForce(false)}
+        onConfirm={() => approve(true)}
+        title="Approve with open issues?"
+        message={`The validator reports ${issueCounts.errors} error(s)${outOfRange && channel ? ` and the length (${formatNumber(stats.chars)}) is outside ${formatNumber(channel.minChars)}–${formatNumber(channel.maxChars)}` : ''}. Approved scripts can be voiced as they are.`}
+        confirmLabel="Approve anyway"
+      />
     </>
   )
 }

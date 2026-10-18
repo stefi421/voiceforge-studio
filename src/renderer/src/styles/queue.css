@@ -1,0 +1,330 @@
+/* ---------------------------------------------------------------------------
+   Queue: summary strip, batch groups, rows, detail drawer sections, timeline.
+   --------------------------------------------------------------------------- */
+
+.queue-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-6);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--bg-tile);
+  border-radius: var(--r-md);
+}
+.queue-summary-stats {
+  display: flex;
+  gap: var(--sp-6);
+  flex-wrap: wrap;
+}
+.queue-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 64px;
+}
+.queue-stat-value {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.queue-stat-label {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.queue-stat-success .queue-stat-value {
+  color: var(--success);
+}
+.queue-stat-accent .queue-stat-value {
+  color: var(--accent);
+}
+.queue-stat-warning .queue-stat-value {
+  color: var(--warning);
+}
+.queue-stat-danger .queue-stat-value {
+  color: var(--danger);
+}
+.queue-summary-progress {
+  margin-left: auto;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.batch-group {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elev-1);
+  overflow: hidden;
+}
+.batch-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px 14px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg-elev-1);
+  transition: background var(--t-fast);
+}
+.batch-header:hover {
+  background: var(--bg-hover);
+}
+.batch-group.collapsed .batch-header {
+  border-bottom: none;
+}
+.batch-chevron {
+  display: inline-flex;
+  color: var(--fg-subtle);
+  width: 16px;
+}
+.batch-title {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.batch-progress {
+  width: 160px;
+  flex: 0 0 auto;
+}
+.batch-table {
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.batch-table .table th {
+  background: var(--bg-elev-1);
+}
+
+.table tbody tr.job-row {
+  cursor: pointer;
+}
+.table tbody tr.job-row.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.table tbody tr.job-row.highlighted td:first-child {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elev-2);
+}
+.detail-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-weight: 600;
+  font-size: var(--fs-md);
+}
+.script-preview {
+  margin: 0;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-sans);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--fg-muted);
+  padding: var(--sp-3);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--border-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 10px;
+  font-size: var(--fs-sm);
+  padding-left: 10px;
+}
+.timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-subtle);
+}
+.timeline-item:first-child::before {
+  background: var(--accent);
+}
+.timeline-time {
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-xs);
+  padding-top: 1px;
+}
+.timeline-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Validation issue lists (review dialog + drawer) */
+.issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.issue-group-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+.issue {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  border: 1px solid transparent;
+}
+.issue-error {
+  background: var(--danger-soft);
+  border-color: rgba(240, 96, 95, 0.25);
+}
+.issue-warning {
+  background: var(--warning-soft);
+  border-color: rgba(242, 184, 75, 0.25);
+}
+.issue svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+.issue-code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+/* Live character counter */
+.char-counter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-sm);
+}
+.char-counter-bar {
+  position: relative;
+  width: 120px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-elev-3);
+  overflow: hidden;
+}
+.char-counter-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--success);
+  transition: width var(--t-fast), background var(--t-fast);
+}
+.char-counter.under > span,
+.char-counter.under .char-counter-bar > span {
+  background: var(--warning);
+}
+.char-counter.over .char-counter-bar > span {
+  background: var(--danger);
+}
+.char-counter.under .char-counter-value {
+  color: var(--warning);
+}
+.char-counter.over .char-counter-value {
+  color: var(--danger);
+}
+.char-counter.ok .char-counter-value {
+  color: var(--success);
+}
+
+/* Length presets in the channel editor */
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.preset {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-elev-2);
+  color: var(--fg);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-sm);
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.preset:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elev-3);
+}
+.preset.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.preset small {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.limits-box {
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-tile);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+/* Page is a flex column: never let groups shrink below their content. */
+.batch-group,
+.queue-summary,
+.detail-section {
+  flex: 0 0 auto;
+}
+.batch-table {
+  overflow: visible;
+}
+
+/* Primary/secondary actions in table rows stay fully visible; only icon buttons recede. */
+.table .row-actions {
+  opacity: 1;
+}
+.table .row-actions .btn-ghost {
+  opacity: 0.55;
+  transition: opacity var(--t-fast);
+}
+.table tr:hover .row-actions .btn-ghost,
+.table .row-actions .btn-ghost:focus-visible {
+  opacity: 1;
+}

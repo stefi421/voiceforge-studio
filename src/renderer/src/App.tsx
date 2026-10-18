@@ -6,6 +6,7 @@ import { navigate, useRouter } from '@/store/router'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useShortcuts } from '@/components/layout/useShortcuts'
 import { useTheme } from '@/components/layout/useTheme'
+import { CommandPalette, ShortcutsDialog, useOverlays } from '@/components/layout/CommandPalette'
 import { Alert, Button, ToastStack } from '@/components/ui'
 import { DashboardPage } from '@/pages/Dashboard'
 import { GeneratePage } from '@/pages/generate/GeneratePage'
@@ -89,6 +90,17 @@ export function App(): JSX.Element {
         }
         return
       }
+      if (detail === '__palette' || detail === '__shortcuts') {
+        // Smoke-test helpers to capture the overlays.
+        if (detail === '__palette') useOverlays.getState().setPalette(true)
+        else useOverlays.getState().setShortcuts(true)
+        return
+      }
+      if (detail === '__closeOverlays') {
+        useOverlays.getState().setPalette(false)
+        useOverlays.getState().setShortcuts(false)
+        return
+      }
       if (detail === '__skipOnboarding') {
         // Smoke-test helper: mark setup as done so the regular pages can be captured.
         void api.invoke('settings:update', { general: { onboardingCompleted: true } }).then((s) => useApp.getState().setSettings(s)).catch(() => undefined)
@@ -138,6 +150,8 @@ export function App(): JSX.Element {
           </PageErrorBoundary>
         )}
       </main>
+      <CommandPalette />
+      <ShortcutsDialog />
       <ToastStack />
     </div>
   )

@@ -1,43 +1,58 @@
 import { useMemo, useState, type JSX } from 'react'
-import { AudioLines, FileText, FolderOpen, KeyRound, ListOrdered, Mic, Plus, RotateCcw, Sparkles, TriangleAlert, Tv, Wand2 } from 'lucide-react'
-import { api } from '@/lib/api'
-import { useAsync } from '@/lib/hooks'
+import { AudioLines, CircleAlert, CircleCheck, FileText, FolderOpen, KeyRound, ListOrdered, Mic, RotateCcw, Search, Sparkles, Tv, Wand2 } from 'lucide-react'
+import type { JobView } from '@shared/types'
+import { api, audioUrl } from '@/lib/api'
+import { useAsync, useNow } from '@/lib/hooks'
+import { stageText } from '@/lib/jobs'
 import { useApp, activeChannels } from '@/store/app'
 import { navigate } from '@/store/router'
 import { toast } from '@/store/toasts'
-import { Alert, AudioPlayer, Badge, Button, Card, ChannelChip, CostLabel, EmptyState, PageHeader, ProgressBar, Skeleton, Stat, StatusBadge } from '@/components/ui'
+import { Alert, AudioPlayer, Badge, Button, Card, ChannelChip, CostLabel, EmptyState, PageHeader, ProgressBar, Skeleton, Stat } from '@/components/ui'
 import { formatCompact, formatDuration, formatNumber, formatPercent, relativeTime } from '@/lib/format'
-import { audioUrl } from '@/lib/api'
 
 export function DashboardPage(): JSX.Element {
   const channels = useApp((s) => s.channels)
   const stats = useApp((s) => s.stats)
   const secrets = useApp((s) => s.secrets)
+  const jobs = useApp((s) => s.jobs)
   const live = activeChannels(channels)
+  const now = useNow(30000)
 
-  const usage = useAsync(() => api.invoke('usage:summary', {}), [])
-  const subscription = useAsync(() => api.invoke('eleven:subscription', undefined), [secrets.elevenlabs], { enabled: secrets.elevenlabs })
-  const projects = useAsync(() => api.invoke('projects:list', { limit: 8, sort: 'updatedAt', dir: 'desc' }), [stats.completed], { fallback: [] })
+  const usage = useAsync(() => api.invoke('usage:summary', {}), [stats.completed])
+  const subscription = useAsync(() => api.invoke('eleven:subscription', undefined), [secrets.elevenlabs, stats.completed], { enabled: secrets.elevenlabs })
   const scripts = useAsync(() => api.invoke('scripts:list', { limit: 5000 }), [stats.completed], { fallback: [] })
-  const audio = useAsync(() => api.invoke('audio:list', { limit: 5000, sort: 'createdAt', dir: 'desc' }), [stats.completed], { fallback: [] })
+  const audio = useAsync(() => api.invoke('audio:list', { limit: 200, sort: 'createdAt', dir: 'desc' }), [stats.completed], { fallback: [] })
   const [playing, setPlaying] = useState<string | null>(null)
   const [retrying, setRetrying] = useState(false)
 
-  const projectRows = useMemo(() => (Array.isArray(projects.data) ? projects.data : []), [projects.data])
   const scriptCount = Array.isArray(scripts.data) ? scripts.data.length : 0
   const audioRows = useMemo(() => (Array.isArray(audio.data) ? audio.data : []), [audio.data])
   const channelsWithoutVoice = useMemo(() => live.filter((c) => !c.elevenVoiceId), [live])
   const recentAudio = useMemo(() => audioRows.filter((a) => a.status === 'ready').slice(0, 6), [audioRows])
-  const loadErrors = [usage.error, projects.error, scripts.error, audio.error].filter((e): e is NonNullable<typeof e> => Boolean(e))
+  const needsYou = useMemo<JobView[]>(
+    () =>
+      Object.values(jobs)
+        .filter((j) => j.status === 'awaiting_approval' || j.status === 'research_review_required' || j.status === 'failed')
+        .sort((a, b) => {
+          const rank = (j: JobView): number => (j.status === 'failed' ? 1 : 0)
+          return rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt)
+        })
+        .slice(0, 8),
+    [jobs]
+  )
+  const running = useMemo(() => Object.values(jobs).filter((j) => ['researching', 'writing_script', 'validating_script', 'generating_audio', 'saving_files'].includes(j.status)), [jobs])
+
+  const loadErrors = [usage.error, scripts.error, audio.error].filter((e): e is NonNullable<typeof e> => Boolean(e))
   const checklist: Array<{ label: string; done: boolean; action: () => void }> = [
     { label: 'Add your OpenAI API key', done: secrets.openai, action: () => navigate('settings', { tab: 'openai' }) },
     { label: 'Add your ElevenLabs API key', done: secrets.elevenlabs, action: () => navigate('settings', { tab: 'elevenlabs' }) },
     {
-      label: channelsWithoutVoice.length ? `Pick a voice for ${channelsWithoutVoice.length} channel(s): ${channelsWithoutVoice.map((c) => c.name).join(', ')}` : 'Every channel has a voice',
+      label: channelsWithoutVoice.length ? `Pick a voice for ${channelsWithoutVoice.map((c) => c.name).join(', ')}` : 'Every channel has a voice',
       done: channelsWithoutVoice.length === 0 && live.length > 0,
       action: () => navigate('channels', channelsWithoutVoice[0] ? { edit: channelsWithoutVoice[0].id, tab: 'voice' } : {})
     }
   ]
+  const keysMissing = !secrets.openai || !secrets.elevenlabs
   const setupNeeded = checklist.some((c) => !c.done)
 
   const openOutput = async (): Promise<void> => {
@@ -63,29 +78,31 @@ export function DashboardPage(): JSX.Element {
     }
   }
 
+  const retryOne = async (j: JobView): Promise<void> => {
+    try {
+      useApp.getState().upsertJob(await api.invoke('queue:retryJob', { id: j.id }))
+      toast.success('Job re-queued', j.title)
+    } catch (err) {
+      toast.error('Could not retry job', err)
+    }
+  }
+
   const u = usage.data
   const sub = subscription.data
+  const failedCount = needsYou.filter((j) => j.status === 'failed').length
 
   return (
     <div className="page fade-in">
       <PageHeader
         title="Dashboard"
-        subtitle="Overview of channels, queue and estimated usage"
+        subtitle={running.length > 0 ? `${running.length} job(s) working right now · ${stats.pending} waiting` : 'Everything you need to act on, then what was made recently.'}
         actions={
           <>
             <Button icon={<FolderOpen size={14} />} onClick={openOutput}>
               Open output folder
             </Button>
-            <Button icon={<Plus size={14} />} onClick={() => navigate('channels', { edit: 'new' })}>
-              Add channel
-            </Button>
-            {stats.failed > 0 && (
-              <Button icon={<RotateCcw size={14} />} loading={retrying} onClick={retryFailed}>
-                Resume failed ({stats.failed})
-              </Button>
-            )}
             <Button variant="primary" icon={<Sparkles size={14} />} onClick={() => navigate('generate')}>
-              Generate new voiceovers
+              New generation
             </Button>
           </>
         }
@@ -98,13 +115,26 @@ export function DashboardPage(): JSX.Element {
         </Alert>
       )}
 
+      {stats.spendingPaused && (
+        <Alert tone="danger" title="Queue paused by spending limit" actions={<Button size="sm" onClick={() => navigate('settings', { tab: 'spending' })}>Review limits</Button>}>
+          A local spending safeguard was reached. Raise the limit or wait for the next period, then resume the queue.
+        </Alert>
+      )}
+
       {setupNeeded && (
-        <Alert tone="warning" title="Finish setting up VoiceForge Studio" actions={<Button size="sm" icon={<Wand2 size={13} />} onClick={() => useApp.getState().setWizardForced(true)}>Open setup assistant</Button>}>
-          <div className="checklist mt-2">
+        <Card
+          title={keysMissing ? 'Finish setting up VoiceForge Studio' : 'One more step'}
+          actions={
+            <Button size="sm" variant={keysMissing ? 'primary' : 'secondary'} icon={<Wand2 size={13} />} onClick={() => useApp.getState().setWizardForced(true)}>
+              Open setup assistant
+            </Button>
+          }
+        >
+          <div className="needs-list">
             {checklist.map((c, i) => (
-              <div key={i} className={`checklist-item ${c.done ? 'done' : ''}`}>
-                {c.done ? <span className="text-success">✓</span> : <KeyRound size={13} />}
-                <span className="grow">{c.label}</span>
+              <div key={i} className="needs-row">
+                <span className={`needs-icon ${c.done ? '' : 'warning'}`}>{c.done ? <CircleCheck size={15} className="text-success" /> : <KeyRound size={14} />}</span>
+                <span className={`needs-main ${c.done ? 'muted' : ''}`}>{c.label}</span>
                 {!c.done && (
                   <Button size="sm" onClick={c.action}>
                     Fix
@@ -113,34 +143,111 @@ export function DashboardPage(): JSX.Element {
               </div>
             ))}
           </div>
-        </Alert>
+        </Card>
       )}
 
-      <div className="grid grid-4">
+      <Card
+        title={
+          <span className="row gap-2">
+            Needs you {needsYou.length > 0 && <Badge tone="warning">{needsYou.length}</Badge>}
+          </span>
+        }
+        actions={
+          failedCount > 0 ? (
+            <Button size="sm" variant="ghost" icon={<RotateCcw size={13} />} loading={retrying} onClick={retryFailed}>
+              Retry all failed
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => navigate('queue')}>
+              Open queue
+            </Button>
+          )
+        }
+      >
+        {needsYou.length === 0 ? (
+          <div className="all-clear">
+            <CircleCheck size={16} className="text-success" />
+            {running.length > 0 ? `Nothing waiting on you. ${running.length} job(s) are working in the background.` : 'Nothing waiting on you.'}
+          </div>
+        ) : (
+          <div className="needs-list">
+            {needsYou.map((j) => (
+              <div key={j.id} className="needs-row">
+                <span className={`needs-icon ${j.status === 'failed' ? 'danger' : 'warning'}`}>
+                  {j.status === 'failed' ? <CircleAlert size={15} /> : j.status === 'awaiting_approval' ? <FileText size={14} /> : <Search size={14} />}
+                </span>
+                <div className="needs-main">
+                  <span className="strong truncate">{j.title}</span>
+                  <span className="xs muted truncate">
+                    {j.channelName} · {stageText(j)} · {relativeTime(j.updatedAt, now)}
+                  </span>
+                </div>
+                {j.status === 'failed' ? (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => navigate('queue', { highlight: j.id })}>
+                      Details
+                    </Button>
+                    <Button size="sm" icon={<RotateCcw size={12} />} onClick={() => void retryOne(j)}>
+                      Retry
+                    </Button>
+                  </>
+                ) : (
+                  <Button size="sm" variant="primary" onClick={() => navigate('queue', { highlight: j.id })}>
+                    {j.status === 'awaiting_approval' ? 'Review script' : 'Choose title'}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card title="Recent voiceovers" actions={<Button size="sm" variant="ghost" onClick={() => navigate('audio')}>View all</Button>}>
+        {audio.loading && recentAudio.length === 0 ? (
+          <div style={{ padding: 16 }}>
+            <Skeleton height={60} />
+          </div>
+        ) : recentAudio.length === 0 ? (
+          <EmptyState compact icon={<Mic size={20} />} title="No voiceovers yet" description="Finished MP3 files show up here with a player." actions={<Button size="sm" onClick={() => navigate('generate')}>Start a generation</Button>} />
+        ) : (
+          recentAudio.map((a) => (
+            <div key={a.id} className="audio-row">
+              <div className="row-between">
+                <div className="col" style={{ gap: 2, minWidth: 0 }}>
+                  <span className="strong truncate">{a.title}</span>
+                  <span className="row xs muted" style={{ gap: 6 }}>
+                    <ChannelChip name={a.channelName} color={a.channelColor} />
+                    <span>
+                      {a.voiceName} · {formatDuration(a.durationSec)} · {relativeTime(a.createdAt, now)}
+                    </span>
+                  </span>
+                </div>
+                <div className="row gap-1">
+                  <Button size="sm" variant="ghost" iconOnly icon={<FolderOpen size={13} />} title="Show file" onClick={() => void api.invoke('app:showItemInFolder', { path: a.filePath }).catch((err) => toast.error('Could not show file', err))} />
+                  <Button size="sm" variant={playing === a.id ? 'secondary' : 'ghost'} onClick={() => setPlaying(playing === a.id ? null : a.id)}>
+                    {playing === a.id ? 'Hide' : 'Play'}
+                  </Button>
+                </div>
+              </div>
+              {playing === a.id && <AudioPlayer src={audioUrl(a.id)} compact autoPlay />}
+            </div>
+          ))
+        )}
+      </Card>
+
+      <div className="stat-strip">
         <Stat label="Channels" icon={<Tv size={12} />} value={live.length} sub={`${channels.length - live.length} archived`} onClick={() => navigate('channels')} />
-        <Stat label="Scripts generated" icon={<FileText size={12} />} value={scripts.loading ? <Skeleton width={60} height={28} /> : formatNumber(scriptCount)} onClick={() => navigate('scripts')} />
-        <Stat
-          label="Voiceovers completed"
-          icon={<AudioLines size={12} />}
-          value={audio.loading ? <Skeleton width={60} height={28} /> : formatNumber(audioRows.filter((a) => a.status === 'ready').length)}
-          onClick={() => navigate('audio')}
-        />
+        <Stat label="Scripts" icon={<FileText size={12} />} value={scripts.loading && scriptCount === 0 ? <Skeleton width={60} height={28} /> : formatNumber(scriptCount)} onClick={() => navigate('scripts')} />
+        <Stat label="Voiceovers" icon={<AudioLines size={12} />} value={audio.loading && audioRows.length === 0 ? <Skeleton width={60} height={28} /> : formatNumber(audioRows.filter((a) => a.status === 'ready').length)} onClick={() => navigate('audio')} />
         <Stat
           label="Queue"
           icon={<ListOrdered size={12} />}
-          value={
-            <span className="row gap-3" style={{ fontSize: 'inherit' }}>
-              <span title="Active">{stats.processing}</span>
-              <span className="muted" style={{ fontSize: 14, fontWeight: 400 }}>
-                active
-              </span>
-            </span>
-          }
+          value={stats.processing + stats.pending}
           sub={
             <span className="row gap-3">
-              <span>{stats.pending} pending</span>
-              <span className={stats.failed ? 'text-danger' : ''}>{stats.failed} failed</span>
-              {stats.awaitingUser > 0 && <span className="text-warning">{stats.awaitingUser} need you</span>}
+              <span>{stats.processing} working</span>
+              <span>{stats.pending} waiting</span>
+              {stats.failed > 0 && <span className="text-danger">{stats.failed} failed</span>}
             </span>
           }
           onClick={() => navigate('queue')}
@@ -148,19 +255,41 @@ export function DashboardPage(): JSX.Element {
       </div>
 
       <div className="grid grid-3">
-        <Card title="OpenAI usage" actions={<Badge>estimate</Badge>}>
+        <Card title="ElevenLabs plan">
           <div className="card-body col gap-3">
-            {usage.loading ? (
+            {!secrets.elevenlabs ? (
+              <span className="muted small">Add an ElevenLabs key to see your plan.</span>
+            ) : subscription.loading && !sub ? (
+              <Skeleton height={48} />
+            ) : sub ? (
+              <>
+                <div className="row-between small">
+                  <span className="strong">{sub.tier}</span>
+                  <span className="muted tnum">{formatNumber(Math.max(0, sub.characterLimit - sub.characterCount))} left</span>
+                </div>
+                <ProgressBar value={sub.characterCount} max={sub.characterLimit} tone={sub.characterCount / Math.max(1, sub.characterLimit) > 0.9 ? 'danger' : 'accent'} />
+                <div className="xs muted tnum">
+                  {formatNumber(sub.characterCount)} of {formatNumber(sub.characterLimit)} used ({formatPercent(sub.characterCount / Math.max(1, sub.characterLimit))})
+                  {sub.nextResetUnix ? ` · resets ${relativeTime(new Date(sub.nextResetUnix * 1000).toISOString())}` : ''}
+                </div>
+              </>
+            ) : (
+              <span className="muted small">Plan details unavailable for this key.</span>
+            )}
+          </div>
+        </Card>
+        <Card title="OpenAI spend" actions={<Badge>estimate</Badge>}>
+          <div className="card-body col gap-2">
+            {usage.loading && !u ? (
               <Skeleton height={48} />
             ) : u?.openai ? (
               <>
                 <div className="stat-value" style={{ fontSize: 24 }}>
                   <CostLabel usd={u.openai.estimatedCost} />
                 </div>
-                <div className="xs muted">
+                <div className="xs muted tnum">
                   {formatNumber(u.openai.requests)} requests · {formatCompact(u.openai.inputTokens)} in / {formatCompact(u.openai.outputTokens)} out tokens
                 </div>
-                <div className="xs subtle">All-time, estimated from your pricing table.</div>
               </>
             ) : (
               <span className="muted small">No usage yet.</span>
@@ -168,111 +297,29 @@ export function DashboardPage(): JSX.Element {
           </div>
         </Card>
         <Card title="ElevenLabs usage" actions={<Badge>estimate</Badge>}>
-          <div className="card-body col gap-3">
-            {usage.loading ? (
+          <div className="card-body col gap-2">
+            {usage.loading && !u ? (
               <Skeleton height={48} />
             ) : u?.elevenlabs ? (
               <>
                 <div className="stat-value" style={{ fontSize: 24 }}>
-                  <CostLabel usd={u.elevenlabs.estimatedCost} />
+                  {formatCompact(u.elevenlabs.characters)} <span className="small muted">characters</span>
                 </div>
-                <div className="xs muted">
-                  {formatNumber(u.elevenlabs.requests)} requests · {formatNumber(u.elevenlabs.characters)} characters
+                <div className="xs muted tnum">
+                  {formatNumber(u.elevenlabs.requests)} requests · ≈ <CostLabel usd={u.elevenlabs.estimatedCost} /> at your pricing table
                 </div>
-                <div className="xs subtle">All-time, estimated from your pricing table.</div>
               </>
             ) : (
               <span className="muted small">No usage yet.</span>
             )}
           </div>
         </Card>
-        <Card title="ElevenLabs subscription">
-          <div className="card-body col gap-3">
-            {!secrets.elevenlabs ? (
-              <span className="muted small">Add an ElevenLabs key to see your plan.</span>
-            ) : subscription.loading ? (
-              <Skeleton height={48} />
-            ) : sub ? (
-              <>
-                <div className="row-between small">
-                  <span className="strong">{sub.tier}</span>
-                  <span className="muted">{sub.status}</span>
-                </div>
-                <ProgressBar value={sub.characterCount} max={sub.characterLimit} tone={sub.characterCount / Math.max(1, sub.characterLimit) > 0.9 ? 'danger' : 'accent'} />
-                <div className="xs muted">
-                  {formatNumber(sub.characterCount)} / {formatNumber(sub.characterLimit)} characters used ({formatPercent(sub.characterCount / Math.max(1, sub.characterLimit))})
-                  {sub.nextResetUnix ? ` · resets ${relativeTime(new Date(sub.nextResetUnix * 1000).toISOString())}` : ''}
-                </div>
-              </>
-            ) : (
-              <span className="muted small">Subscription details unavailable.</span>
-            )}
-          </div>
-        </Card>
       </div>
 
-      <div className="grid grid-2">
-        <Card title="Recent projects" actions={<Button size="sm" variant="ghost" onClick={() => navigate('projects')}>View all</Button>}>
-          <div className="card-body-flush">
-            {projects.loading ? (
-              <div style={{ padding: 16 }}>
-                <Skeleton height={60} />
-              </div>
-            ) : projectRows.length === 0 ? (
-              <EmptyState compact icon={<FolderOpen size={20} />} title="No projects yet" description="Every title you generate becomes a project with its script and audio files." />
-            ) : (
-              projectRows.slice(0, 8).map((p) => (
-                <div key={p.id} className="row-between" style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)' }}>
-                  <div className="col" style={{ gap: 2, minWidth: 0 }}>
-                    <span className="strong truncate">{p.title}</span>
-                    <span className="row xs muted">
-                      <ChannelChip name={p.channelName} color={p.channelColor} icon={p.channelIcon} />
-                      <span>
-                        {p.scriptCount} script(s) · {p.audioCount} audio
-                      </span>
-                      <span>· {relativeTime(p.updatedAt)}</span>
-                    </span>
-                  </div>
-                  {p.latestJobStatus && <StatusBadge status={p.latestJobStatus} />}
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-        <Card title="Recent audio" actions={<Button size="sm" variant="ghost" onClick={() => navigate('audio')}>View all</Button>}>
-          <div className="card-body-flush">
-            {audio.loading ? (
-              <div style={{ padding: 16 }}>
-                <Skeleton height={60} />
-              </div>
-            ) : recentAudio.length === 0 ? (
-              <EmptyState compact icon={<Mic size={20} />} title="No voiceovers yet" description="Generated MP3 files will appear here with a quick player." />
-            ) : (
-              recentAudio.map((a) => (
-                <div key={a.id} className="col" style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', gap: 6 }}>
-                  <div className="row-between">
-                    <div className="col" style={{ gap: 2, minWidth: 0 }}>
-                      <span className="strong truncate">{a.title}</span>
-                      <span className="xs muted">
-                        {a.channelName} · {a.voiceName} · {formatDuration(a.durationSec)} · {relativeTime(a.createdAt)}
-                      </span>
-                    </div>
-                    <Button size="sm" variant={playing === a.id ? 'secondary' : 'ghost'} onClick={() => setPlaying(playing === a.id ? null : a.id)}>
-                      {playing === a.id ? 'Hide' : 'Play'}
-                    </Button>
-                  </div>
-                  {playing === a.id && <AudioPlayer src={audioUrl(a.id)} compact autoPlay onOpenFolder={() => void api.invoke('app:showItemInFolder', { path: a.filePath })} />}
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      </div>
-
-      {stats.spendingPaused && (
-        <Alert tone="danger" title="Queue paused by spending limit" actions={<Button size="sm" onClick={() => navigate('settings', { tab: 'spending' })}>Review limits</Button>}>
+      {!setupNeeded && live.length > 0 && stats.total === 0 && (
+        <Alert tone="info" title="Ready when you are" actions={<Button size="sm" variant="primary" onClick={() => navigate('generate')}>Start a generation</Button>}>
           <span className="row">
-            <TriangleAlert size={12} /> A local spending safeguard was reached. Raise the limit or wait for the next period, then resume the queue.
+            Pick a channel, paste a few titles and press Generate — finished files land in your output folder.
           </span>
         </Alert>
       )}

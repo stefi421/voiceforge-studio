@@ -1,4 +1,5 @@
 import type { Channel, ResearchData, ResearchSource, TemplateVersion } from '@shared/types'
+import { targetChars } from '../pipeline/validator'
 
 /**
  * Prompt builders. Everything the model is told about a channel comes from the
@@ -107,7 +108,7 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion):
     channel.introRequirements.trim() ? `Intro requirements: ${channel.introRequirements.trim()}` : '',
     channel.outroRequirements.trim() ? `Outro requirements: ${channel.outroRequirements.trim()}` : '',
     structure,
-    `Length: between ${channel.minChars} and ${channel.maxChars} characters (target about ${channel.targetDurationSec} seconds of narration). Stay under the maximum — this is a hard limit.`,
+    lengthRule(channel),
     forbidden.length ? `Never use these words or phrases: ${forbidden.map((f) => `"${f}"`).join(', ')}.` : '',
     'Hard rules: no URLs, no citation markers, no markdown, no bullet symbols, no headings other than the section labels, no notes to the editor, no title line, nothing after the final sentence. Do not describe personal play sessions, benchmarks or measurements unless they are listed as confirmed facts in the research data.',
     template.exampleScript?.trim()
@@ -118,7 +119,21 @@ export function scriptSystemPrompt(channel: Channel, template: TemplateVersion):
   return parts.filter(Boolean).join('\n\n')
 }
 
-export function scriptUserInput(title: string, research: ResearchData | null, sources: ResearchSource[], opts: { previousScript?: string; issues?: string; feedback?: string }): string {
+function lengthRule(channel: Channel): string {
+  const target = targetChars(channel)
+  const parts: string[] = []
+  if (channel.minChars > 0 && channel.maxChars > 0) {
+    parts.push(`LENGTH (hard limits, counted in characters including spaces): minimum ${channel.minChars}, maximum ${channel.maxChars}. Aim for about ${target} characters — comfortably inside the window, never at the edge. A script over ${channel.maxChars} characters is rejected automatically.`)
+  } else if (channel.maxChars > 0) {
+    parts.push(`LENGTH (hard limit, counted in characters including spaces): at most ${channel.maxChars}. Aim for about ${target} characters. A script over ${channel.maxChars} characters is rejected automatically.`)
+  } else if (channel.minChars > 0) {
+    parts.push(`LENGTH: at least ${channel.minChars} characters (including spaces); aim for about ${target}.`)
+  }
+  if (channel.targetDurationSec > 0) parts.push(`That is roughly ${Math.round(channel.targetDurationSec / 60)} minute(s) of narration.`)
+  return parts.join(' ')
+}
+
+export function scriptUserInput(title: string, research: ResearchData | null, sources: ResearchSource[], opts: { previousScript?: string; issues?: string; feedback?: string; tighten?: { cut: number; target: number; max: number } }): string {
   const parts: string[] = [`Title: ${title}`]
   if (research) {
     const safe = { ...research }
@@ -130,7 +145,13 @@ export function scriptUserInput(title: string, research: ResearchData | null, so
   } else {
     parts.push('No research data is available. Only use well-established, widely known facts and keep claims general; do not invent specifics.')
   }
-  if (opts.previousScript) {
+  if (opts.previousScript && opts.tighten) {
+    parts.push(
+      `The draft below is ${opts.tighten.cut} characters over the hard maximum of ${opts.tighten.max} characters. Shorten it to about ${opts.tighten.target} characters (at most ${opts.tighten.max}). Remove or tighten the wordiest sentences and any repeated idea; do NOT remove sections, section labels, the intro, the outro or any fact. Keep the wording of everything else unchanged.`
+    )
+    parts.push(`<previous_draft>\n${opts.previousScript}\n</previous_draft>`)
+    parts.push('Output the complete shortened script only.')
+  } else if (opts.previousScript) {
     parts.push(`The previous draft failed validation. Rewrite it so that it fixes every issue below while keeping the structure, voice and length rules:\n${opts.issues ?? ''}`)
     if (opts.feedback) parts.push(`Editor feedback: ${opts.feedback}`)
     parts.push(`<previous_draft>\n${opts.previousScript}\n</previous_draft>`)

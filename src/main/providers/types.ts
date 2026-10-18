@@ -50,6 +50,8 @@ export interface ScriptRequest {
   previousScript?: string
   issues?: string
   feedback?: string
+  /** Final "tighten" pass: cut exactly this many characters from the previous script. */
+  tighten?: { cut: number; target: number; max: number }
   signal?: AbortSignal
 }
 

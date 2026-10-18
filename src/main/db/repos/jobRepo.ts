@@ -344,8 +344,41 @@ export class JobRepo {
       cancelled: by.cancelled ?? 0,
       queuePaused,
       spendingPaused,
-      estimatedSecondsRemaining
+      estimatedSecondsRemaining,
+      progressPercent: 0
     }
+  }
+
+  /** Jobs that still have automatic work to do (used for progress + ETA), plus their finished batch siblings. */
+  listForProgress(): Array<Pick<Job, 'id' | 'batchId' | 'status' | 'stage' | 'mode'>> {
+    return this.db
+      .all<{ id: string; batch_id: string; status: string; stage: string; mode: string }>(
+        `SELECT id, batch_id, status, stage, mode FROM jobs WHERE batch_id IN (
+           SELECT DISTINCT batch_id FROM jobs WHERE status NOT IN ('completed', 'failed', 'cancelled'))`
+      )
+      .map((r) => ({ id: r.id, batchId: r.batch_id, status: r.status as JobStatus, stage: r.stage as JobStage, mode: r.mode as JobMode }))
+  }
+
+  /**
+   * Observed seconds spent in each active status, taken from the job history
+   * (time between entering the status and the next status change). Newest 200
+   * samples per status; the caller computes medians.
+   */
+  stageDurationSamples(): Record<string, number[]> {
+    const rows = this.db.all<{ status: string; secs: number }>(
+      `SELECT to_status AS status, (julianday(next_at) - julianday(at)) * 86400 AS secs FROM (
+         SELECT job_id, to_status, at, LEAD(at) OVER (PARTITION BY job_id ORDER BY id) AS next_at
+         FROM job_events WHERE to_status IS NOT NULL
+       ) WHERE next_at IS NOT NULL AND to_status IN ('researching', 'writing_script', 'validating_script', 'generating_audio', 'saving_files')
+       ORDER BY at DESC LIMIT 1000`
+    )
+    const out: Record<string, number[]> = {}
+    for (const r of rows) {
+      if (!(r.secs > 0) || r.secs > 3600) continue
+      const list = (out[r.status] ??= [])
+      if (list.length < 200) list.push(r.secs)
+    }
+    return out
   }
 
   countForProject(projectId: string, statuses?: JobStatus[]): number {

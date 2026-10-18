@@ -358,8 +358,8 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     engine.resolveResearch(jobId, { candidateIndex, manualTitle, manualNotes })
     return view(jobId)
   })
-  reg.handle('queue:approveScript', z.object({ jobId: idSchema }), ({ jobId }) => {
-    engine.approveScript(jobId)
+  reg.handle('queue:approveScript', z.object({ jobId: idSchema, force: z.boolean().optional() }), ({ jobId, force }) => {
+    engine.approveScript(jobId, !!force)
     return view(jobId)
   })
   reg.handle('queue:rejectScript', z.object({ jobId: idSchema, feedback: z.string().max(5000) }), ({ jobId, feedback }) => {
@@ -411,12 +411,16 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     return pipeline.saveManualScript(sc.projectId, sc.text, sc.id)
   })
   reg.handle('scripts:validate', z.object({ scriptId: idSchema }), ({ scriptId }) => pipeline.revalidate(scriptId))
-  reg.handle('scripts:approve', z.object({ scriptId: idSchema }), ({ scriptId }) => {
+  reg.handle('scripts:approve', z.object({ scriptId: idSchema, force: z.boolean().optional() }), ({ scriptId, force }) => {
     const sc = s.scripts.get(scriptId)
     if (!sc) throw new AppError('config', 'Script not found.', { retryable: false })
     const report = pipeline.revalidate(scriptId)
-    if (!report.ok) throw new AppError('validation', 'The script still has validation errors.', { action: 'Fix the listed issues before approving.', retryable: false })
-    return s.scripts.update(scriptId, { status: 'approved' })
+    if (!report.ok && !force) {
+      const errs = report.issues.filter((i) => i.severity === 'error').map((i) => i.message).join('; ')
+      throw new AppError('validation', `The script still has validation errors: ${errs}`, { action: 'Fix the listed issues, or approve anyway to use the script as it is.', retryable: false, code: 'APPROVE_NEEDS_FORCE' })
+    }
+    if (!report.ok) s.logger.log('warn', 'scripts', 'Script force-approved with validation errors', { scriptId, errors: report.issues.filter((i) => i.severity === 'error').map((i) => i.code) })
+    return s.scripts.update(scriptId, { status: 'approved', approvedWithIssues: !report.ok })
   })
   reg.handle('scripts:export', z.object({ scriptId: idSchema, path: pathSchema }), async ({ scriptId, path: p }) => {
     const sc = s.scripts.get(scriptId)

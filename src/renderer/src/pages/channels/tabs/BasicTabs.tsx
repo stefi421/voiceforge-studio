@@ -74,14 +74,52 @@ export function IdentityTab({ form, patch, errors }: TabProps): JSX.Element {
 
 /* ------------------------------------------------------------------------ */
 
+const LENGTH_PRESETS: Array<{ label: string; sub: string; minChars: number; maxChars: number; targetDurationSec: number }> = [
+  { label: '3 min', sub: '2,400–3,000 chars', minChars: 2400, maxChars: 3000, targetDurationSec: 180 },
+  { label: '4–5 min', sub: '3,800–4,700 chars', minChars: 3800, maxChars: 4700, targetDurationSec: 270 },
+  { label: '6–8 min', sub: '5,400–7,200 chars', minChars: 5400, maxChars: 7200, targetDurationSec: 420 },
+  { label: '10 min', sub: '8,000–9,500 chars', minChars: 8000, maxChars: 9500, targetDurationSec: 600 }
+]
+
 export function WritingTab({ form, patch, errors }: TabProps): JSX.Element {
   const rules = form.pronunciationRules
   const setRule = (i: number, r: Partial<PronunciationRule>): void => {
     const next = rules.map((x, j) => (j === i ? { ...x, ...r } : x))
     patch({ pronunciationRules: next })
   }
+  const activePreset = LENGTH_PRESETS.find((p) => p.minChars === form.minChars && p.maxChars === form.maxChars)
+  const charsPerMinute = Math.round((form.validation.wordsPerMinute || 150) * 5.9)
   return (
     <div className="col gap-4">
+      <div className="limits-box">
+        <div>
+          <div className="strong">Script length</div>
+          <div className="small muted">
+            Scripts shorter or longer than this window are rewritten automatically (up to the rewrite limit); you can always approve one anyway. ElevenLabs v4 accepts up to 10,000 characters per request — longer scripts are split at sentence boundaries.
+          </div>
+        </div>
+        <div className="preset-row">
+          {LENGTH_PRESETS.map((p) => (
+            <button key={p.label} type="button" className={`preset ${activePreset?.label === p.label ? 'active' : ''}`} onClick={() => patch({ minChars: p.minChars, maxChars: p.maxChars, targetDurationSec: p.targetDurationSec })}>
+              <span>{p.label}</span>
+              <small>{p.sub}</small>
+            </button>
+          ))}
+        </div>
+        <div className="row gap-3 wrap" style={{ alignItems: 'flex-start' }}>
+          <Field label="Minimum characters" error={errors.minChars} className="grow">
+            <NumberInput integer value={form.minChars} onChange={(v) => patch({ minChars: v ?? 0 })} min={0} max={100000} />
+          </Field>
+          <Field label="Maximum characters" error={errors.maxChars} className="grow">
+            <NumberInput integer value={form.maxChars} onChange={(v) => patch({ maxChars: v ?? 0 })} min={100} max={100000} />
+          </Field>
+          <Field label="Target duration (seconds)" hint={`≈ ${formatDuration(form.targetDurationSec)} · about ${charsPerMinute.toLocaleString()} chars per minute at ${form.validation.wordsPerMinute} wpm`} error={errors.targetDurationSec} className="grow">
+            <NumberInput integer value={form.targetDurationSec} onChange={(v) => patch({ targetDurationSec: v ?? 0 })} min={10} max={3600} />
+          </Field>
+        </div>
+        {form.maxChars < form.minChars && <Alert tone="danger">Maximum must be at least the minimum.</Alert>}
+        {form.maxChars > 10000 && <Alert tone="info">Above 10,000 characters the voiceover is generated in several requests and stitched together.</Alert>}
+      </div>
       <Field label="Writing instructions" hint="The core brief for every script on this channel. Sent to the model together with the active template." error={errors.writingInstructions}>
         <Textarea value={form.writingInstructions} onChange={(e) => patch({ writingInstructions: e.target.value })} rows={6} />
       </Field>
@@ -96,17 +134,6 @@ export function WritingTab({ form, patch, errors }: TabProps): JSX.Element {
         <Field label="Outro requirements" error={errors.outroRequirements}>
           <Textarea value={form.outroRequirements} onChange={(e) => patch({ outroRequirements: e.target.value })} rows={3} placeholder="e.g. Close with a clear verdict." />
         </Field>
-        <Field label="Target duration (seconds)" hint={`≈ ${formatDuration(form.targetDurationSec)} at ${form.validation.wordsPerMinute} wpm`} error={errors.targetDurationSec}>
-          <NumberInput integer value={form.targetDurationSec} onChange={(v) => patch({ targetDurationSec: v ?? 0 })} min={10} max={3600} />
-        </Field>
-        <div className="row gap-3">
-          <Field label="Min characters" error={errors.minChars} className="grow">
-            <NumberInput integer value={form.minChars} onChange={(v) => patch({ minChars: v ?? 0 })} min={0} />
-          </Field>
-          <Field label="Max characters" error={errors.maxChars} className="grow">
-            <NumberInput integer value={form.maxChars} onChange={(v) => patch({ maxChars: v ?? 0 })} min={100} />
-          </Field>
-        </div>
       </div>
       <Field label="Forbidden phrases" hint="Case-insensitive whole-word matches fail validation (e.g. AAA)." error={errors['validation.forbiddenPhrases']}>
         <StringListEditor values={form.validation.forbiddenPhrases} onChange={(v) => patch({ validation: { ...form.validation, forbiddenPhrases: v } })} placeholder="phrase" addLabel="Add phrase" />

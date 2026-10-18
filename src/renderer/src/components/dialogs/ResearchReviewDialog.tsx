@@ -185,7 +185,14 @@ export function ResearchReviewDialog({ job, onClose, readOnly }: ResearchReviewD
                 {r.sources.map((s, i) => (
                   <li key={i}>
                     <span className="selectable">{s.title || s.url}</span>{' '}
-                    <button type="button" className="btn btn-ghost btn-sm btn-icon" title={s.url} onClick={() => void api.invoke('app:openPath', { path: s.url })}>
+                    <button type="button" className="btn btn-ghost btn-sm btn-icon" title={s.url} onClick={() => {
+                      void api
+                        .invoke('app:openPath', { path: s.url })
+                        .then((r) => {
+                          if (!r.ok) return api.invoke('app:copyToClipboard', { text: s.url }).then(() => toast.info('Link copied', 'Paste it into your browser to open the source.'))
+                        })
+                        .catch((err) => toast.error('Could not open link', err))
+                    }}>
                       <ExternalLink size={11} />
                     </button>
                   </li>

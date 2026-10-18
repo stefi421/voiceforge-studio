@@ -82,6 +82,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxRewriteAttempts: 2,
     maxStageRetries: 3,
     validationStrictness: 'standard',
+    lengthToleranceChars: 150,
     duplicateDetection: true,
     largeBatchWarningThreshold: 20,
     confirmExpensiveRegeneration: true

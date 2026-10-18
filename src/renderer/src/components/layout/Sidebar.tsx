@@ -11,6 +11,7 @@ import {
   Mic,
   PanelLeftClose,
   PanelLeftOpen,
+  Search,
   Settings,
   Sparkles,
   Tv,
@@ -20,6 +21,7 @@ import { DASHBOARD_PAGES, type PageId } from '@shared/ipc'
 import { useRouter } from '@/store/router'
 import { useApp } from '@/store/app'
 import { formatDurationHuman } from '@/lib/format'
+import { useOverlays } from './CommandPalette'
 
 export const PAGE_META: Record<PageId, { label: string; icon: LucideIcon; subtitle: string }> = {
   dashboard: { label: 'Dashboard', icon: LayoutDashboard, subtitle: 'Overview of channels, queue and usage' },
@@ -83,6 +85,11 @@ export function Sidebar(): JSX.Element {
           <div className="brand-sub">Studio</div>
         </div>
       </div>
+      <button type="button" className="sidebar-search" onClick={() => useOverlays.getState().setPalette(true)} title="Search and jump (Ctrl+K)">
+        <Search size={14} />
+        <span>Search or jump…</span>
+        <span className="kbd">Ctrl K</span>
+      </button>
       <nav className="sidebar-nav">
         {GROUPS.map((g) => (
           <div key={g.label ?? 'main'} className="nav-group">

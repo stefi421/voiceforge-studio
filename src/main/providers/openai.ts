@@ -239,7 +239,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
   async writeScript(req: ScriptRequest): Promise<ScriptResponse> {
     const params = this.baseParams(req.model, { temperature: req.temperature, reasoningEffort: req.reasoningEffort, maxOutputTokens: req.maxOutputTokens })
     params.instructions = scriptSystemPrompt(req.channel, req.template)
-    params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback })
+    params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
     const res = await this.create(params, req.signal)
     if (res.status === 'incomplete') {
       const reason = res.incomplete_details?.reason ?? 'unknown'

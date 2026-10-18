@@ -269,7 +269,10 @@ export interface Batch {
 export interface Project {
   id: string
   channelId: string
+  /** The title the user entered (or explicitly chose); used for the folder name. */
   title: string
+  /** Official title as identified by research, shown next to the user's title; never renames the folder. */
+  canonicalTitle: string | null
   folderName: string
   folderPath: string | null
   archived: boolean
@@ -299,6 +302,8 @@ export interface QueueStats {
   queuePaused: boolean
   spendingPaused: boolean
   estimatedSecondsRemaining: number | null
+  /** 0–100: finished stages across all unfinished+finished jobs in the current view, so the bar moves inside a job too. */
+  progressPercent: number
 }
 
 // ---------------------------------------------------------------------------
@@ -393,6 +398,8 @@ export interface Script {
   model: string | null
   validation: ValidationReport | null
   filePath: string | null
+  /** True when the user approved the script despite remaining validation errors ("force approve"). */
+  approvedWithIssues: boolean
   createdAt: string
 }
 
@@ -570,6 +577,11 @@ export interface AppSettings {
     maxRewriteAttempts: number
     maxStageRetries: number
     validationStrictness: 'relaxed' | 'standard' | 'strict'
+    /**
+     * Characters a script may exceed the channel maximum by and still pass as a warning
+     * (relaxed/standard only; 'strict' never tolerates overshoot). 0 disables the tolerance.
+     */
+    lengthToleranceChars: number
     duplicateDetection: boolean
     largeBatchWarningThreshold: number
     confirmExpensiveRegeneration: boolean

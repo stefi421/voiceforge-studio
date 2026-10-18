@@ -236,5 +236,13 @@ CREATE TABLE IF NOT EXISTS backups (
   app_version TEXT NOT NULL
 );
 `
+  },
+  {
+    id: 2,
+    name: 'force_approve_and_canonical_title',
+    sql: `
+ALTER TABLE scripts ADD COLUMN approved_with_issues INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN canonical_title TEXT;
+`
   }
 ]

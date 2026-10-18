@@ -266,7 +266,8 @@ function OpenAIStep({ configured, models }: { configured: boolean; models: { def
 
 function ElevenLabsStep({ configured }: { configured: boolean }): JSX.Element {
   const hasKey = useApp((s) => s.secrets.elevenlabs)
-  const voices = useAsyncVoices(hasKey)
+  const vs = useVoicesState(hasKey)
+  const voices = vs.voices
   const mine = voices.filter(isOwnVoice)
   return (
     <>
@@ -279,32 +280,45 @@ function ElevenLabsStep({ configured }: { configured: boolean }): JSX.Element {
       {configured && (
         <div className="wizard-ok">
           <Check size={14} />
-          {voices.length === 0 ? 'Key saved. Loading your voices…' : `Key saved. ${voices.length} voices available, ${mine.length} of them your own${mine.length ? `: ${mine.slice(0, 4).map((v) => v.name).join(', ')}${mine.length > 4 ? '…' : ''}` : ''}.`}
+          {vs.error ? `Key saved, but voices could not be loaded: ${vs.error}` : !vs.loaded ? 'Key saved. Loading your voices…' : voices.length === 0 ? 'Key saved. This account has no voices yet — create or clone one in ElevenLabs, then refresh in the channel Voice tab.' : `Key saved. ${voices.length} voices available, ${mine.length} of them your own${mine.length ? `: ${mine.slice(0, 4).map((v) => v.name).join(', ')}${mine.length > 4 ? '…' : ''}` : ''}.`}
         </div>
       )}
     </>
   )
 }
 
-function useAsyncVoices(enabled: boolean): ElevenVoice[] {
-  const [voices, setVoices] = useState<ElevenVoice[]>([])
+interface VoicesState {
+  voices: ElevenVoice[]
+  loaded: boolean
+  error: string | null
+}
+
+function useVoicesState(enabled: boolean): VoicesState {
+  const [state, setState] = useState<VoicesState>({ voices: [], loaded: false, error: null })
   useEffect(() => {
     if (!enabled) {
-      setVoices([])
+      setState({ voices: [], loaded: false, error: null })
       return
     }
     let cancelled = false
+    setState((s) => ({ ...s, loaded: false, error: null }))
     api
       .invoke('eleven:listVoices', {})
       .then((v) => {
-        if (!cancelled) setVoices(Array.isArray(v) ? v : [])
+        if (!cancelled) setState({ voices: Array.isArray(v) ? v : [], loaded: true, error: null })
       })
-      .catch(() => undefined)
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setState({ voices: [], loaded: true, error: err?.message ?? 'Could not load voices' })
+      })
     return () => {
       cancelled = true
     }
   }, [enabled])
-  return voices
+  return state
+}
+
+function useAsyncVoices(enabled: boolean): ElevenVoice[] {
+  return useVoicesState(enabled).voices
 }
 
 function VoicesStep({ channels, hasKey }: { channels: Channel[]; hasKey: boolean }): JSX.Element {

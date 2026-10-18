@@ -15,7 +15,21 @@ export function ToastStack(): JSX.Element {
             <div className="grow">
               <div className="toast-title">{t.title}</div>
               {t.message && <div className="toast-msg">{t.message}</div>}
-              {t.action && <div className="toast-action">→ {t.action}</div>}
+              {t.action && <div className="toast-action">{t.action}</div>}
+              {t.button && (
+                <div className="toast-buttons">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      t.button?.onClick()
+                      dismiss(t.id)
+                    }}
+                  >
+                    {t.button.label}
+                  </button>
+                </div>
+              )}
             </div>
             <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={() => dismiss(t.id)} aria-label="Dismiss">
               <X size={12} />

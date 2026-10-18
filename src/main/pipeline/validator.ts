@@ -37,6 +37,26 @@ export interface ValidationContext {
   expectedTitle: string
   researchConfirmed: boolean
   strictness: 'relaxed' | 'standard' | 'strict'
+  /**
+   * Characters over `channel.maxChars` that are reported as a warning instead of an
+   * error (relaxed/standard only). The generation loop validates with `strictLength`
+   * so the model is pushed to converge; the tolerance only applies to the final
+   * verdict and to manual approval.
+   */
+  lengthToleranceChars?: number
+  /** When true, any overshoot is an error regardless of the tolerance. */
+  strictLength?: boolean
+}
+
+/** Character count the writer should aim for: comfortably inside the window, never at the edge. */
+export function targetChars(channel: Pick<Channel, 'minChars' | 'maxChars'>): number {
+  const max = channel.maxChars > 0 ? channel.maxChars : 0
+  const min = channel.minChars > 0 ? channel.minChars : 0
+  if (max <= 0) return min > 0 ? Math.round(min * 1.1) : 0
+  const ceiling = Math.floor(max * 0.92)
+  if (min <= 0) return ceiling
+  const mid = Math.round(min + (max - min) * 0.6)
+  return Math.max(min, Math.min(ceiling, mid))
 }
 
 function escapeRegex(s: string): string {
@@ -89,7 +109,16 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
 
   // Length
   if (channel.maxChars > 0 && charCount > channel.maxChars) {
-    issues.push({ code: 'too_long', severity: 'error', message: `Script has ${charCount} characters; the channel maximum is ${channel.maxChars}.` })
+    const over = charCount - channel.maxChars
+    const tolerance = ctx.strictLength || ctx.strictness === 'strict' ? 0 : Math.max(0, ctx.lengthToleranceChars ?? 0)
+    const minor = tolerance > 0 && over <= tolerance
+    issues.push({
+      code: 'too_long',
+      severity: minor ? 'warning' : 'error',
+      message: minor
+        ? `Script has ${charCount} characters, ${over} over the channel maximum of ${channel.maxChars} (within the ${tolerance}-character tolerance).`
+        : `Script has ${charCount} characters; the channel maximum is ${channel.maxChars} (${over} over).`
+    })
   }
   if (channel.minChars > 0 && charCount < channel.minChars) {
     issues.push({
@@ -219,11 +248,35 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
   }
 }
 
-/** Builds the feedback paragraph handed back to the model for a rewrite. */
-export function describeIssuesForRewrite(report: ValidationReport): string {
+/**
+ * Builds the feedback paragraph handed back to the model for a rewrite. Length
+ * problems get an explicit instruction (exact characters to cut/add and the
+ * target) — "too long" alone was not enough for models to converge.
+ */
+export function describeIssuesForRewrite(report: ValidationReport, channel?: Pick<Channel, 'minChars' | 'maxChars'>): string {
   const errs = report.issues.filter((i) => i.severity === 'error')
   if (!errs.length) return ''
-  return errs.map((e, i) => `${i + 1}. ${e.message}`).join('\n')
+  return errs
+    .map((e, i) => {
+      let msg = e.message
+      if (channel && e.code === 'too_long' && channel.maxChars > 0) {
+        const over = report.charCount - channel.maxChars
+        const target = targetChars(channel)
+        msg += ` Cut at least ${over + 1} characters — aim for about ${target} characters in total. Trim wordy sentences and repeated ideas; keep every section, the intro, the outro and all facts.`
+      } else if (channel && e.code === 'too_short' && channel.minChars > 0) {
+        const short = channel.minChars - report.charCount
+        const target = targetChars(channel)
+        msg += ` Add at least ${short + 1} characters of substantive content — aim for about ${target} characters in total — without padding or repetition.`
+      }
+      return `${i + 1}. ${msg}`
+    })
+    .join('\n')
+}
+
+/** True when every error in the report is about length (too long / too short). */
+export function onlyLengthErrors(report: ValidationReport): boolean {
+  const errs = report.issues.filter((i) => i.severity === 'error')
+  return errs.length > 0 && errs.every((i) => i.code === 'too_long' || i.code === 'too_short')
 }
 
 /** Removes section heading lines (used when the channel does not narrate headings). */
