@@ -6,6 +6,10 @@ import { z } from 'zod'
 import type { ElevenModel, ElevenVoice, SecretsStatus, TemplateAnalysis } from '@shared/types'
 import {
   analyzeTemplateSchema,
+  approvalStatusSchema,
+  contentTypeSchema,
+  fixedTextBlockSchema,
+  referenceFormatSchema,
   channelInputSchema,
   channelPatchSchema,
   createBatchSchema,
@@ -25,6 +29,7 @@ import type { Services } from '../services/container'
 import type { QueueEngine } from '../queue/engine'
 import { GenerationService } from '../services/generation'
 import { BackupService } from '../services/backup'
+import { StyleService } from '../services/style'
 import type { UpdateService } from '../services/updater'
 import { ProjectService } from '../services/projects'
 import { atomicWriteFile, ensureDir } from '../services/files'
@@ -251,8 +256,9 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
   })
 
   reg.handle('templates:list', z.object({ channelId: idSchema }), ({ channelId }) => s.channels.listTemplates(channelId))
-  reg.handle('templates:create', z.object({ channelId: idSchema, name: z.string().trim().min(1).max(120), initial: templateVersionInputSchema }), ({ channelId, name, initial }) => {
-    const { template, version } = s.channels.createTemplate(channelId, name, initial)
+  reg.handle('templates:create', z.object({ channelId: idSchema, name: z.string().trim().min(1).max(120), contentType: contentTypeSchema.optional(), initial: templateVersionInputSchema }), ({ channelId, name, contentType, initial }) => {
+    if (!s.channels.get(channelId)) throw new AppError('config', 'Channel not found.', { retryable: false })
+    const { template, version } = s.channels.createTemplate(channelId, name, initial, contentType)
     const channel = s.channels.get(channelId)
     if (channel && !channel.activeTemplateVersionId) s.channels.setActiveVersion(channelId, version.id)
     return s.channels.getTemplate(template.id)!
@@ -268,7 +274,11 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     if (!v) throw new AppError('config', 'Template version not found.', { retryable: false })
     return v
   })
-  reg.handle('templates:addVersion', z.object({ templateId: idSchema, input: templateVersionInputSchema }), ({ templateId, input }) => s.channels.addVersion(templateId, input))
+  reg.handle('templates:addVersion', z.object({ templateId: idSchema, input: templateVersionInputSchema }), ({ templateId, input }) => {
+    if (!s.channels.getTemplate(templateId)) throw new AppError('config', 'Format not found.', { retryable: false, code: 'FORMAT_NOT_FOUND' })
+    // New versions never start approved (Rule 11); a version built from an analysis waits for approval.
+    return s.channels.addVersion(templateId, input.referenceSetVersion != null && !input.approvalStatus ? { ...input, approvalStatus: 'awaiting_approval' } : input)
+  })
   reg.handle('templates:setActive', z.object({ channelId: idSchema, versionId: idSchema }), ({ channelId, versionId }) => s.channels.setActiveVersion(channelId, versionId))
   reg.handle('templates:analyze', analyzeTemplateSchema, async ({ channelId, exampleScript, instructions }): Promise<TemplateAnalysis> => {
     const channel = s.channels.get(channelId)
@@ -302,6 +312,35 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
       caveats
     }
   })
+
+  // ---------------------------------------------------------------------------
+  // Channel Style Preservation Studio
+  // ---------------------------------------------------------------------------
+
+  const style = new StyleService(s)
+  reg.handle('references:list', z.object({ templateId: idSchema }), ({ templateId }) => s.channels.listReferences(templateId))
+  reg.handle(
+    'references:add',
+    z.object({ templateId: idSchema, title: z.string().max(200), text: z.string().max(400_000), sourceFormat: referenceFormatSchema.optional(), sourceFileName: z.string().max(260).nullable().optional() }),
+    (input) => style.addReference(input)
+  )
+  reg.handle('references:importFiles', z.object({ templateId: idSchema, paths: z.array(pathSchema).min(1).max(30) }), ({ templateId, paths }) => style.importFiles(templateId, paths))
+  reg.handle('references:update', z.object({ id: idSchema, title: z.string().max(200).optional(), text: z.string().max(400_000).optional() }), ({ id, ...patch }) => style.updateReference(id, patch))
+  reg.handle('references:delete', z.object({ id: idSchema }), ({ id }) => {
+    style.deleteReference(id)
+    return { ok: true as const }
+  })
+  reg.handle('style:analyze', z.object({ templateId: idSchema, instructions: z.string().max(20000).optional() }), ({ templateId, instructions }) => style.analyze(templateId, instructions ?? ''))
+  reg.handle('style:lastAnalysis', z.object({ templateId: idSchema }), ({ templateId }) => s.channels.lastAnalysis(templateId))
+  reg.handle('templates:setApproval', z.object({ versionId: idSchema, status: approvalStatusSchema }), ({ versionId, status }) => style.setApproval(versionId, status))
+  reg.handle('templates:setDefault', z.object({ channelId: idSchema, templateId: idSchema }), ({ channelId, templateId }) => {
+    const t = s.channels.getTemplate(templateId)
+    if (!t || t.channelId !== channelId) throw new AppError('config', 'Format not found for this channel.', { retryable: false, code: 'FORMAT_NOT_FOUND' })
+    return s.channels.setDefaultTemplate(channelId, templateId)
+  })
+  reg.handle('templates:setFixedBlocks', z.object({ versionId: idSchema, blocks: z.array(fixedTextBlockSchema).max(100) }), ({ versionId, blocks }) => style.setFixedBlocks(versionId, blocks))
+  reg.handle('style:test', z.object({ templateId: idSchema, title: z.string().trim().min(1).max(200), notes: z.string().max(20000).optional() }), ({ templateId, title, notes }) => style.runTest(templateId, title, notes))
+  reg.handle('style:tests', z.object({ templateId: idSchema, limit: z.number().int().min(1).max(100).optional() }), ({ templateId, limit }) => s.channels.listStyleTests(templateId, limit ?? 20))
 
   // ---------------------------------------------------------------------------
   // Generation & queue

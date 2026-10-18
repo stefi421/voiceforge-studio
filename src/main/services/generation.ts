@@ -9,15 +9,23 @@ import { xlsxFirstColumn } from '../pipeline/xlsx'
 import { estimateJobCost } from '../pipeline/cost'
 import { AppError } from '../util/errors'
 import { normalizeTitle } from '../util/common'
+import { StyleService } from './style'
 
 export class GenerationService {
   private projectsSvc: ProjectService
+  private style: StyleService
 
   constructor(
     private s: Services,
     private engine: QueueEngine
   ) {
     this.projectsSvc = new ProjectService(s)
+    this.style = new StyleService(s)
+  }
+
+  /** Template chosen for an entry: the batch's format applies to the batch channel only. */
+  private templateFor(input: CreateBatchInput, channel: Channel): string | null {
+    return channel.id === input.channelId ? input.templateId ?? null : null
   }
 
   parseTitles(text: string): ParsedTitles {
@@ -78,9 +86,9 @@ export class GenerationService {
     const channelsUsed = [...new Set(perEntry.map((c) => c.id))].map((id) => perEntry.find((c) => c.id === id)!)
     for (const ch of channelsUsed) {
       if (input.mode !== 'scripts_only' && !ch.elevenVoiceId) warnings.push(`Channel "${ch.name}" has no ElevenLabs voice selected; audio jobs will fail until one is chosen.`)
-      const tv = ch.activeTemplateVersionId ? this.s.channels.getVersion(ch.activeTemplateVersionId) : undefined
-      if (!tv) warnings.push(`Channel "${ch.name}" has no active template; script jobs will fail.`)
-      else if (tv.placeholder) warnings.push(`Channel "${ch.name}" still uses a placeholder template; paste the approved template first.`)
+      const gate = this.style.gate(ch, input.mode, this.templateFor(input, ch))
+      if (!gate.allowed) warnings.push(gate.error.message)
+      else if (gate.warning) warnings.push(gate.warning)
     }
     const secrets = this.s.secrets.status()
     if (!secrets.openai) warnings.push('No OpenAI API key is configured (Settings → OpenAI).')
@@ -98,6 +106,15 @@ export class GenerationService {
 
   createBatch(input: CreateBatchInput): CreateBatchResult {
     const { base, perEntry } = this.resolveChannels(input)
+    if (input.templateId) {
+      const t = this.s.channels.getTemplate(input.templateId)
+      if (!t || t.channelId !== base.id) throw new AppError('config', 'The selected format does not belong to this channel.', { retryable: false, code: 'FORMAT_NOT_FOUND' })
+    }
+    // Part 6 Stage 2: never fall back to a generic template; refuse before creating anything.
+    for (const ch of [...new Map(perEntry.map((c) => [c.id, c])).values()]) {
+      const gate = this.style.gate(ch, input.mode, this.templateFor(input, ch))
+      if (!gate.allowed) throw gate.error
+    }
     const settings = this.s.settings.get()
     const name = input.name?.trim() || `${base.name} — ${new Date().toLocaleString()}`
     const skipped: string[] = []
@@ -127,7 +144,8 @@ export class GenerationService {
           }
         }
         const notes = input.manualResearchNotes?.[title] ?? input.manualResearchNotes?.[normalizeTitle(title)] ?? null
-        const job = this.s.jobs.create({ batchId: batch.id, projectId: project.id, channelId: channel.id, title, mode: input.mode, position: i, manualResearchNotes: notes })
+        const templateId = this.style.resolve(channel, this.templateFor(input, channel))?.template.id
+        const job = this.s.jobs.create({ batchId: batch.id, projectId: project.id, channelId: channel.id, title, mode: input.mode, position: i, manualResearchNotes: notes, overrides: templateId ? { templateId } : undefined })
         jobIds.push(job.id)
       })
     })

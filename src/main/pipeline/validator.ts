@@ -1,5 +1,6 @@
 import type { Channel, ScriptSection, TemplateVersion, ValidationIssue, ValidationReport } from '@shared/types'
 import { countWords, estimateDurationSec } from '../util/common'
+import { validateFixedBlocks } from './style'
 
 /**
  * Deterministic script validation. No network, no AI — every rule here is
@@ -235,6 +236,9 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
   if (duplicates.length) {
     issues.push({ code: 'section_duplicate', severity: 'warning', message: `Duplicate section heading(s): ${[...new Set(duplicates)].join(', ')}.` })
   }
+
+  // Locked fixed text (approved intro / outro / headings / phrases)
+  issues.push(...validateFixedBlocks(clean, ctx.template))
 
   const ok = issues.every((i) => i.severity !== 'error')
   return {

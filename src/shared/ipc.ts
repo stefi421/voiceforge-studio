@@ -28,6 +28,12 @@ import type {
   TemplateVersion,
   TemplateVersionInput,
   UpdateStatus,
+  ReferenceScript,
+  ReferenceFormat,
+  StyleAnalysis,
+  StyleTestResult,
+  TemplateApprovalStatus,
+  FixedTextBlock,
   UsageSummary,
   ValidationReport
 } from './types'
@@ -91,7 +97,7 @@ export interface IpcContract {
 
   // Templates
   'templates:list': { req: { channelId: string }; res: Template[] }
-  'templates:create': { req: { channelId: string; name: string; initial: TemplateVersionInput }; res: Template }
+  'templates:create': { req: { channelId: string; name: string; contentType?: string; initial: TemplateVersionInput }; res: Template }
   'templates:rename': { req: { templateId: string; name: string }; res: Template }
   'templates:delete': { req: { templateId: string }; res: { ok: true } }
   'templates:versions': { req: { templateId: string }; res: TemplateVersion[] }
@@ -99,6 +105,25 @@ export interface IpcContract {
   'templates:addVersion': { req: { templateId: string; input: TemplateVersionInput }; res: TemplateVersion }
   'templates:setActive': { req: { channelId: string; versionId: string }; res: Channel }
   'templates:analyze': { req: { channelId: string; exampleScript: string; instructions: string }; res: TemplateAnalysis }
+
+  // Channel Style Preservation Studio
+  'references:list': { req: { templateId: string }; res: ReferenceScript[] }
+  'references:add': { req: { templateId: string; title: string; text: string; sourceFormat?: ReferenceFormat; sourceFileName?: string | null }; res: ReferenceScript }
+  /** Main reads TXT/MD/DOCX/PDF itself (paths come from app:selectFiles or drag-and-drop). */
+  'references:importFiles': { req: { templateId: string; paths: string[] }; res: { added: ReferenceScript[]; failed: Array<{ path: string; message: string }> } }
+  'references:update': { req: { id: string; title?: string; text?: string }; res: ReferenceScript }
+  'references:delete': { req: { id: string }; res: { ok: true } }
+  /** Deterministic fixed-text detection + OpenAI style analysis over all references of the template. */
+  'style:analyze': { req: { templateId: string; instructions?: string }; res: StyleAnalysis }
+  'style:lastAnalysis': { req: { templateId: string }; res: StyleAnalysis | null }
+  /** Approve/reject/lock: sets the status of a version (user action only). */
+  'templates:setApproval': { req: { versionId: string; status: TemplateApprovalStatus }; res: TemplateVersion }
+  /** Makes a format the channel's default (used when a batch does not pick one). */
+  'templates:setDefault': { req: { channelId: string; templateId: string }; res: Channel }
+  'templates:setFixedBlocks': { req: { versionId: string; blocks: FixedTextBlock[] }; res: TemplateVersion }
+  /** Generates a test script for one title (Scripts-only, not saved to the libraries) and a compliance report. */
+  'style:test': { req: { templateId: string; title: string; notes?: string }; res: StyleTestResult }
+  'style:tests': { req: { templateId: string; limit?: number }; res: StyleTestResult[] }
 
   // Generation
   'generation:parseTitles': { req: { text: string }; res: ParsedTitles }

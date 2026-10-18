@@ -244,5 +244,74 @@ CREATE TABLE IF NOT EXISTS backups (
 ALTER TABLE scripts ADD COLUMN approved_with_issues INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN canonical_title TEXT;
 `
+  },
+  {
+    id: 3,
+    name: 'style_preservation',
+    sql: `
+ALTER TABLE templates ADD COLUMN content_type TEXT NOT NULL DEFAULT 'review';
+ALTER TABLE templates ADD COLUMN active_version_id TEXT;
+ALTER TABLE templates ADD COLUMN reference_set_version INTEGER NOT NULL DEFAULT 0;
+UPDATE templates SET active_version_id = (
+  SELECT c.active_template_version_id FROM channels c
+  WHERE c.id = templates.channel_id
+    AND c.active_template_version_id IN (SELECT v.id FROM template_versions v WHERE v.template_id = templates.id)
+);
+UPDATE templates SET content_type = 'review_' || substr(id, 1, 8)
+  WHERE id NOT IN (SELECT MIN(t2.id) FROM templates t2 GROUP BY t2.channel_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_content_type ON templates(channel_id, content_type);
+
+ALTER TABLE template_versions ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'provisional';
+ALTER TABLE template_versions ADD COLUMN fixed_blocks_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE template_versions ADD COLUMN findings_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE template_versions ADD COLUMN confirmed_rules TEXT NOT NULL DEFAULT '';
+ALTER TABLE template_versions ADD COLUMN unverified_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE template_versions ADD COLUMN headings_spoken INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE template_versions ADD COLUMN reference_set_version INTEGER;
+ALTER TABLE template_versions ADD COLUMN approved_at TEXT;
+UPDATE template_versions SET approval_status = 'not_configured' WHERE placeholder = 1;
+UPDATE template_versions SET headings_spoken = COALESCE((
+  SELECT CASE WHEN json_extract(c.validation_json, '$.narrateSectionHeadings') = 0 THEN 0 ELSE 1 END
+  FROM channels c WHERE c.id = template_versions.channel_id
+), 1);
+
+ALTER TABLE scripts ADD COLUMN narration_text TEXT;
+ALTER TABLE scripts ADD COLUMN template_id TEXT;
+ALTER TABLE scripts ADD COLUMN content_type TEXT;
+ALTER TABLE scripts ADD COLUMN reference_set_version INTEGER;
+ALTER TABLE scripts ADD COLUMN research_id TEXT;
+
+CREATE TABLE IF NOT EXISTS reference_scripts (
+  id TEXT PRIMARY KEY,
+  channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  template_id TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  text TEXT NOT NULL,
+  source_format TEXT NOT NULL,
+  source_file_name TEXT,
+  char_count INTEGER NOT NULL,
+  word_count INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reference_scripts_template ON reference_scripts(template_id);
+
+CREATE TABLE IF NOT EXISTS style_analyses (
+  template_id TEXT PRIMARY KEY REFERENCES templates(id) ON DELETE CASCADE,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS style_tests (
+  id TEXT PRIMARY KEY,
+  template_id TEXT NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+  template_version_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  script_text TEXT NOT NULL,
+  checks_json TEXT NOT NULL,
+  passed INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_style_tests_template ON style_tests(template_id, created_at);
+`
   }
 ]

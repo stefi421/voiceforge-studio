@@ -5,6 +5,7 @@ import type { BackupInfo, ChannelInput, TemplateVersionInput } from '@shared/typ
 import { channelExportSchema, type ChannelExport } from '@shared/schemas'
 import type { Services } from './container'
 import { atomicWriteFile, ensureDir, sha256File } from './files'
+import { countWords } from '../util/common'
 import { AppError } from '../util/errors'
 
 /**
@@ -88,15 +89,35 @@ export class BackupService {
     void createdAt
     void updatedAt
     void position
-    const templates = this.s.channels.listTemplates(channelId).map((t) => {
-      const versions = this.s.channels.listVersions(t.id).sort((a, b) => a.version - b.version)
-      const active = versions.find((v) => v.id === activeTemplateVersionId)
-      return {
-        name: t.name,
-        versions: versions.map((v) => ({ version: v.version, systemPrompt: v.systemPrompt, structure: v.structure, exampleScript: v.exampleScript, notes: v.notes, placeholder: v.placeholder })),
-        activeVersion: active ? active.version : null
-      }
-    })
+    const defaultTemplate = activeTemplateVersionId ? this.s.channels.getVersion(activeTemplateVersionId)?.templateId : undefined
+    const templates = this.s.channels
+      .listTemplates(channelId)
+      .sort((a, b) => (a.id === defaultTemplate ? -1 : b.id === defaultTemplate ? 1 : 0))
+      .map((t) => {
+        const versions = this.s.channels.listVersions(t.id).sort((a, b) => a.version - b.version)
+        const active = versions.find((v) => v.id === t.activeVersionId)
+        return {
+          name: t.name,
+          contentType: t.contentType,
+          versions: versions.map((v) => ({
+            version: v.version,
+            systemPrompt: v.systemPrompt,
+            structure: v.structure,
+            exampleScript: v.exampleScript,
+            notes: v.notes,
+            placeholder: v.placeholder,
+            approvalStatus: v.approvalStatus,
+            fixedBlocks: v.fixedBlocks,
+            findings: v.findings,
+            confirmedRules: v.confirmedRules,
+            unverified: v.unverified,
+            headingsSpoken: v.headingsSpoken,
+            referenceSetVersion: v.referenceSetVersion
+          })),
+          activeVersion: active ? active.version : null,
+          references: this.s.channels.listReferences(t.id).map((r) => ({ title: r.title, text: r.text, sourceFormat: r.sourceFormat, sourceFileName: r.sourceFileName }))
+        }
+      })
     const input: ChannelInput = { ...rest, activeTemplateVersionId: null }
     return { format: 'voiceforge-channel', version: 1, channel: input, templates }
   }
@@ -116,16 +137,26 @@ export class BackupService {
       let i = 2
       while (this.s.channels.getByName(name)) name = `${data.channel.name} (${i++})`
       const channel = this.s.channels.create({ ...(data.channel as ChannelInput), name, activeTemplateVersionId: null })
-      let activeId: string | null = null
+      let first = true
       for (const t of data.templates) {
         if (!t.versions.length) continue
-        const [first, ...others] = t.versions
-        const created = this.s.channels.createTemplate(channel.id, t.name, first as TemplateVersionInput)
-        const versionIds = new Map<number, string>([[first!.version, created.version.id]])
+        const [firstVersion, ...others] = t.versions
+        const created = this.s.channels.createTemplate(channel.id, t.name, firstVersion as TemplateVersionInput, t.contentType)
+        const versionIds = new Map<number, string>([[firstVersion!.version, created.version.id]])
         for (const v of others) versionIds.set(v.version, this.s.channels.addVersion(created.template.id, v as TemplateVersionInput).id)
-        if (t.activeVersion !== null && versionIds.has(t.activeVersion)) activeId = versionIds.get(t.activeVersion)!
+        // The export carries the user's own earlier approvals; keep them instead of resetting to "awaiting approval".
+        for (const v of t.versions) {
+          const id = versionIds.get(v.version)
+          if (id && v.approvalStatus && v.approvalStatus !== this.s.channels.getVersion(id)?.approvalStatus) this.s.channels.setVersionStatus(id, v.approvalStatus)
+        }
+        for (const r of t.references ?? []) {
+          this.s.channels.addReference({ channelId: channel.id, templateId: created.template.id, title: r.title, text: r.text, sourceFormat: r.sourceFormat, sourceFileName: r.sourceFileName, charCount: r.text.length, wordCount: countWords(r.text) })
+        }
+        const activeId = t.activeVersion !== null && versionIds.has(t.activeVersion) ? versionIds.get(t.activeVersion)! : created.version.id
+        this.s.channels.setActiveVersion(channel.id, activeId)
+        if (first) this.s.channels.setDefaultTemplate(channel.id, created.template.id)
+        first = false
       }
-      if (activeId) this.s.channels.setActiveVersion(channel.id, activeId)
       return channel.id
     })
   }

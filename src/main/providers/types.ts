@@ -7,8 +7,10 @@ import type {
   OpenAIModelInfo,
   ResearchData,
   ResearchSettings,
+  ReferenceScript,
   ResearchSource,
   ScriptSection,
+  StyleFinding,
   TemplateVersion,
   ValidationIssue,
   VoiceSettings
@@ -52,6 +54,8 @@ export interface ScriptRequest {
   feedback?: string
   /** Final "tighten" pass: cut exactly this many characters from the previous script. */
   tighten?: { cut: number; target: number; max: number }
+  /** Approved reference scripts for the format (most recent first, already truncated). */
+  references?: Array<Pick<ReferenceScript, 'title' | 'text'>>
   signal?: AbortSignal
 }
 
@@ -93,6 +97,42 @@ export interface AnalyzeTemplateResponse {
   model: string
 }
 
+export interface AnalyzeStyleRequest {
+  channel: Channel
+  contentType: string
+  references: Array<Pick<ReferenceScript, 'title' | 'text'>>
+  instructions: string
+  model: string
+  signal?: AbortSignal
+}
+
+export interface AnalyzeStyleResponse {
+  findings: StyleFinding[]
+  sections: ScriptSection[]
+  systemPrompt: string
+  unknowns: string[]
+  caveats: string[]
+  usage: TokenUsage
+  model: string
+}
+
+export interface CompareStyleRequest {
+  channel: Channel
+  title: string
+  script: string
+  references: Array<Pick<ReferenceScript, 'title' | 'text'>>
+  research: ResearchData | null
+  model: string
+  signal?: AbortSignal
+}
+
+export interface CompareStyleResponse {
+  styleDeviations: Array<{ severity: 'error' | 'warning'; message: string }>
+  unsupportedClaims: Array<{ severity: 'error' | 'warning'; message: string }>
+  usage: TokenUsage
+  model: string
+}
+
 export interface OpenAIProvider {
   testConnection(signal?: AbortSignal): Promise<ConnectionTestResult>
   listModels(signal?: AbortSignal): Promise<OpenAIModelInfo[]>
@@ -100,6 +140,8 @@ export interface OpenAIProvider {
   writeScript(req: ScriptRequest): Promise<ScriptResponse>
   reviewScript(req: ReviewRequest): Promise<ReviewResponse>
   analyzeTemplate(req: AnalyzeTemplateRequest): Promise<AnalyzeTemplateResponse>
+  analyzeStyle(req: AnalyzeStyleRequest): Promise<AnalyzeStyleResponse>
+  compareStyle(req: CompareStyleRequest): Promise<CompareStyleResponse>
 }
 
 export interface TtsRequest {

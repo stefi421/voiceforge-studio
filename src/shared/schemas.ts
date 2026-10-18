@@ -86,13 +86,43 @@ export const channelPatchSchema = channelInputBase.partial().refine((c) => c.max
   message: 'maxChars must be >= minChars'
 })
 
+export const approvalStatusSchema = z.enum(['not_configured', 'references_imported', 'template_extracted', 'awaiting_approval', 'provisional', 'approved', 'test_passed', 'test_failed'])
+export const provenanceSchema = z.enum(['user_confirmed', 'consistent', 'inferred', 'unknown'])
+
+export const fixedTextBlockSchema = z.object({
+  id: z.string().max(64),
+  kind: z.enum(['intro', 'outro', 'heading', 'transition', 'cta', 'other']),
+  text: z.string().max(4000),
+  locked: z.boolean(),
+  provenance: provenanceSchema,
+  spoken: z.boolean(),
+  occurrences: z.number().int().min(0).max(1000)
+})
+
+export const styleFindingSchema = z.object({
+  aspect: z.string().max(80),
+  finding: z.string().max(4000),
+  provenance: provenanceSchema,
+  evidence: z.string().max(1000).nullable()
+})
+
 export const templateVersionInputSchema = z.object({
   systemPrompt: z.string().max(60000),
   structure: z.array(scriptSectionSchema).max(40),
   exampleScript: z.string().max(60000).nullable(),
   notes: z.string().max(4000),
-  placeholder: z.boolean().optional()
+  placeholder: z.boolean().optional(),
+  approvalStatus: approvalStatusSchema.optional(),
+  fixedBlocks: z.array(fixedTextBlockSchema).max(100).optional(),
+  findings: z.array(styleFindingSchema).max(100).optional(),
+  confirmedRules: z.string().max(20000).optional(),
+  unverified: z.array(z.string().max(1000)).max(100).optional(),
+  headingsSpoken: z.boolean().optional(),
+  referenceSetVersion: z.number().int().min(0).nullable().optional()
 })
+
+export const contentTypeSchema = z.string().trim().min(1).max(60).regex(/^[A-Za-z0-9 _-]+$/)
+export const referenceFormatSchema = z.enum(['paste', 'txt', 'md', 'docx', 'pdf'])
 
 export const jobModeSchema = z.enum(['auto', 'review_before_voice', 'scripts_only'])
 
@@ -107,7 +137,8 @@ export const createBatchSchema = z.object({
   mode: jobModeSchema,
   entries: z.array(titleEntrySchema).min(1).max(500),
   skipExisting: z.boolean(),
-  manualResearchNotes: z.record(z.string(), z.string().max(20000)).optional()
+  manualResearchNotes: z.record(z.string(), z.string().max(20000)).optional(),
+  templateId: idSchema.nullable().optional()
 })
 
 export const jobFilterSchema = z.object({
@@ -262,8 +293,13 @@ export const channelExportSchema = z.object({
   templates: z.array(
     z.object({
       name: z.string().min(1).max(120),
+      contentType: z.string().max(60).optional(),
       versions: z.array(templateVersionInputSchema.extend({ version: z.number().int().min(1) })),
-      activeVersion: z.number().int().min(1).nullable()
+      activeVersion: z.number().int().min(1).nullable(),
+      references: z
+        .array(z.object({ title: z.string().max(200), text: z.string().max(200000), sourceFormat: referenceFormatSchema, sourceFileName: z.string().max(260).nullable() }))
+        .max(30)
+        .optional()
     })
   )
 })

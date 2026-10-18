@@ -1,5 +1,9 @@
 import type { ConnectionTestResult, ElevenModel, ElevenSubscription, ElevenVoice, OpenAIModelInfo, ResearchData } from '../../src/shared/types'
 import type {
+  AnalyzeStyleRequest,
+  AnalyzeStyleResponse,
+  CompareStyleRequest,
+  CompareStyleResponse,
   AnalyzeTemplateRequest,
   AnalyzeTemplateResponse,
   ResearchRequest,
@@ -95,6 +99,27 @@ export class MockOpenAI {
   async analyzeTemplate(req: AnalyzeTemplateRequest): Promise<AnalyzeTemplateResponse> {
     this.calls.push({ kind: 'analyze', req })
     return { sections: [{ key: 'intro', label: 'Intro', required: true, aliases: [], guidance: '' }], systemPrompt: 'Analyzed prompt', observations: ['obs'], caveats: ['one example is not enough'], usage: { inputTokens: 10, outputTokens: 10 }, model: 'gpt-test' }
+  }
+  analyzeStyleImpl: (req: AnalyzeStyleRequest) => AnalyzeStyleResponse | Promise<AnalyzeStyleResponse> = (req) => ({
+    findings: [
+      { aspect: 'opening_wording', finding: 'Opens with the channel greeting.', provenance: req.references.length > 1 ? 'consistent' : 'inferred', evidence: req.references[0]?.text.slice(0, 40) ?? null },
+      { aspect: 'humor', finding: 'Not visible in the references.', provenance: 'unknown', evidence: null }
+    ],
+    sections: [{ key: 'gameplay', label: 'Gameplay', required: true, aliases: [], guidance: 'Core loop.' }],
+    systemPrompt: `Reproduce the ${req.channel.name} format.`,
+    unknowns: ['Whether the closing line is fixed.'],
+    caveats: [],
+    usage: { inputTokens: 3000, outputTokens: 800 },
+    model: 'gpt-test'
+  })
+  compareStyleImpl: (req: CompareStyleRequest) => CompareStyleResponse | Promise<CompareStyleResponse> = () => ({ styleDeviations: [], unsupportedClaims: [], usage: { inputTokens: 2000, outputTokens: 100 }, model: 'gpt-test' })
+  async analyzeStyle(req: AnalyzeStyleRequest): Promise<AnalyzeStyleResponse> {
+    this.calls.push({ kind: 'analyzeStyle', req })
+    return this.analyzeStyleImpl(req)
+  }
+  async compareStyle(req: CompareStyleRequest): Promise<CompareStyleResponse> {
+    this.calls.push({ kind: 'compareStyle', req })
+    return this.compareStyleImpl(req)
   }
   count(kind: string): number {
     return this.calls.filter((c) => c.kind === kind).length

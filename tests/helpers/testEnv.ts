@@ -34,7 +34,7 @@ export interface TestEnv {
   reopen: () => TestEnv
 }
 
-export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?: MockElevenLabs; seed?: boolean } = {}): TestEnv {
+export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?: MockElevenLabs; seed?: boolean; approveSeeded?: boolean } = {}): TestEnv {
   const dir = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'vf-test-'))
   const userData = path.join(dir, 'userData')
   const output = path.join(dir, 'output')
@@ -65,6 +65,16 @@ export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?
     seedDefaults(s)
     // The seeded profiles intentionally ship without a voice; tests assign the mock voice.
     for (const c of repos.channels.list()) repos.channels.update(c.id, { elevenVoiceId: 'voice-1', elevenVoiceName: 'Test Voice' })
+    // Most pipeline tests run in Fully automatic mode, which needs an approved format; the seeded
+    // provisional formats are approved here as a user would. Gating tests reset the status explicitly.
+    if (opts.approveSeeded !== false) {
+      for (const c of repos.channels.list()) {
+        for (const t of repos.channels.listTemplates(c.id)) {
+          const v = repos.channels.activeVersionOf(t.id)
+          if (v && v.approvalStatus === 'provisional') repos.channels.setVersionStatus(v.id, 'approved')
+        }
+      }
+    }
   }
   secrets.set('openai', 'sk-test-openai-key-1234567890')
   secrets.set('elevenlabs', '0123456789abcdef0123456789abcdef')
@@ -87,7 +97,9 @@ export function makeTemplateActive(s: Services, channelId: string, structureLabe
     notes: 'test',
     placeholder: false
   })
+  s.channels.setVersionStatus(version.id, 'approved')
   s.channels.setActiveVersion(channelId, version.id)
+  s.channels.setDefaultTemplate(channelId, version.templateId)
   return version.id
 }
 

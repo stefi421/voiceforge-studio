@@ -213,7 +213,7 @@ function section(key: string, label: string, guidance: string, aliases: string[]
   return { key, label, required, aliases, guidance }
 }
 
-interface SeedChannel {
+export interface LegacySeedChannel {
   channel: ChannelInput
   templateName: string
   template: TemplateVersionInput
@@ -229,7 +229,8 @@ const commonRules = `General rules (apply to every script):
 const PLACEHOLDER_NOTE =
   'PLACEHOLDER TEMPLATE — the approved template has not been supplied yet. Open Channels → this channel → Template Editor, paste the approved script and instructions, and create a new version. Generation is blocked while this placeholder is active.'
 
-export const SEED_CHANNELS: SeedChannel[] = [
+/** The 1.0–1.1 seed. Kept only to recognise untouched seeded channels when upgrading. */
+export const LEGACY_SEED_V1: LegacySeedChannel[] = [
   {
     channel: {
       name: 'PlayTopia',

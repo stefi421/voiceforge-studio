@@ -117,10 +117,127 @@ export interface Template {
   id: string
   channelId: string
   name: string
+  /**
+   * The content type this template produces for its channel ("review", "gameplay",
+   * "unboxing", "short_review", …). A channel can own several templates — one per content
+   * type — and they never overwrite each other. Unique per channel.
+   */
+  contentType: string
   createdAt: string
   updatedAt: string
   latestVersion: number
   activeVersionId: string | null
+  /** Approval status of the active version (denormalised for lists). */
+  approvalStatus: TemplateApprovalStatus
+  referenceCount: number
+}
+
+// ---------------------------------------------------------------------------
+// Channel Style Preservation Studio
+// ---------------------------------------------------------------------------
+
+/**
+ * Lifecycle of a channel format. Only `approved` and `test_passed` are eligible for
+ * unattended ("Fully automatic") production. `provisional` = built from rules the user
+ * stated in writing but not yet checked against approved reference scripts: usable in
+ * Review-before-voice / Scripts-only with a warning. Everything else blocks generation.
+ */
+export type TemplateApprovalStatus =
+  | 'not_configured'
+  | 'references_imported'
+  | 'template_extracted'
+  | 'awaiting_approval'
+  | 'provisional'
+  | 'approved'
+  | 'test_passed'
+  | 'test_failed'
+
+/** Where a rule came from. An inference is never shown or treated as a confirmed rule. */
+export type RuleProvenance = 'user_confirmed' | 'consistent' | 'inferred' | 'unknown'
+
+export type FixedTextKind = 'intro' | 'outro' | 'heading' | 'transition' | 'cta' | 'other'
+
+/** Exactly repeated text detected across references (or entered by the user). */
+export interface FixedTextBlock {
+  id: string
+  kind: FixedTextKind
+  text: string
+  /** Locked blocks must appear verbatim; only the user can lock/unlock. */
+  locked: boolean
+  provenance: RuleProvenance
+  /** False for headings/labels that are kept in Script.txt but not read by ElevenLabs. */
+  spoken: boolean
+  /** How many reference scripts contain it verbatim (0 when typed by the user). */
+  occurrences: number
+}
+
+export interface StyleFinding {
+  /** One of the 20 analysis aspects, e.g. "opening_wording", "sentence_length". */
+  aspect: string
+  finding: string
+  provenance: RuleProvenance
+  /** Short quote from a reference supporting the finding (never a URL). */
+  evidence: string | null
+}
+
+export type ReferenceFormat = 'paste' | 'txt' | 'md' | 'docx' | 'pdf'
+
+export interface ReferenceScript {
+  id: string
+  channelId: string
+  templateId: string
+  title: string
+  text: string
+  sourceFormat: ReferenceFormat
+  sourceFileName: string | null
+  charCount: number
+  wordCount: number
+  createdAt: string
+}
+
+export interface ReferenceStats {
+  count: number
+  minChars: number
+  maxChars: number
+  avgChars: number
+  avgWords: number
+  avgDurationSec: number
+}
+
+export interface StyleAnalysis {
+  templateId: string
+  /** Increments whenever the reference set changes; recorded on scripts. */
+  referenceSetVersion: number
+  stats: ReferenceStats
+  findings: StyleFinding[]
+  fixedBlocks: FixedTextBlock[]
+  suggestedStructure: ScriptSection[]
+  suggestedSystemPrompt: string
+  /** Things the analysis could not determine (shown as UNVERIFIED). */
+  unknowns: string[]
+  caveats: string[]
+  analyzedAt: string
+}
+
+export type ComplianceVerdict = 'pass' | 'fail' | 'warning' | 'not_applicable'
+
+export interface ComplianceCheck {
+  key: 'sections' | 'order' | 'intro' | 'outro' | 'fixed_text' | 'length' | 'prohibited' | 'style' | 'claims'
+  label: string
+  verdict: ComplianceVerdict
+  details: string[]
+}
+
+/** Result of a style test (Part 7/8 of the channel spec). No similarity percentages. */
+export interface StyleTestResult {
+  id: string
+  templateId: string
+  templateVersionId: string
+  title: string
+  scriptText: string
+  checks: ComplianceCheck[]
+  passed: boolean
+  createdAt: string
 }
 
 export interface TemplateVersion {
@@ -138,6 +255,20 @@ export interface TemplateVersion {
   notes: string
   /** When true, the template is considered a placeholder awaiting the approved text. */
   placeholder: boolean
+  approvalStatus: TemplateApprovalStatus
+  /** Verbatim intro/outro/headings; locked ones are enforced by the validator. */
+  fixedBlocks: FixedTextBlock[]
+  /** Analysis findings saved with this version (provenance kept). */
+  findings: StyleFinding[]
+  /** Rules the user stated in writing for this format (one per line). */
+  confirmedRules: string
+  /** Items still to verify against references (shown as UNVERIFIED). */
+  unverified: string[]
+  /** Whether section headings are read aloud. False = kept in Script.txt, stripped for ElevenLabs. */
+  headingsSpoken: boolean
+  /** Reference set this version was built from (null = written by hand / from the spec). */
+  referenceSetVersion: number | null
+  approvedAt: string | null
   createdAt: string
 }
 
@@ -147,6 +278,13 @@ export interface TemplateVersionInput {
   exampleScript: string | null
   notes: string
   placeholder?: boolean
+  approvalStatus?: TemplateApprovalStatus
+  fixedBlocks?: FixedTextBlock[]
+  findings?: StyleFinding[]
+  confirmedRules?: string
+  unverified?: string[]
+  headingsSpoken?: boolean
+  referenceSetVersion?: number | null
 }
 
 export interface TemplateAnalysis {
@@ -244,6 +382,8 @@ export interface JobOverrides {
   scriptFeedback?: string
   /** Use this exact script version instead of generating one (audio regeneration). */
   useScriptId?: string
+  /** Template (content type / format) chosen for this job; defaults to the channel's default format. */
+  templateId?: string
 }
 
 export interface JobView extends Job {
@@ -400,6 +540,12 @@ export interface Script {
   filePath: string | null
   /** True when the user approved the script despite remaining validation errors ("force approve"). */
   approvedWithIssues: boolean
+  /** Clean narration sent to ElevenLabs (non-spoken headings/metadata removed). */
+  narrationText: string
+  templateId: string | null
+  contentType: string | null
+  referenceSetVersion: number | null
+  researchId: string | null
   createdAt: string
 }
 
@@ -701,6 +847,8 @@ export interface CreateBatchInput {
   /** When true, titles that already have a completed project in the channel are skipped. */
   skipExisting: boolean
   manualResearchNotes?: Record<string, string>
+  /** Template (content type) to use; defaults to the channel's active template. */
+  templateId?: string | null
 }
 
 export interface CreateBatchResult {

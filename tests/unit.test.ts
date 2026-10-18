@@ -66,6 +66,14 @@ const template: TemplateVersion = {
   exampleScript: null,
   notes: '',
   placeholder: false,
+  approvalStatus: 'approved',
+  fixedBlocks: [],
+  findings: [],
+  confirmedRules: '',
+  unverified: [],
+  headingsSpoken: false,
+  referenceSetVersion: null,
+  approvedAt: null,
   createdAt: ''
 }
 

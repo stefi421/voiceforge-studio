@@ -69,9 +69,10 @@ async function runBatch(titles: string[], channelId: string, mode: 'auto' | 'rev
 const settle = (ids: string[], statuses: string[], timeout = 15000) => waitFor(() => ids.every((id) => statuses.includes(env.s.jobs.get(id)!.status)), timeout)
 
 describe('channels and templates', () => {
-  it('seeds the five initial profiles with independent templates', () => {
+  it('seeds every channel from the channel configuration with independent templates', () => {
     const names = env.s.channels.list().map((c) => c.name)
-    expect(names).toEqual(['PlayTopia', 'Game Vault', 'VoidPulse', 'RiftForge Tech', 'RENVO'])
+    expect(names.slice(0, 5)).toEqual(['PlayTopia', 'Game Vault', 'VoidPulse', 'Nexora', 'RazorFrame'])
+    expect(names).toHaveLength(18)
     const gv = env.s.channels.getByName('Game Vault')!
     expect(env.s.channels.getVersion(gv.activeTemplateVersionId!)!.placeholder).toBe(false)
     const pt = env.s.channels.getByName('PlayTopia')!
@@ -179,13 +180,10 @@ describe('batch creation and generation pipeline', () => {
     expect(env.openai.count('review')).toBe(1)
   })
 
-  it('blocks generation while a channel uses a placeholder template', async () => {
+  it('blocks generation while a channel format is not configured (no generic fallback)', async () => {
     const pt = env.s.channels.getByName('PlayTopia')!
-    const { jobIds } = await runBatch(['Some Game'], pt.id)
-    await settle(jobIds, ['failed'])
-    const job = env.s.jobs.get(jobIds[0]!)!
-    expect(job.lastError?.kind).toBe('config')
-    expect(job.lastError?.message).toMatch(/placeholder/)
+    await expect(runBatch(['Some Game'], pt.id)).rejects.toMatchObject({ code: 'FORMAT_NOT_CONFIGURED' })
+    expect(env.s.jobs.list({}).length).toBe(0)
     expect(env.openai.count('script')).toBe(0)
   })
 
@@ -427,7 +425,11 @@ describe('batch creation and generation pipeline', () => {
     expect(env.eleven.calls.length).toBeGreaterThan(3)
     expect(env.eleven.calls[1]!.previousText).toBeTruthy()
     const joined = env.eleven.calls.map((c) => c.text).join(' ').replace(/\s+/g, ' ')
-    expect(joined).toBe(env.s.scripts.get(job.scriptId!)!.text.replace(/\s+/g, ' '))
+    const script = env.s.scripts.get(job.scriptId!)!
+    // ElevenLabs gets the clean narration: section headings stay in Script.txt but are not spoken.
+    expect(joined).toBe(script.narrationText.replace(/\s+/g, ' '))
+    expect(script.narrationText).not.toMatch(/^Gameplay$/m)
+    expect(script.text).toMatch(/^Gameplay$/m)
     const audio = env.s.audio.get(job.audioId!)!
     expect(audio.chunkCount).toBe(env.eleven.calls.length)
     expect(parseMp3(fs.readFileSync(audio.filePath)).valid).toBe(true)
@@ -653,7 +655,7 @@ describe('crash recovery and persistence', () => {
     const reopened = env.reopen()
     boot(reopened)
     expect(env.s.settings.get().general.theme).toBe('light')
-    expect(env.s.channels.list()).toHaveLength(5)
+    expect(env.s.channels.list()).toHaveLength(18)
     expect(env.s.jobs.get(jobIds[0]!)!.status).toBe('completed')
     expect(env.s.jobs.listEvents({ jobId: jobIds[0]! }).length).toBeGreaterThan(3)
     expect(env.s.secrets.get('openai')).toBe('sk-test-openai-key-1234567890')
@@ -691,8 +693,8 @@ describe('backup and restore', () => {
     expect(json).not.toContain('sk-test')
     const before = env.s.channels.list().length
     const result = backup.importData(json)
-    expect(result.channels).toBe(5)
-    expect(env.s.channels.list().length).toBe(before + 5)
+    expect(result.channels).toBe(18)
+    expect(env.s.channels.list().length).toBe(before + 18)
   })
 })
 

@@ -283,6 +283,11 @@ interface ScriptRow {
   validation_json: string | null
   file_path: string | null
   approved_with_issues?: number
+  narration_text?: string | null
+  template_id?: string | null
+  content_type?: string | null
+  reference_set_version?: number | null
+  research_id?: string | null
   created_at: string
   title?: string
   channel_id?: string
@@ -308,9 +313,21 @@ function rowToScript(r: ScriptRow): Script {
     validation: parseJson<ValidationReport | null>(r.validation_json, null),
     filePath: r.file_path,
     approvedWithIssues: toBool(r.approved_with_issues ?? 0),
+    narrationText: r.narration_text ?? r.text,
+    templateId: r.template_id ?? null,
+    contentType: r.content_type ?? null,
+    referenceSetVersion: r.reference_set_version ?? null,
+    researchId: r.research_id ?? null,
     createdAt: r.created_at
   }
 }
+
+type ScriptProvenanceFields = 'narrationText' | 'templateId' | 'contentType' | 'referenceSetVersion' | 'researchId'
+export type ScriptCreateInput = Omit<Script, 'id' | 'version' | 'createdAt' | 'charCount' | 'wordCount' | 'approvedWithIssues' | ScriptProvenanceFields> & {
+  charCount: number
+  wordCount: number
+  approvedWithIssues?: boolean
+} & Partial<Pick<Script, ScriptProvenanceFields>>
 
 function rowToScriptView(r: ScriptRow): ScriptView {
   return { ...rowToScript(r), title: r.title ?? '', channelId: r.channel_id ?? '', channelName: r.channel_name ?? '', channelColor: r.channel_color ?? '#7C5CFF' }
@@ -333,16 +350,14 @@ const SCRIPT_SORTS: Record<string, string> = {
 export class ScriptRepo {
   constructor(private db: Database) {}
 
-  create(
-    input: Omit<Script, 'id' | 'version' | 'createdAt' | 'charCount' | 'wordCount' | 'approvedWithIssues'> & { charCount: number; wordCount: number; approvedWithIssues?: boolean },
-    id = newId()
-  ): Script {
+  create(input: ScriptCreateInput, id = newId()): Script {
     return this.db.transaction(() => {
       const next = (this.db.get<{ m: number | null }>('SELECT MAX(version) AS m FROM scripts WHERE project_id = ?', input.projectId)?.m ?? 0) + 1
       this.db.run(
         `INSERT INTO scripts (id, project_id, job_id, version, template_version_id, template_version_number, text, char_count, word_count,
-          estimated_duration_sec, status, source, model, validation_json, file_path, approved_with_issues, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          estimated_duration_sec, status, source, model, validation_json, file_path, approved_with_issues,
+          narration_text, template_id, content_type, reference_set_version, research_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
         input.projectId,
         input.jobId,
@@ -359,6 +374,11 @@ export class ScriptRepo {
         input.validation ? JSON.stringify(input.validation) : null,
         input.filePath,
         input.approvedWithIssues ? 1 : 0,
+        input.narrationText ?? null,
+        input.templateId ?? null,
+        input.contentType ?? null,
+        input.referenceSetVersion ?? null,
+        input.researchId ?? null,
         nowIso()
       )
       this.db.run('UPDATE projects SET updated_at = ? WHERE id = ?', nowIso(), input.projectId)
@@ -416,17 +436,18 @@ export class ScriptRepo {
     return this.db.get<{ c: number }>('SELECT COUNT(*) AS c FROM scripts')?.c ?? 0
   }
 
-  update(id: string, patch: Partial<{ status: ScriptStatus; validation: ValidationReport | null; filePath: string | null; text: string; approvedWithIssues: boolean }>): Script {
+  update(id: string, patch: Partial<{ status: ScriptStatus; validation: ValidationReport | null; filePath: string | null; text: string; approvedWithIssues: boolean; narrationText: string }>): Script {
     const cur = this.get(id)
     if (!cur) throw new Error(`Script not found: ${id}`)
     const m = { ...cur, ...patch }
     this.db.run(
-      'UPDATE scripts SET status = ?, validation_json = ?, file_path = ?, text = ?, approved_with_issues = ? WHERE id = ?',
+      'UPDATE scripts SET status = ?, validation_json = ?, file_path = ?, text = ?, approved_with_issues = ?, narration_text = ? WHERE id = ?',
       m.status,
       m.validation ? JSON.stringify(m.validation) : null,
       m.filePath,
       m.text,
       m.approvedWithIssues ? 1 : 0,
+      patch.narrationText ?? (patch.text !== undefined ? null : cur.narrationText === cur.text ? null : cur.narrationText),
       id
     )
     return this.get(id)!

@@ -1,13 +1,17 @@
 import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai'
 import type { ResponseCreateParamsNonStreaming, Response as OpenAIResponse, Tool } from 'openai/resources/responses/responses'
-import type { ConnectionTestResult, OpenAIModelInfo, ResearchData, ResearchSource, ScriptSection, ValidationIssue } from '@shared/types'
+import type { ConnectionTestResult, OpenAIModelInfo, ResearchData, ResearchSource, ScriptSection, StyleFinding, ValidationIssue } from '@shared/types'
 import { AppError, parseRetryAfter, toAppError } from '../util/errors'
 import type { ScopedLogger } from '../services/logger'
 import {
   ANALYZE_JSON_SCHEMA,
   REVIEW_JSON_SCHEMA,
   RESEARCH_JSON_SCHEMA,
+  STYLE_ANALYSIS_JSON_SCHEMA,
+  STYLE_COMPARE_JSON_SCHEMA,
   analyzeInstructions,
+  styleAnalysisInstructions,
+  styleCompareInstructions,
   researchInstructions,
   researchUserInput,
   reviewInstructions,
@@ -15,6 +19,10 @@ import {
   scriptUserInput
 } from './prompts'
 import type {
+  AnalyzeStyleRequest,
+  AnalyzeStyleResponse,
+  CompareStyleRequest,
+  CompareStyleResponse,
   AnalyzeTemplateRequest,
   AnalyzeTemplateResponse,
   OpenAIProvider,
@@ -238,7 +246,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
 
   async writeScript(req: ScriptRequest): Promise<ScriptResponse> {
     const params = this.baseParams(req.model, { temperature: req.temperature, reasoningEffort: req.reasoningEffort, maxOutputTokens: req.maxOutputTokens })
-    params.instructions = scriptSystemPrompt(req.channel, req.template)
+    params.instructions = scriptSystemPrompt(req.channel, req.template, req.references ?? [])
     params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
     const res = await this.create(params, req.signal)
     if (res.status === 'incomplete') {
@@ -294,6 +302,57 @@ export class OpenAIClientProvider implements OpenAIProvider {
     }))
     return { sections, systemPrompt: parsed.systemPrompt ?? '', observations: parsed.observations ?? [], caveats: parsed.caveats ?? [], usage: usageOf(res), model: res.model ?? req.model }
   }
+
+  async analyzeStyle(req: AnalyzeStyleRequest): Promise<AnalyzeStyleResponse> {
+    const params = this.baseParams(req.model, { reasoningEffort: 'medium', maxOutputTokens: 12000 })
+    params.instructions = styleAnalysisInstructions()
+    params.input = [
+      `Channel: ${req.channel.name} (${req.channel.category}). Content type: ${req.contentType}. Number of approved reference scripts: ${req.references.length}.`,
+      req.instructions.trim() ? `<owner_instructions>\n${req.instructions.trim()}\n</owner_instructions>` : '',
+      ...req.references.map((r, i) => `<reference_script index="${i + 1}" title="${r.title.replace(/"/g, "'")}">\n${r.text.trim()}\n</reference_script>`)
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+    params.text = { format: { type: 'json_schema', name: 'style_analysis', schema: STYLE_ANALYSIS_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
+    const res = await this.create(params, req.signal)
+    const parsed = parseJsonOutput<{
+      findings: Array<{ aspect: string; finding: string; provenance: string; evidence: string }>
+      sections: Array<{ label: string; guidance: string; required: boolean; aliases: string[] }>
+      systemPrompt: string
+      unknowns: string[]
+      caveats: string[]
+    }>(res, 'style analysis')
+    const single = req.references.length < 2
+    const findings: StyleFinding[] = (parsed.findings ?? []).slice(0, 60).map((f) => ({
+      aspect: f.aspect,
+      finding: f.finding.trim(),
+      // With one reference nothing can be "consistent across references".
+      provenance: f.provenance === 'unknown' ? 'unknown' : f.provenance === 'consistent' && !single ? 'consistent' : 'inferred',
+      evidence: f.evidence?.trim() ? f.evidence.trim().slice(0, 200) : null
+    }))
+    const sections: ScriptSection[] = (parsed.sections ?? []).slice(0, 30).map((s, i) => ({ key: sectionKey(s.label, i), label: s.label.trim(), required: !!s.required, aliases: (s.aliases ?? []).filter(Boolean).slice(0, 5), guidance: s.guidance?.trim() ?? '' }))
+    return { findings, sections, systemPrompt: parsed.systemPrompt ?? '', unknowns: parsed.unknowns ?? [], caveats: parsed.caveats ?? [], usage: usageOf(res), model: res.model ?? req.model }
+  }
+
+  async compareStyle(req: CompareStyleRequest): Promise<CompareStyleResponse> {
+    const params = this.baseParams(req.model, { reasoningEffort: 'low', maxOutputTokens: 4000 })
+    params.instructions = styleCompareInstructions()
+    params.input = [
+      `Channel: ${req.channel.name}. Title: ${req.title}`,
+      ...req.references.map((r, i) => `<reference_script index="${i + 1}">\n${r.text.trim()}\n</reference_script>`),
+      req.research ? `<research_data>\n${JSON.stringify(req.research, null, 2)}\n</research_data>` : 'No research data was available.',
+      `<script>\n${req.script}\n</script>`
+    ].join('\n\n')
+    params.text = { format: { type: 'json_schema', name: 'style_compare', schema: STYLE_COMPARE_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
+    const res = await this.create(params, req.signal)
+    const parsed = parseJsonOutput<{ styleDeviations: Array<{ severity: string; message: string }>; unsupportedClaims: Array<{ severity: string; message: string }> }>(res, 'style comparison')
+    const norm = (xs: Array<{ severity: string; message: string }> | undefined) => (xs ?? []).slice(0, 25).map((x) => ({ severity: (x.severity === 'error' ? 'error' : 'warning') as 'error' | 'warning', message: x.message.trim() }))
+    return { styleDeviations: norm(parsed.styleDeviations), unsupportedClaims: norm(parsed.unsupportedClaims), usage: usageOf(res), model: res.model ?? req.model }
+  }
+}
+
+export function sectionKey(label: string, i: number): string {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || `section_${i + 1}`
 }
 
 /** Removes wrapper artefacts models sometimes add (code fences, "Script:" labels, trailing notes). */

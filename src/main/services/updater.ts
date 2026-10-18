@@ -49,6 +49,13 @@ export class UpdateService {
   private checkPromise: Promise<UpdateStatus> | null = null
   private downloadPromise: Promise<UpdateStatus> | null = null
   private readonly portable = isPortableBuild()
+  private startupTimer: ReturnType<typeof setTimeout> | null = null
+
+  /** Stops the pending startup check (called when the app quits). */
+  dispose(): void {
+    if (this.startupTimer) clearTimeout(this.startupTimer)
+    this.startupTimer = null
+  }
   private readonly supported: boolean
 
   constructor(
@@ -242,7 +249,8 @@ export class UpdateService {
   /** Called once after startup when the user has "check on startup" enabled. Never downloads. */
   scheduleStartupCheck(delayMs = 20_000): void {
     if (!this.supported) return
-    setTimeout(() => {
+    this.startupTimer = setTimeout(() => {
+      this.startupTimer = null
       try {
         if (!this.s.settings.get().updates.checkOnStartup) return
         this.check()

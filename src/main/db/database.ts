@@ -12,8 +12,17 @@ import { MIGRATIONS } from './schema'
  */
 export type Row = Record<string, SQLInputValue | undefined>
 
+/** Thrown when something touches the database after `close()` (only during shutdown). */
+export class DatabaseClosedError extends Error {
+  constructor() {
+    super('The database is closed because the application is shutting down.')
+    this.name = 'DatabaseClosedError'
+  }
+}
+
 export class Database {
   readonly db: DatabaseSync
+  private closed = false
   readonly path: string
   private stmtCache = new Map<string, StatementSync>()
 
@@ -42,7 +51,12 @@ export class Database {
     }
   }
 
+  get isOpen(): boolean {
+    return !this.closed
+  }
+
   prepare(sql: string): StatementSync {
+    if (this.closed) throw new DatabaseClosedError()
     let s = this.stmtCache.get(sql)
     if (!s) {
       s = this.db.prepare(sql)
@@ -64,6 +78,7 @@ export class Database {
   }
 
   exec(sql: string): void {
+    if (this.closed) throw new DatabaseClosedError()
     this.db.exec(sql)
   }
 
@@ -120,11 +135,15 @@ export class Database {
   }
 
   close(): void {
+    if (this.closed) return
     try {
       this.checkpoint()
       this.db.close()
     } catch {
       /* ignore */
+    } finally {
+      this.closed = true
+      this.stmtCache.clear()
     }
   }
 }

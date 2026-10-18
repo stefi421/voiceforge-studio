@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Notification, protocol, safeStorage, session, shell } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import { Database } from './db/database'
+import { Database, DatabaseClosedError } from './db/database'
 import { buildRepos, EventBus, type Services } from './services/container'
 import { logger } from './services/logger'
 import { electronEncryptor, SecretStore } from './services/secrets'
@@ -240,6 +240,7 @@ function installMediaProtocol(s: Services): void {
 
 function scheduleBackups(s: Services, backup: BackupService): void {
   const run = async (): Promise<void> => {
+    if (quitting || !s.db.isOpen) return
     const hours = s.settings.get().storage.autoBackupEveryHours
     if (hours <= 0) return
     const last = s.backups.list()[0]
@@ -253,8 +254,16 @@ function scheduleBackups(s: Services, backup: BackupService): void {
       }
     }
   }
-  setTimeout(() => void run(), 30_000)
-  setInterval(() => void run(), 30 * 60_000)
+  timers.push(setTimeout(() => void run(), 30_000))
+  timers.push(setInterval(() => void run(), 30 * 60_000))
+}
+
+/** Background timers that must not fire after the database is closed. */
+const timers: Array<ReturnType<typeof setTimeout>> = []
+let disposeUpdates: () => void = () => undefined
+function clearTimers(): void {
+  for (const t of timers.splice(0)) clearTimeout(t)
+  disposeUpdates()
 }
 
 function desktopNotifications(s: Services): void {
@@ -297,6 +306,7 @@ app.whenReady().then(() => {
     },
     prepareShutdown: async () => {
       quitting = true
+      clearTimers()
       await engine?.stop()
       services?.db.close()
       logger.log('info', 'app', 'Shutting down to install an update')
@@ -307,8 +317,9 @@ app.whenReady().then(() => {
   engine.start()
   scheduleBackups(s, backup)
   updates.scheduleStartupCheck()
+  disposeUpdates = () => updates.dispose()
   if (s.settings.get().storage.cleanupTempFiles) {
-    setTimeout(() => void cleanupTempFiles(s.paths.outputRoot()).then((n) => n && logger.log('info', 'cleanup', 'Removed stale temp files', { count: n })), 15_000)
+    timers.push(setTimeout(() => void cleanupTempFiles(s.paths.outputRoot()).then((n) => n && logger.log('info', 'cleanup', 'Removed stale temp files', { count: n })), 15_000))
   }
   app.setLoginItemSettings({ openAtLogin: s.settings.get().general.launchAtStartup })
   s.settings.onChange((next) => app.setLoginItemSettings({ openAtLogin: next.general.launchAtStartup }))
@@ -325,6 +336,7 @@ app.on('before-quit', (e) => {
   quitting = true
   void (async () => {
     try {
+      clearTimers()
       await engine?.stop()
       services?.db.close()
       logger.log('info', 'app', restartRequested ? 'Restarting' : 'Shutdown complete')
@@ -342,5 +354,10 @@ process.on('uncaughtException', (err) => {
   logger.log('error', 'process', 'Uncaught exception', { error: err.message, stack: err.stack })
 })
 process.on('unhandledRejection', (reason) => {
+  // Late work (an in-flight request finishing) can touch the closed database while quitting; that is expected.
+  if (quitting && reason instanceof DatabaseClosedError) {
+    logger.log('debug', 'process', 'Ignored database access during shutdown', { error: reason.message })
+    return
+  }
   logger.log('error', 'process', 'Unhandled rejection', { error: reason instanceof Error ? reason.message : String(reason) })
 })

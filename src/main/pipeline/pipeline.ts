@@ -14,6 +14,8 @@ import { chunksCoverText, splitIntoChunks } from './chunker'
 import { concatMp3, isMp3Format, parseMp3, pcmDuration } from './mp3'
 import { applyPronunciation, describeIssuesForRewrite, onlyLengthErrors, stripSectionHeadings, targetChars, validateScript } from './validator'
 import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenlabs'
+import { StyleService } from '../services/style'
+import { buildNarrationText } from './style'
 
 const RESEARCH_CACHE_MS = 7 * 24 * 60 * 60 * 1000
 const LEASE_MS = 120_000
@@ -33,6 +35,7 @@ export type StageOutcome = 'continue' | 'wait' | 'done'
  */
 export class Pipeline {
   private projectsSvc: ProjectService
+  readonly style: StyleService
   /** Project/folder helpers shared with the queue engine. */
   get projects(): ProjectService {
     return this.projectsSvc
@@ -45,6 +48,7 @@ export class Pipeline {
     private log: ScopedLogger
   ) {
     this.projectsSvc = new ProjectService(s)
+    this.style = new StyleService(s)
     const st = s.settings.get()
     this.openaiSem = new Semaphore(st.openai.concurrency)
     this.elevenSem = new Semaphore(st.elevenlabs.concurrency)
@@ -248,22 +252,31 @@ export class Pipeline {
   // Script
   // ---------------------------------------------------------------------------
 
-  private loadTemplate(channel: Channel): TemplateVersion {
-    if (!channel.activeTemplateVersionId) {
-      throw new AppError('config', `Channel "${channel.name}" has no active script template.`, {
-        action: 'Open Channels → this channel → Templates and set an active template version.',
-        retryable: false
+  private loadTemplate(channel: Channel, job?: Job): { version: TemplateVersion; templateId: string; contentType: string } {
+    const r = this.style.resolve(channel, job?.overrides?.templateId)
+    if (!r) {
+      throw new AppError('config', `Channel "${channel.name}" has no active script format.`, {
+        action: 'Open Channels → this channel → Formats, import approved reference scripts and approve a template.',
+        retryable: false,
+        code: 'FORMAT_MISSING'
       })
     }
-    const tv = this.s.channels.getVersion(channel.activeTemplateVersionId)
-    if (!tv) throw new AppError('config', 'The active template version was deleted.', { action: 'Select another template version for the channel.', retryable: false })
-    if (tv.placeholder) {
-      throw new AppError('config', `Channel "${channel.name}" still uses a placeholder template (the approved template has not been supplied).`, {
-        action: 'Open the Template Editor, paste the approved script and instructions, create a new version and set it active.',
-        retryable: false
+    const tv = r.version
+    if (tv.placeholder || tv.approvalStatus === 'not_configured' || tv.approvalStatus === 'references_imported') {
+      throw new AppError('config', `The format "${channel.name} › ${r.template.name}" is not configured yet (no approved template). Generation is blocked rather than using a generic format.`, {
+        action: 'Open Channels → this channel → Formats, import 3–5 approved scripts, analyse them and approve the extracted template.',
+        retryable: false,
+        code: 'FORMAT_NOT_CONFIGURED'
       })
     }
-    return tv
+    if (job?.mode === 'auto' && !['approved', 'test_passed'].includes(tv.approvalStatus)) {
+      throw new AppError('config', `The format "${channel.name} › ${r.template.name}" is not approved for Fully automatic mode.`, {
+        action: 'Retry in Review before voice mode, or approve the format in Channels → Formats.',
+        retryable: false,
+        code: 'FORMAT_NOT_APPROVED'
+      })
+    }
+    return { version: tv, templateId: r.template.id, contentType: r.template.contentType }
   }
 
   private async runScript(job: Job, channel: Channel, ctx: StageContext): Promise<StageOutcome> {
@@ -281,7 +294,10 @@ export class Pipeline {
         return 'continue'
       }
     }
-    const template = this.loadTemplate(channel)
+    const loaded = this.loadTemplate(channel, job)
+    const template = loaded.version
+    const references = this.style.promptReferences(loaded.templateId)
+    const provenance = { templateId: loaded.templateId, contentType: loaded.contentType, referenceSetVersion: this.s.channels.referenceSetVersion(loaded.templateId), researchId: job.researchId ?? null }
     const research = job.researchId ? this.s.research.get(job.researchId) : undefined
     const researchData = research && research.status !== 'insufficient' ? research.data : null
     const researchSources: ResearchSource[] = research?.sources ?? []
@@ -316,6 +332,7 @@ export class Pipeline {
               issues: opts.issues,
               feedback: opts.feedback,
               tighten: opts.tighten,
+              references,
               signal: ctx.signal
             }),
           {
@@ -373,7 +390,7 @@ export class Pipeline {
     }
 
     const finish = async (text: string, report: ValidationReport, source: Script['source'], usedModel: string): Promise<StageOutcome> => {
-      const script = await this.persistScript(job, channel, template, text, report, source, usedModel)
+      const script = await this.persistScript(job, channel, template, text, report, source, usedModel, provenance)
       this.s.jobs.update(job.id, { scriptId: script.id })
       const warnings = report.issues.filter((i) => i.severity === 'warning')
       if (warnings.length) this.s.jobs.addEvent(job.id, 'validation_warnings', null, null, warnings.map((w) => w.message).join(' | '))
@@ -403,7 +420,7 @@ export class Pipeline {
       const strictReport = await evaluate(out.text, false)
       if (strictReport.ok) return finish(out.text, strictReport, attempt === 1 ? 'ai' : 'rewrite', out.model)
       lastReport = strictReport
-      const failedScript = await this.persistScript(job, channel, template, out.text, strictReport, attempt === 1 ? 'ai' : 'rewrite', out.model)
+      const failedScript = await this.persistScript(job, channel, template, out.text, strictReport, attempt === 1 ? 'ai' : 'rewrite', out.model, provenance)
       this.s.jobs.update(job.id, { scriptId: failedScript.id })
       previous = out.text
       issuesText = describeIssuesForRewrite(strictReport, channel)
@@ -422,7 +439,7 @@ export class Pipeline {
       const finalReport = await evaluate(out.text, true)
       if (finalReport.ok) return finish(out.text, finalReport, 'rewrite', out.model)
       lastReport = finalReport
-      const failedScript = await this.persistScript(job, channel, template, out.text, finalReport, 'rewrite', out.model)
+      const failedScript = await this.persistScript(job, channel, template, out.text, finalReport, 'rewrite', out.model, provenance)
       this.s.jobs.update(job.id, { scriptId: failedScript.id })
     }
     void lastText
@@ -440,7 +457,16 @@ export class Pipeline {
     return 'audio'
   }
 
-  private async persistScript(job: Job, channel: Channel, template: TemplateVersion, rawText: string, report: ValidationReport, source: Script['source'], model: string | null): Promise<Script> {
+  private async persistScript(
+    job: Job,
+    channel: Channel,
+    template: TemplateVersion,
+    rawText: string,
+    report: ValidationReport,
+    source: Script['source'],
+    model: string | null,
+    provenance: { templateId: string; contentType: string; referenceSetVersion: number; researchId: string | null }
+  ): Promise<Script> {
     const text = rawText.replace(/\r\n/g, '\n').trim()
     const project = this.s.projects.get(job.projectId)
     if (!project) throw new AppError('config', 'Project missing for job.', { retryable: false })
@@ -458,7 +484,9 @@ export class Pipeline {
       source,
       model,
       validation: report,
-      filePath: null
+      filePath: null,
+      narrationText: buildNarrationText(text, template, channel),
+      ...provenance
     })
     const file = path.join(dir, this.projectsSvc.scriptFileName(script.version))
     try {
@@ -468,7 +496,6 @@ export class Pipeline {
       throw new AppError('filesystem', d.message, { action: d.action, retryable: false })
     }
     this.s.scripts.update(script.id, { filePath: file })
-    void channel
     return this.s.scripts.get(script.id)!
   }
 
@@ -480,7 +507,7 @@ export class Pipeline {
     const channel = this.s.channels.get(project.channelId)
     if (!channel) throw new AppError('config', 'Channel not found.', { retryable: false })
     const base = baseScriptId ? this.s.scripts.get(baseScriptId) : this.s.scripts.latestForProject(projectId)
-    const template = base?.templateVersionId ? this.s.channels.getVersion(base.templateVersionId) ?? null : channel.activeTemplateVersionId ? this.s.channels.getVersion(channel.activeTemplateVersionId) ?? null : null
+    const template = base?.templateVersionId ? this.s.channels.getVersion(base.templateVersionId) ?? null : this.style.resolve(channel)?.version ?? null
     const gen = this.s.settings.get().generation
     const report = validateScript(text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
     const dir = this.projectsSvc.ensureFolder(project)
@@ -497,7 +524,12 @@ export class Pipeline {
       source: 'manual',
       model: null,
       validation: report,
-      filePath: null
+      filePath: null,
+      narrationText: buildNarrationText(text, template, channel),
+      templateId: base?.templateId ?? template?.templateId ?? null,
+      contentType: base?.contentType ?? (template ? this.s.channels.getTemplate(template.templateId)?.contentType ?? null : null),
+      referenceSetVersion: base?.referenceSetVersion ?? null,
+      researchId: base?.researchId ?? null
     })
     const file = path.join(dir, this.projectsSvc.scriptFileName(script.version))
     await atomicWriteFile(file, text + '\n')
@@ -566,8 +598,9 @@ export class Pipeline {
 
     // Narration text
     const template = script.templateVersionId ? this.s.channels.getVersion(script.templateVersionId) : undefined
-    let narration = script.text
-    if (!channel.validation.narrateSectionHeadings && template) narration = stripSectionHeadings(narration, template.structure)
+    // Clean narration (headings / non-spoken fixed text removed) was computed when the script was saved.
+    let narration = script.narrationText && script.narrationText !== script.text ? script.narrationText : buildNarrationText(script.text, template ?? null, channel)
+    if (!narration.trim()) narration = stripSectionHeadings(script.text, template?.structure ?? [])
     narration = applyPronunciation(narration, channel.pronunciationRules)
 
     // Model limits (live list cached, else known table)
@@ -712,6 +745,7 @@ export class Pipeline {
         await atomicWriteFile(file, script.text + '\n')
         this.s.scripts.update(script.id, { filePath: file })
       }
+      if (script) await atomicWriteFile(path.join(dir, 'Narration.txt'), (script.narrationText || script.text) + '\n')
       if (research) {
         await atomicWriteFile(path.join(dir, 'Research.json'), JSON.stringify({ status: research.status, mode: research.mode, model: research.model, data: research.data, sources: research.sources, createdAt: research.createdAt }, null, 2))
       }
@@ -721,7 +755,25 @@ export class Pipeline {
         title: project.title,
         channel: { id: channel.id, name: channel.name },
         job: { id: job.id, mode: job.mode, completedAt: nowIso() },
-        script: script ? { id: script.id, version: script.version, templateVersionId: script.templateVersionId, templateVersion: script.templateVersionNumber, chars: script.charCount, words: script.wordCount, file: script.filePath ? path.basename(script.filePath) : null } : null,
+        script: script
+          ? {
+              id: script.id,
+              version: script.version,
+              model: script.model,
+              templateId: script.templateId,
+              contentType: script.contentType,
+              templateVersionId: script.templateVersionId,
+              templateVersion: script.templateVersionNumber,
+              referenceSetVersion: script.referenceSetVersion,
+              researchId: script.researchId,
+              validation: script.validation ? { ok: script.validation.ok, errors: script.validation.issues.filter((i) => i.severity === 'error').length, warnings: script.validation.issues.filter((i) => i.severity === 'warning').length } : null,
+              approvedWithIssues: script.approvedWithIssues,
+              chars: script.charCount,
+              words: script.wordCount,
+              file: script.filePath ? path.basename(script.filePath) : null,
+              narrationFile: 'Narration.txt'
+            }
+          : null,
         audio: audio ? { id: audio.id, version: audio.version, voiceId: audio.voiceId, voiceName: audio.voiceName, modelId: audio.modelId, outputFormat: audio.outputFormat, durationSec: audio.durationSec, sha256: audio.sha256, file: path.basename(audio.filePath) } : null
       }
       await atomicWriteFile(path.join(dir, 'project.json'), JSON.stringify(meta, null, 2))
