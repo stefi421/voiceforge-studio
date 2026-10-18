@@ -1,0 +1,195 @@
+[33m(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vitest.config.mts:5:42). Use `import.meta.dirname` instead
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.[39m
+
+[1m[30m[46m RUN [49m[39m[22m [36mv5.0.5 [39m[90mD:/a/voiceforge-studio/voiceforge-studio[39m
+
+(node:8140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:2132) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:5980) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/integration.test.ts[2m > [22mchannels and templates[2m > [22mseeds every channel from the channel configuration with independent templates[32m 267[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mtitle matching[2m > [22mnormalises punctuation, roman numerals, trademarks and a leading "The"[33m 329[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mchannels and templates[2m > [22mcreates, edits and isolates channels[32m 243[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mtitle matching[2m > [22mhandles the tricky cases: sequels, subtitles, editions and numbering[32m 213[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mreference import[2m > [22mreads TXT, Markdown, DOCX and PDF and rejects unsupported files[33m 590[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mtitle matching[2m > [22mauto-matches an unambiguous typo but asks when two entries are close[32m 269[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mchannels and templates[2m > [22mversions templates and records the active version per channel[33m 302[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mreference import[2m > [22menforces size and count limits and bumps the reference set on edits and deletes[33m 302[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mfixed-text detection and analysis[2m > [22mproposes repeated intro, heading and outro text with provenance, unlocked[32m 209[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mchannels and templates[2m > [22mexports and imports a channel with its templates (no secrets)[32m 294[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mfixed-text detection and analysis[2m > [22mnever marks findings as confirmed, caveats single references and moves the format to template_extracted[33m 315[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mchannels and templates[2m > [22mdeleting a channel removes its DB rows but keeps project files unless asked[33m 551[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mresearches a game once and reuses it on every channel with zero research calls[33m 1042[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mapproval and gating[2m > [22mrefuses Fully automatic for unapproved formats and allows supervised modes with a warning (also for unverified ones)[33m 444[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mapproval and gating[2m > [22muses the chosen content type and refuses a format from another channel[32m 269[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mcreates jobs, skips duplicates and runs research → script → audio → files[33m 763[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mapproval and gating[2m > [22mnever edits an approved version in place and never lets the app approve on its own[33m 363[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22masks once for a near match, then learns the alias so the next run is automatic[33m 818[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mlocked text and narration[2m > [22menforces locked intro, outro and headings word for word[32m 296[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mruns the AI review pass when enabled and records its usage[33m 455[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mlocked text and narration[2m > [22mremoves non-spoken headings from the ElevenLabs narration but keeps them in Script.txt[32m 293[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22man unverified format refuses Fully automatic but works under supervision (1.3.0)[33m 333[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22m"a different game" researches it as new and keeps both entries apart[33m 595[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mlocked text and narration[2m > [22mrecords format provenance on generated scripts and writes Narration.txt[33m 494[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mscripts-only mode saves TXT without calling ElevenLabs[33m 410[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mrefresh re-researches and keeps notes, user facts, removed facts and aliases[33m 589[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mstyle test[2m > [22mreports compliance checks without scores and records test_failed / test_passed[33m 390[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mflags saved research as "may be outdated" when an unreleased game is past its release date[32m 290[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mreview-before-voice waits for approval, then generates audio[33m 638[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mseed and upgrades[2m > [22mcreates 18 channels with the documented statuses and keeps branding out of prompts[33m 607[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mrewrites a script that fails validation and fails the job after max attempts[33m 523[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mimports research saved by earlier versions (once) and reuses it[33m 697[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mseed and upgrades[2m > [22mupgrades an untouched 1.1 install, adds the missing channels and never touches edited ones[33m 458[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mnever sends a failed/invalid script to ElevenLabs even when approved manually[33m 365[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mexports and imports the library (merging, never overwriting research)[33m 333[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mGame Library reuse[2m > [22mkeeps research compact before it is saved and sent[32m 276[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22mlocal fixes repair URLs, citations, markdown, a title line and an "Intro:" label without a rewrite[32m 286[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mconverges on length: strict inside the loop, one tighten pass, tolerance only for the final verdict[33m 786[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22ma draft with a URL is fixed locally: one writer call instead of two[33m 468[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22mthe cached prompt prefix is byte-for-byte identical for every title in a batch[33m 641[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mlets the user approve a failed script anyway (force) and records it; audio regeneration accepts it[33m 972[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22mrewrites use a short correction prompt (no references) — far fewer input characters[33m 456[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mreports stage-level progress and an ETA while a single job runs[33m 1030[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22mnever voices the same narration twice: identical words + voice + settings cost 0 characters[33m 785[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mkeeps the user title as the project/folder name; research only stores the canonical title[33m 631[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22mafter a small edit only the changed part is voiced again[33m 1041[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22masks the user when the title is ambiguous and continues after resolution[33m 575[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mstops when research is insufficient instead of inventing a review[33m 424[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mseed and upgrades[2m > [22mmigrates a 1.1 database (migration 3) keeping data and mapping statuses[33m 4557[2mms[22m[39m
+ [32m✓[39m tests/style.test.ts[2m > [22mseed and upgrades[2m > [22mexport/import keeps formats, references and the user's approvals[33m 328[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mreuses cached research for the same title[33m 529[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22ma new take ignores the reuse and the part cache[33m 959[2mms[22m[39m
+ [32m✓[39m tests/v16.test.ts[2m > [22mfewer credits[2m > [22msends one full reference to the writer for strict formats (skeleton still from all)[32m 195[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mchunks long narration and concatenates audio in order[33m 477[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mrejects invalid audio from the provider and surfaces insufficient credits / invalid keys[33m 463[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mschedules automatic retries for rate limits and succeeds afterwards[33m 1165[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbatch creation and generation pipeline[2m > [22mrespects spending limits by pausing new requests[32m 270[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mqueue control[2m > [22mpauses and resumes a running job and the whole queue[33m 978[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mqueue control[2m > [22mcancels a running job and can retry it from the failed stage[32m 260[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mqueue control[2m > [22mretrying a job that failed at the audio stage does not redo research or the script[33m 328[2mms[22m[39m
+(node:1704) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/v15.test.ts[2m > [22mparallel split[2m > [22msplits long narration into similar parts at paragraph boundaries without orphaning headings[32m 7[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mparallel split[2m > [22mkeeps short narration in one request and still honours the per-request limit[32m 1[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mqueue control[2m > [22mregenerates audio for an existing script without rewriting it, as a new version[33m 393[2mms[22m[39m
+(node:6400) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/unit.test.ts[2m > [22mfile naming[2m > [22msanitises invalid Windows characters, reserved names and trailing dots[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mfile naming[2m > [22mdetects path traversal[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mfile naming[2m > [22mappends a stable id on folder collisions[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22matomic writes and temp cleanup[2m > [22mwrites atomically and leaves no temp files[32m 56[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mscript validation[2m > [22maccepts a well-formed script[32m 9[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mscript validation[2m > [22mflags character limits[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mscript validation[2m > [22mflags URLs, citations, markdown, forbidden phrases, AI leaks and missing/misordered sections[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mscript validation[2m > [22maccepts section aliases and requires the fixed intro[32m 3[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mscript validation[2m > [22mwarns about firsthand claims and strips headings / applies pronunciation for TTS[32m 5[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mchunking[2m > [22msplits at paragraph/sentence boundaries and preserves text[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mchunking[2m > [22mreturns a single chunk for short text and handles giant sentences[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mmp3 parsing and concatenation[2m > [22mcomputes duration and rejects garbage[32m 4[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mmp3 parsing and concatenation[2m > [22mstrips ID3 tags from later chunks and keeps total duration[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mcost tracking[2m > [22mestimates OpenAI and ElevenLabs costs from the pricing table[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mtitle parsing and duplicate detection[2m > [22mparses lines, strips numbering and removes duplicates[32m 2[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mtitle parsing and duplicate detection[2m > [22mreads the first CSV column and skips header rows[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mtitle parsing and duplicate detection[2m > [22mreads the first column of an xlsx workbook[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mretry behaviour and rate limits[2m > [22muses exponential backoff with jitter and honours retry-after[32m 0[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mretry behaviour and rate limits[2m > [22mretries transient errors and stops on permanent ones[32m 6[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mretry behaviour and rate limits[2m > [22mgives up after maxRetries[32m 21[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mretry behaviour and rate limits[2m > [22msemaphore limits concurrency[32m 37[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mretry behaviour and rate limits[2m > [22mcancels while waiting[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mprovider helpers[2m > [22mredacts secrets in logs[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mprovider helpers[2m > [22mdetects reasoning models and cleans script output[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mprovider helpers[2m > [22monly sends voice settings the model supports[32m 1[2mms[22m[39m
+ [32m✓[39m tests/unit.test.ts[2m > [22mAPI key storage[2m > [22mencrypts at rest, round-trips, clears and refuses when encryption is unavailable[32m 43[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mparallel voice generation[2m > [22mvoices the parts at the same time and joins them into one valid MP3[33m 764[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mparallel voice generation[2m > [22mreuses finished parts after a failure instead of paying for them again[33m 901[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mparallel voice generation[2m > [22mretries a part without continuity hints when the model rejects them, and remembers it[33m 713[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mserves higher priorities first, FIFO within a priority, and honours aborts[32m 3[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mpicks jobs that are further along first[33m 388[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mAIMD: +1 after a run of successes, halves on a rate limit, stays within bounds[32m 1[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mparses OpenAI rate-limit and ElevenLabs concurrency headers and maps plans[32m 5[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mlearns the ElevenLabs limit from the plan, then from response headers; manual mode keeps Settings[33m 398[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mscheduling and adaptive concurrency[2m > [22mlowers OpenAI concurrency after a 429 and raises it again after successes[33m 433[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mcircuit breaker[2m > [22mopens after repeated transient failures, cools down and closes on success[32m 89[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mcircuit breaker[2m > [22mshows the cool-down in the queue stats when a provider keeps failing[33m 367[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mtimings[2m > [22mbuilds stage segments from status events and excludes user waits[32m 1[2mms[22m[39m
+(node:9936) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/v15.test.ts[2m > [22mtimings[2m > [22mexposes per-job timings and medians for finished jobs[33m 830[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mreading the pack[2m > [22mfinds 15 channels with identical first/last paragraphs and 5 headings each[33m 620[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mpre-flight checks[2m > [22mpasses when everything is ready[33m 440[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mapplying the pack[2m > [22mapproves 15 formats with references, locked intro/outro and structure; idempotent[33m 404[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mpre-flight checks[2m > [22mblocks on a missing key, a rejected key, a missing or deleted voice and an unwritable folder[33m 429[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mapplying the pack[2m > [22mdoes not activate over a format the owner edited, and keeps owner-set limits[33m 469[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mpre-flight checks[2m > [22mtreats too few ElevenLabs characters and low disk space as overridable[33m 486[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mapplying the pack[2m > [22mis a no-op when the pack folder is missing[33m 599[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22mpre-flight checks[2m > [22mcaches provider answers for 60 s[33m 545[2mms[22m[39m
+ [32m✓[39m tests/v15.test.ts[2m > [22m1.5 settings upgrade[2m > [22mmoves research to the small model and raises titles in flight only when still at the old defaults[32m 259[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mexact format reproduction[2m > [22mputs the format skeleton and two reference scripts in the writer prompt[33m 380[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mexact format reproduction[2m > [22mvalidates a skeleton-built script and gives a targeted error for a changed outro[33m 374[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mexact format reproduction[2m > [22mnormaliser fixes presentation only: case/colon/markdown labels, quote and dash style, merged intro/outro[33m 415[2mms[22m[39m
+ [32m✓[39m tests/referencePack.test.ts[2m > [22mexact format reproduction[2m > [22mgeneration with the mock writer: skeleton output completes, a changed outro is rewritten then fails[33m 1032[2mms[22m[39m
+(node:7536) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/v13.test.ts[2m > [22mchannel openings[2m > [22mGame Vault ships with the owner-stated intro, locked and enforced by the validator[33m 484[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mchannel openings[2m > [22mchannels without a locked intro are told to open with a short channel introduction (toggleable)[32m 251[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mchannel openings[2m > [22msetOpening stores a locked intro/outro in a NEW version that keeps the status[32m 282[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mqueue control[2m > [22mhonours per-provider concurrency limits and handles 100 queued jobs[33m 12712[2mms[22m[39m
+(node:2336) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/v13.test.ts[2m > [22mclean output folder[2m > [22mfolders layout: only Script.txt and Voice.mp3 appear, and only once the job is complete[33m 624[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mcrash recovery and persistence[2m > [22mrecovers interrupted jobs after a restart without duplicating finished work[33m 798[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mclean output folder[2m > [22mflat layout: <Channel>/<Title>.txt + <Title>.mp3, and deleting a project removes only its files[33m 860[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mclosing the app mid-job does not cancel the title: it continues at the same stage next start[33m 1096[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mspeed[2m > [22mthe AI fact check is off by default (one OpenAI call less per script)[33m 438[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mcrash recovery and persistence[2m > [22madopts a complete audio file written before the crash instead of regenerating[33m 992[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mspeed[2m > [22mcaps writer tokens and retries once with the full limit when the model runs out[33m 313[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mcrash recovery and persistence[2m > [22mpersists channels, settings, jobs and history across reopen[33m 363[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mcancel during audio sticks even though the SDK reports the abort as a connection error[33m 725[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mspeed[2m > [22mdoes not stop for a title choice when the typed title is the confident top candidate[33m 487[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mpause during audio pauses (not a scheduled retry) with the SDK abort error[33m 426[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mspeed[2m > [22mestimates the batch wall time from stage timings and concurrency[32m 227[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbackup and restore[2m > [22mcreates a consistent backup and restores from it[33m 570[2mms[22m[39m
+ [32m✓[39m tests/v13.test.ts[2m > [22mupgrade from 1.2.0[2m > [22mrestores the Game Vault intro in untouched seed versions, keeps statuses, never touches edited formats[32m 261[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mbackup and restore[2m > [22mexports and imports data files[32m 245[2mms[22m[39m
+ [32m✓[39m tests/integration.test.ts[2m > [22mupgrade from 1.0.0[2m > [22mfills new settings fields and keeps the stored values of an older database[32m 144[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22ma pause that arrives while a stage finishes without noticing the abort still pauses the job[33m 661[2mms[22m[39m
+(node:4664) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/updater.test.ts[2m > [22mUpdateService[2m > [22mchecks, downloads only on request, installs after shutdown, and never auto-downloads[32m 176[2mms[22m[39m
+ [32m✓[39m tests/updater.test.ts[2m > [22mUpdateService[2m > [22mloads electron-updater when the dynamic import yields a { default } namespace (packaged CJS bundle)[32m 106[2mms[22m[39m
+ [32m✓[39m tests/updater.test.ts[2m > [22mUpdateService[2m > [22mnever throws from the startup check, even when the updater is broken[32m 121[2mms[22m[39m
+ [32m✓[39m tests/updater.test.ts[2m > [22mUpdateService[2m > [22mreports "up to date", turns provider errors into actionable messages and refuses download before check[32m 125[2mms[22m[39m
+ [32m✓[39m tests/updater.test.ts[2m > [22mUpdateService[2m > [22mfollows feed changes from settings and reports the portable build as unsupported[32m 183[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mregenerating the script of a running job restarts it instead of cancelling it[33m 902[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22ma paused script_ready job resumes into a runnable state, and stale script_ready is recovered[32m 148[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mbatch:completed fires once, when the titles are really finished (not while they await approval)[33m 761[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mqueue state machine[2m > [22mrefuses to approve a finished job (which would voice it again)[32m 236[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mElevenLabs error mapping[2m > [22mmaps abort → cancelled, 401 quota_exceeded → quota, 400 text limit → config[32m 128[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mGame Library matching never reuses another title[2m > [22mtreats "+", a lone X and model suffixes as different titles[32m 111[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mGame Library matching never reuses another title[2m > [22mrecomputes keys stored by an older version once[32m 133[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mMP3 joining[2m > [22mdrops Xing/Info header frames and inner ID3v1 tags so the joined duration is right[32m 106[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mlocal fixes and validation[2m > [22mnever leaves a broken sentence and keeps store names that are spoken[32m 104[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mlocal fixes and validation[2m > [22mdoes not treat "Game-changing" as a title line[32m 116[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mprompt data wrapping[2m > [22mresearch text cannot close the <research_data> wrapper[32m 117[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22msettings of an older install[2m > [22monly an invalid stored value falls back; every other setting is kept[32m 117[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22msettings of an older install[2m > [22ma database with one out-of-range value keeps the user settings on load[32m 180[2mms[22m[39m
+ [32m✓[39m tests/audit.test.ts[2m > [22mlogs[2m > [22mredacts ElevenLabs "sk_" keys[32m 111[2mms[22m[39m
+(node:7588) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [32m✓[39m tests/v16.ipc.test.ts[2m > [22mGames IPC[2m > [22mlists, edits, corrects, aliases, refreshes, exports, imports and deletes saved games[32m 218[2mms[22m[39m
+ [32m✓[39m tests/v16.ipc.test.ts[2m > [22mGames IPC[2m > [22mcopies every finished script of a batch, title above each, and reports reuse savings[33m 365[2mms[22m[39m
+ [2m[90m↓[39m[22m tests/speed.bench.test.ts[2m > [22mspeed benchmark[2m > [22mmeasures a 10-title batch
+(node:5028) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ [2m[90m↓[39m[22m tests/demo-data.smoke.test.ts[2m > [22mdemo data[2m > [22mpopulates a demo database
+(node:8264) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+[2m Test Files [22m [1m[32m10 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (12)[39m
+[2m      Tests [22m [1m[32m157 passed[39m[22m[2m | [22m[33m2 skipped[39m[90m (159)[39m
+[2m   Start at [22m 21:41:40
+[2m   Duration [22m 43.00s[2m (tests 60%, import 38%, transform 2%)[22m
+
