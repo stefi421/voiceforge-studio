@@ -61,10 +61,15 @@ export function mapElevenError(err: unknown): AppError {
     const body = err.body
     const detail = extractDetail(body)
     const text = detail || err.message || ''
-    if (status === 401) return new AppError('auth', 'ElevenLabs rejected the API key.', { details: text, retryable: false, code: 'ELEVEN_AUTH' })
-    if (status === 402 || /quota_exceeded|insufficient|not enough credits|character limit/i.test(text)) {
+    // The SDK reports an aborted request (pause/cancel/shutdown) as an error without a status code.
+    if (status === undefined && /aborted/i.test(`${err.message} ${text}`)) return new AppError('cancelled', 'The ElevenLabs request was cancelled.', { retryable: false })
+    // ElevenLabs answers an exhausted quota with 401 + detail.status "quota_exceeded": that is a credits
+    // problem, not a bad key. A 400 about the per-request text length is a configuration problem.
+    const quota = status === 402 || ((status === 401 || status === 403 || status === 429) && /quota_exceeded|insufficient[_ ](?:credits|quota|characters|balance)|not enough credits|exceeds your quota/i.test(text))
+    if (quota) {
       return new AppError('quota', 'Your ElevenLabs account does not have enough characters/credits left.', { details: text, retryable: false, code: 'ELEVEN_QUOTA' })
     }
+    if (status === 401) return new AppError('auth', 'ElevenLabs rejected the API key.', { details: text, retryable: false, code: 'ELEVEN_AUTH' })
     if (status === 403) return new AppError('auth', 'The ElevenLabs API key is not allowed to perform this action.', { details: text, retryable: false })
     if (status === 429) {
       const ra = parseRetryAfter((err.rawResponse?.headers as Headers | undefined)?.get?.('retry-after'))

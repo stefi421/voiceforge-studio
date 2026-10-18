@@ -17,6 +17,7 @@ import {
   researchUserInput,
   reviewInstructions,
   buildScriptPrompt,
+  escapeDataTags,
   researchFactSheet
 } from './prompts'
 import type {
@@ -293,7 +294,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.input = [
       `Title: ${req.title}`,
       req.research ? `<research_data>\n${researchFactSheet(req.research)}\n</research_data>` : 'No research data available; flag any specific unsupported claim as a warning.',
-      `<script>\n${req.script}\n</script>`
+      `<script>\n${escapeDataTags(req.script)}\n</script>`
     ].join('\n\n')
     params.text = { format: { type: 'json_schema', name: 'review_result', schema: REVIEW_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
     const res = await this.create(params, req.signal)
@@ -311,8 +312,8 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.instructions = analyzeInstructions()
     params.input = [
       `Channel: ${req.channel.name} (${req.channel.category})`,
-      req.instructions.trim() ? `<writing_instructions>\n${req.instructions.trim()}\n</writing_instructions>` : '',
-      `<approved_script>\n${req.exampleScript.trim()}\n</approved_script>`
+      req.instructions.trim() ? `<writing_instructions>\n${escapeDataTags(req.instructions.trim())}\n</writing_instructions>` : '',
+      `<approved_script>\n${escapeDataTags(req.exampleScript.trim())}\n</approved_script>`
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -334,8 +335,8 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.instructions = styleAnalysisInstructions()
     params.input = [
       `Channel: ${req.channel.name} (${req.channel.category}). Content type: ${req.contentType}. Number of approved reference scripts: ${req.references.length}.`,
-      req.instructions.trim() ? `<owner_instructions>\n${req.instructions.trim()}\n</owner_instructions>` : '',
-      ...req.references.map((r, i) => `<reference_script index="${i + 1}" title="${r.title.replace(/"/g, "'")}">\n${r.text.trim()}\n</reference_script>`)
+      req.instructions.trim() ? `<owner_instructions>\n${escapeDataTags(req.instructions.trim())}\n</owner_instructions>` : '',
+      ...req.references.map((r, i) => `<reference_script index="${i + 1}" title="${r.title.replace(/["<>]/g, "'")}">\n${escapeDataTags(r.text.trim())}\n</reference_script>`)
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -365,9 +366,9 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.instructions = styleCompareInstructions()
     params.input = [
       `Channel: ${req.channel.name}. Title: ${req.title}`,
-      ...req.references.map((r, i) => `<reference_script index="${i + 1}">\n${r.text.trim()}\n</reference_script>`),
+      ...req.references.map((r, i) => `<reference_script index="${i + 1}">\n${escapeDataTags(r.text.trim())}\n</reference_script>`),
       req.research ? `<research_data>\n${researchFactSheet(req.research)}\n</research_data>` : 'No research data was available.',
-      `<script>\n${req.script}\n</script>`
+      `<script>\n${escapeDataTags(req.script)}\n</script>`
     ].join('\n\n')
     params.text = { format: { type: 'json_schema', name: 'style_compare', schema: STYLE_COMPARE_JSON_SCHEMA as unknown as Record<string, unknown>, strict: true } }
     const res = await this.create(params, req.signal)

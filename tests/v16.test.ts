@@ -237,13 +237,16 @@ describe('fewer credits', () => {
     const gv = ch('Game Vault')
     const v = env.s.channels.activeVersionOf(env.s.channels.defaultTemplate(gv.id)!.id)!
     const good = goodScript('Emberward', v.structure.map((s) => s.label))
-    const messy = `# Emberward\n\nIntro: ${good.replace('Pros\n', '**Pros**\n').replace('Cons\n', 'Cons\nSee https://example.com [1] for  more.\n')}`
+    const messy = `# Emberward\n\nIntro: ${good.replace('Pros\n', '**Pros**\n').replace('Cons\n', 'Cons\nSee https://example.com for  more. It ships in spring [1].\n')}`
     const { text, fixes } = localScriptFixes(messy, { titles: ['Emberward'], structure: v.structure })
     expect(fixes).toEqual(expect.arrayContaining(['web addresses', 'citation markers', 'markdown emphasis', 'title line', '"Intro" label']))
     const report = validateScript(text, { channel: gv, template: v, expectedTitle: 'Emberward', researchConfirmed: true, strictness: 'standard', lengthToleranceChars: 150 })
     expect(report.issues.filter((i) => i.severity === 'error')).toEqual([])
     expect(text).not.toMatch(/https?:|\[1\]|\*\*|^#/m)
     expect(text.startsWith('Welcome back to Game Vault')).toBe(true)
+    // The sentence that pointed to the address is dropped whole — no "See for more." fragment.
+    expect(text).not.toMatch(/\bSee\s+for\b/)
+    expect(text).toContain('It ships in spring.')
     // Text that only looks like a label is never touched.
     expect(localScriptFixes('Introducing the new hero.\n\nGameplay\nText.', { titles: [], structure: v.structure }).text).toBe('Introducing the new hero.\n\nGameplay\nText.')
   })

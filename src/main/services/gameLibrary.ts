@@ -2,12 +2,13 @@ import fs from 'node:fs'
 import type { Channel, GameMatch, GameRecord, GameSubject, GameView, ResearchData, ResearchSource } from '@shared/types'
 import type { Services } from './container'
 import type { ScopedLogger } from './logger'
-import { gameKey, matchTitle, type MatchResult } from '../pipeline/gameMatch'
+import { GAME_KEY_VERSION, gameKey, matchTitle, type MatchResult } from '../pipeline/gameMatch'
 import { openaiCost } from '../pipeline/cost'
 import { AppError } from '../util/errors'
 import { nowIso } from '../util/common'
 
 const IMPORTED_KEY = 'game_library_imported_v1'
+const KEY_VERSION_KEY = 'game_library_key_version'
 /** Used when the original research cost is unknown (imported entries): a typical web-search research call. */
 export const TYPICAL_RESEARCH_TOKENS = 9000
 
@@ -162,6 +163,15 @@ export class GameLibrary {
     const tokens = game.researchTokens || TYPICAL_RESEARCH_TOKENS
     const settings = this.s.settings.get()
     return openaiCost(settings.spending.pricing, game.researchModel || settings.openai.researchModel, Math.round(tokens * 0.8), Math.round(tokens * 0.2))
+  }
+
+  /** Recomputes stored title keys once after the normalisation changed (idempotent). */
+  rekeyIfNeeded(): number {
+    if ((this.s.settingsRepo.get<number>(KEY_VERSION_KEY) ?? 1) >= GAME_KEY_VERSION) return 0
+    const changed = this.s.games.rekeyAll()
+    this.s.settingsRepo.set(KEY_VERSION_KEY, GAME_KEY_VERSION)
+    if (changed) this.log.info('Updated saved game title keys', { changed })
+    return changed
   }
 
   /** One-time import of research saved by 1.5 and earlier (confirmed rows, newest wins). */

@@ -15,6 +15,11 @@ interface Running {
   pauseRequested: boolean
   owner: string
   promise: Promise<void>
+  /**
+   * Set when a user action (e.g. "Regenerate script") replaces the running work: the job's state
+   * is reset only after the old run has fully stopped, so the old run can never overwrite it.
+   */
+  afterExit?: () => void
 }
 
 /** Rough per-stage durations used for the ETA until the history has real samples. */
@@ -102,7 +107,8 @@ export class QueueEngine {
   /** Inspect unfinished work from a previous process and put it back into a safe state. */
   recover(): void {
     this.s.jobs.releaseAll()
-    const stuck = this.s.jobs.listByStatus(ACTIVE_STATUSES)
+    // `script_ready` is only ever a transient status of a running job; left over, nothing would pick it up.
+    const stuck = this.s.jobs.listByStatus([...ACTIVE_STATUSES, 'script_ready'])
     for (const job of stuck) {
       let note = 'Recovered after restart; resuming at the same stage.'
       let stage = job.stage
@@ -167,6 +173,13 @@ export class QueueEngine {
     entry.promise = this.runJob(job.id, entry).finally(() => {
       this.running.delete(job.id)
       this.s.jobs.release(job.id)
+      if (entry.afterExit) {
+        try {
+          entry.afterExit()
+        } catch (err) {
+          this.log.warn('Could not apply the requested change after the job stopped', { jobId: job.id, error: toAppError(err).message })
+        }
+      }
       this.publishStats(true)
       this.maybeNotifyBatch(job.batchId)
       setTimeout(() => this.tick(), 50)
@@ -181,16 +194,27 @@ export class QueueEngine {
       heartbeat: () => this.s.jobs.heartbeat(jobId, entry.owner, LEASE_MS)
     }
     const hb = setInterval(ctx.heartbeat, LEASE_MS / 3)
+    const aborted = (): AppError => new AppError('cancelled', 'Stopped.', { retryable: false })
     try {
-      while (!entry.controller.signal.aborted) {
+      while (true) {
+        // A pause/cancel/shutdown that arrived while a stage finished without noticing the abort
+        // (e.g. the provider answered just before) must still take effect — otherwise the job would
+        // be left in an intermediate status (or un-cancelled by the stage's own status update).
+        if (entry.controller.signal.aborted) return this.handleFailure(jobId, entry, aborted())
         const job = this.s.jobs.get(jobId)
         if (!job) return
         const outcome = await this.pipeline.step(jobId, ctx)
-        if (outcome === 'done' || outcome === 'wait') return
+        if (outcome === 'done') return
+        if (outcome === 'wait') {
+          if (entry.controller.signal.aborted) this.handleFailure(jobId, entry, aborted())
+          return
+        }
         // 'continue': loop to the next stage; the lease is still ours.
       }
     } catch (err) {
-      this.handleFailure(jobId, entry, toAppError(err))
+      // After an abort the user's intent wins over whatever the interrupted request reported
+      // (the ElevenLabs SDK, for example, reports an aborted request as a connection error).
+      this.handleFailure(jobId, entry, entry.controller.signal.aborted ? aborted() : toAppError(err))
     } finally {
       clearInterval(hb)
     }
@@ -200,10 +224,17 @@ export class QueueEngine {
     const job = this.s.jobs.get(jobId)
     if (!job) return
     if (err.kind === 'cancelled') {
-      if (entry.pauseRequested) {
+      // A replacement (regenerate) resets the job itself once this run has stopped.
+      if (entry.afterExit) return
+      if (job.status === 'cancelled') {
+        // Cancelled by the user: keep it.
+      } else if (entry.pauseRequested) {
         this.s.jobs.update(jobId, { lastError: null })
         this.s.jobs.setStatus(jobId, 'paused', { event: 'paused', detail: `Paused during ${job.stage}`, resumeStatus: STAGE_START_STATUS[job.stage] })
-      } else if (job.status !== 'cancelled') {
+      } else if (this.stopped) {
+        // App shutdown: the title continues at the same stage on the next start (finished stages are kept).
+        this.s.jobs.setStatus(jobId, STAGE_START_STATUS[job.stage], { event: 'interrupted', detail: 'The app was closed; this title continues at the same stage on the next start.' })
+      } else {
         this.s.jobs.setStatus(jobId, 'cancelled', { event: 'cancelled', detail: null })
       }
       this.emitJob(jobId)
@@ -271,7 +302,9 @@ export class QueueEngine {
   private maybeNotifyBatch(batchId: string): void {
     const batch = this.s.jobs.getBatch(batchId)
     if (!batch) return
-    const remaining = this.s.jobs.list({ batchId, status: ['pending', ...ACTIVE_STATUSES, 'paused'] }).length
+    // Titles waiting for the user (approval, title choice) are not finished: the batch is done only
+    // when every title is completed, failed or cancelled.
+    const remaining = this.s.jobs.list({ batchId, status: ['pending', ...ACTIVE_STATUSES, 'paused', 'script_ready', ...USER_WAIT_STATUSES] }).length
     if (remaining === 0 && !this.batchNotified.has(batchId) && batch.total > 0) {
       this.batchNotified.add(batchId)
       this.s.events.emit('batch:completed', { batchId, name: batch.name, completed: batch.completed, failed: batch.failed, folder: this.batchFolder(batchId) })
@@ -435,7 +468,8 @@ export class QueueEngine {
     const job = this.s.jobs.get(id)
     if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
     if (job.status === 'pending' || job.status === 'research_review_required' || job.status === 'awaiting_approval' || job.status === 'script_ready') {
-      this.s.jobs.setStatus(id, 'paused', { event: 'paused', detail: null, resumeStatus: job.status })
+      // `script_ready` is transient (nothing picks it up again): resume at the start of the current stage.
+      this.s.jobs.setStatus(id, 'paused', { event: 'paused', detail: null, resumeStatus: job.status === 'script_ready' ? STAGE_START_STATUS[job.stage] : job.status })
     }
     this.emitJob(id)
     return this.s.jobs.get(id)!
@@ -480,6 +514,7 @@ export class QueueEngine {
       const job = this.s.jobs.get(id)
       if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
       if (job.status !== 'completed') this.s.jobs.setStatus(id, 'cancelled', { event: 'cancelled', detail: 'Cancelled by user' })
+      this.maybeNotifyBatch(job.batchId)
     }
     this.emitJob(id)
     return this.s.jobs.get(id)!
@@ -578,6 +613,11 @@ export class QueueEngine {
     if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
     const running = this.running.get(jobId)
     if (running) throw new AppError('config', 'The job is still running; wait for it to pause or finish before approving.', { retryable: false })
+    // Approving moves the job on to (paid) audio generation: only for a job that is actually waiting
+    // for a decision — never a finished or queued one (a stale dialog or a double click).
+    if (!(['awaiting_approval', 'failed', 'cancelled', 'paused'] as Job['status'][]).includes(job.status)) {
+      throw new AppError('config', job.status === 'completed' ? 'This title is already finished; use "Regenerate voiceover" to voice it again.' : 'This title is not waiting for approval.', { retryable: false, code: 'NOT_AWAITING_APPROVAL' })
+    }
     const latest = this.s.scripts.latestForProject(job.projectId)
     const script = latest && latest.createdAt >= (job.scriptId ? this.s.scripts.get(job.scriptId)?.createdAt ?? '' : '') ? latest : job.scriptId ? this.s.scripts.get(job.scriptId) : undefined
     if (!script) throw new AppError('config', 'There is no script to approve.', { retryable: false })
@@ -615,7 +655,19 @@ export class QueueEngine {
     const job = this.s.jobs.get(jobId)
     if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
     const running = this.running.get(jobId)
-    if (running) running.controller.abort(new AppError('cancelled', 'Regenerating.', { retryable: false }))
+    if (running) {
+      // Reset only after the old run has stopped, so a stage finishing late cannot overwrite the reset.
+      running.pauseRequested = false
+      running.afterExit = () => this.resetForNewScript(jobId, feedback)
+      running.controller.abort(new AppError('cancelled', 'Regenerating.', { retryable: false }))
+      return this.s.jobs.get(jobId)!
+    }
+    return this.resetForNewScript(jobId, feedback)
+  }
+
+  private resetForNewScript(jobId: string, feedback?: string): Job {
+    const job = this.s.jobs.get(jobId)
+    if (!job) throw new AppError('config', 'Job not found.', { retryable: false })
     this.s.jobs.update(jobId, {
       scriptId: null,
       audioId: null,

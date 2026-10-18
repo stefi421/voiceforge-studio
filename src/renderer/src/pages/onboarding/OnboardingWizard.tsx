@@ -80,7 +80,6 @@ export function OnboardingWizard(): JSX.Element {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, stepDone])
 
   return (

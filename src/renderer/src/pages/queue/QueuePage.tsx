@@ -134,8 +134,11 @@ export function QueuePage(): JSX.Element {
   // Keep dialogs in sync with live updates.
   useEffect(() => {
     if (reviewJob) {
+      // Close only when the job moved on since the dialog opened. Comparing against
+      // 'awaiting_approval' closed the dialog instantly for a failed-validation job ("Approve
+      // anyway") or a finished one ("View script").
       const fresh = jobs[reviewJob.id]
-      if (fresh && fresh.status !== 'awaiting_approval') setReviewJob(null)
+      if (fresh && fresh.status !== reviewJob.status) setReviewJob(null)
     }
     if (researchJob && !researchJob.readOnly) {
       const fresh = jobs[researchJob.job.id]

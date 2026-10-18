@@ -9,6 +9,8 @@ import { validateFixedBlocks } from './style'
  * pipeline and only adds issues on top of this report.
  */
 
+/** Store/platform names that are written like a domain but spoken as a name ("out now on itch.io"). */
+export const SPOKEN_DOMAIN_NAMES = /\b(?:itch\.io|battle\.net)\b/gi
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s]+|\b[a-z0-9-]+\.(?:com|net|org|io|gg|tv|co|app|dev)\b(?:\/[^\s]*)?/i
 const CITATION_RE = /\[\d{1,3}\]|\[(?:source|src|citation)[^\]]*\]|\((?:source|src):[^)]*\)|【[^】]*】|\[\^?\d+\]|\bcite(?:turn|web)\w*/i
 const MARKDOWN_RE = /^\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|>\s)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`/m
@@ -144,7 +146,7 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
   }
 
   // URLs / citations / markdown
-  if (rules.forbidUrls && URL_RE.test(clean)) {
+  if (rules.forbidUrls && URL_RE.test(clean.replace(SPOKEN_DOMAIN_NAMES, ' '))) {
     issues.push({ code: 'url', severity: 'error', message: 'The narration contains a URL or web address.' })
   }
   if (rules.forbidCitations && CITATION_RE.test(clean)) {

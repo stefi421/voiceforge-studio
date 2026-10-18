@@ -118,17 +118,43 @@ export function parseMp3(buf: Buffer): Mp3Info {
   }
 }
 
-/** Concatenate MP3 chunks into a single stream (ID3 tags removed from every chunk after the first). */
+/**
+ * Length of a leading Xing/Info/VBRI header frame at `offset` (0 when the first frame is audio).
+ * Such a frame stores the frame count of ITS file: kept in a joined file, players report the
+ * duration of the first part only, and mid-stream it plays as a short glitch.
+ */
+export function vbrHeaderFrameLength(buf: Buffer, offset: number): number {
+  const h = parseHeader(buf, offset)
+  if (!h) return 0
+  const end = Math.min(buf.length, offset + h.length)
+  // The tag sits right after the side information (9–32 bytes, +2 with CRC); VBRI at a fixed offset of 32.
+  const window = buf.subarray(offset + 4, Math.min(end, offset + 4 + 40)).toString('latin1')
+  return /Xing|Info|VBRI/.test(window) ? h.length : 0
+}
+
+/** Length of a trailing ID3v1 tag ("TAG" + 125 bytes), 0 when absent. */
+export function id3v1Length(buf: Buffer): number {
+  return buf.length >= 128 && buf.toString('latin1', buf.length - 128, buf.length - 125) === 'TAG' ? 128 : 0
+}
+
+/**
+ * Concatenate MP3 chunks into a single stream: the first chunk keeps its ID3v2 tag; ID3v2 tags of
+ * later chunks, ID3v1 tags of all but the last chunk and every Xing/Info/VBRI header frame are
+ * removed, so the result is one continuous stream whose duration players compute correctly.
+ */
 export function concatMp3(chunks: Buffer[]): Buffer {
   const parts: Buffer[] = []
   chunks.forEach((c, i) => {
-    if (i === 0) parts.push(c)
-    else parts.push(c.subarray(id3v2Length(c)))
+    const tag = id3v2Length(c)
+    let start = tag
+    start += vbrHeaderFrameLength(c, start)
+    const end = i < chunks.length - 1 ? c.length - id3v1Length(c) : c.length
+    if (i === 0 && tag > 0) parts.push(c.subarray(0, tag))
+    parts.push(c.subarray(start, Math.max(start, end)))
   })
   return Buffer.concat(parts)
 }
 
-/** Strip Xing/Info VBR header frame from chunks after the first (prevents misleading duration headers mid-stream). */
 export function isMp3Format(outputFormat: string): boolean {
   return outputFormat.startsWith('mp3_')
 }

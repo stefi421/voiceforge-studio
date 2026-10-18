@@ -10,6 +10,7 @@ const KEEP_FILES = 5
 /** Patterns that look like provider secrets. Redacted before anything is written. */
 const SECRET_PATTERNS: RegExp[] = [
   /sk-[A-Za-z0-9_-]{12,}/g, // OpenAI style keys
+  /\bsk_[A-Za-z0-9]{16,}/g, // ElevenLabs keys ("sk_" + hex)
   /xi-api-key["']?\s*[:=]\s*["']?[A-Za-z0-9_-]{8,}/gi,
   /(api[_-]?key|authorization|bearer)\s*[:=]\s*["']?[A-Za-z0-9_\-.]{8,}/gi,
   /\b[a-f0-9]{32}\b/g // ElevenLabs keys are 32 hex chars

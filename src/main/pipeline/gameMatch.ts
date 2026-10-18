@@ -39,7 +39,17 @@ export const EDITION_WORDS = new Set([
   'standard'
 ])
 
-/** Normalised word list of a title: lower case, symbols/punctuation removed, roman numerals → digits, leading "the" dropped. */
+/**
+ * Bumped whenever `titleTokens` changes, so keys stored in the database are recomputed once
+ * (GameLibrary.rekeyIfNeeded).
+ */
+export const GAME_KEY_VERSION = 2
+
+/**
+ * Normalised word list of a title: lower case, symbols/punctuation removed, roman numerals → digits, leading "the" dropped.
+ * "+" is a word ("plus"): "Galaxy S24+" is a different product from "Galaxy S24". A lone "X" stays a letter:
+ * "Mega Man X" is not "Mega Man 10".
+ */
 export function titleTokens(title: string): string[] {
   const words = title
     // Trademark signs first: NFKC would turn "™" into the letters "TM".
@@ -48,13 +58,14 @@ export function titleTokens(title: string): string[] {
     .toLowerCase()
     .replace(/[‘’`´]/g, "'")
     .replace(/&/g, ' and ')
+    .replace(/\+/g, ' plus ')
     .replace(/'s\b/g, 's')
     .replace(/'/g, '')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .split(/\s+/)
     .filter(Boolean)
-    .map((w) => (ROMAN[w] !== undefined && w !== 'i' ? String(ROMAN[w]) : w))
+    .map((w) => (ROMAN[w] !== undefined && w !== 'i' && w !== 'x' ? String(ROMAN[w]) : w))
   // "I" as a numeral only at the end ("Final Fantasy I"); elsewhere it is the pronoun.
   if (words.length > 1 && words[words.length - 1] === 'i') words[words.length - 1] = '1'
   if (words[0] === 'the' && words.length > 1) words.shift()
@@ -99,6 +110,24 @@ export function similarity(a: string, b: string): number {
 
 function digitsOf(key: string): string {
   return (key.match(/\d+/g) ?? []).join(',')
+}
+
+/**
+ * A typo-level difference may only be auto-accepted when it is a real misspelling of a word —
+ * never a changed model/edition token ("iPhone 16" / "iPhone 16e", "RX 7900 XT" / "XTX",
+ * "MX Master 3" / "3S"), which names a different product. Spacing-only differences are fine.
+ */
+function typoSafe(a: string[], b: string[]): boolean {
+  if (a.join('') === b.join('')) return true
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]!
+    const y = b[i]!
+    if (x === y) continue
+    if (/\d/.test(x) || /\d/.test(y)) return false
+    if (Math.min(x.length, y.length) < 4) return false
+  }
+  return true
 }
 
 export interface LibraryEntryKeys {
@@ -155,7 +184,7 @@ export function matchTitle(title: string, entries: LibraryEntryKeys[]): MatchRes
       const editionDiff = [...kSet, ...tokenSet].some((t) => EDITION_WORDS.has(t) && !(kSet.has(t) && tokenSet.has(t)))
       // One typo is enough on longer titles ("Emberwrad"); short words ("Portal"/"Mortal") need more care.
       const oneTypo = Math.min(k.length, key.length) >= 8 && levenshtein(k, key) <= 1
-      if ((sim >= 0.92 || oneTypo) && !editionDiff && Math.abs(k.length - key.length) <= 3) {
+      if ((sim >= 0.92 || oneTypo) && !editionDiff && Math.abs(k.length - key.length) <= 3 && typoSafe(kTokens, tokens)) {
         isAuto = true
         break
       }

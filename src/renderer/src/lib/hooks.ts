@@ -26,7 +26,15 @@ export function useAsync<T>(fn: () => Promise<T>, deps: ReadonlyArray<unknown>, 
   fallbackRef.current = opts.fallback
 
   const reload = useCallback(async () => {
-    if (!enabled) return
+    if (!enabled) {
+      // Disabled (e.g. the selected job has no script/audio): never keep showing the previous
+      // item's data, and drop any response still in flight for it.
+      ++seq.current
+      setDataState(fallbackRef.current ?? null)
+      setError(null)
+      setLoading(false)
+      return
+    }
     const id = ++seq.current
     setLoading(true)
     try {

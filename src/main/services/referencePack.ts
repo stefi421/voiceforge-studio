@@ -195,7 +195,13 @@ export function applyReferencePack(s: Services, dir = resolveReferencePackDir(),
       const existing = new Set(s.channels.listReferences(template.id).map((r) => r.text.trim()))
       for (const sc of pack.scripts) {
         if (existing.has(sc.text.trim())) continue
-        style.addReference({ templateId: template.id, title: sc.title, text: sc.text, sourceFormat: 'txt', sourceFileName: sc.fileName })
+        try {
+          style.addReference({ templateId: template.id, title: sc.title, text: sc.text, sourceFormat: 'txt', sourceFileName: sc.fileName })
+        } catch (err) {
+          // One reference that cannot be added (format already holds the maximum, file too short) must
+          // not roll back the whole pack for every channel — and make it fail again on every start.
+          log.warn('Skipped a reference from the pack', { channel: channel.name, file: sc.fileName, error: (err as Error).message })
+        }
       }
       const intro = channel.name === 'Game Vault' ? GAME_VAULT_INTRO : pack.intro
       const blocks: FixedTextBlock[] = [

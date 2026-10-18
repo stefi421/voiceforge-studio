@@ -223,6 +223,44 @@ export class GameRepo {
     this.db.run('DELETE FROM game_aliases WHERE game_id = ? AND (alias = ? OR alias_key = ?)', id, alias, gameKey(alias))
   }
 
+  /**
+   * Recomputes every stored lookup key with the current `gameKey` (after a normalisation change).
+   * A key that would collide with another entry's key keeps the old value (canonical) or is
+   * dropped (alias), so two entries never share a key. Returns the number of changed rows.
+   */
+  rekeyAll(): number {
+    let changed = 0
+    this.db.transaction(() => {
+      const games = this.db.all<{ id: string; subject_type: string; canonical_title: string; canonical_key: string }>('SELECT id, subject_type, canonical_title, canonical_key FROM games')
+      for (const g of games) {
+        const key = gameKey(g.canonical_title)
+        if (!key || key === g.canonical_key) continue
+        const owner = this.db.get<{ id: string }>('SELECT id FROM games WHERE subject_type = ? AND canonical_key = ? AND id != ?', g.subject_type, key, g.id)
+        if (owner) continue
+        this.db.run('UPDATE games SET canonical_key = ? WHERE id = ?', key, g.id)
+        changed++
+      }
+      // Aliases: rebuilt in one pass (a changed key may collide with another alias's old key).
+      const aliases = this.db.all<{ alias_key: string; subject_type: string; game_id: string; alias: string; created_at: string }>('SELECT alias_key, subject_type, game_id, alias, created_at FROM game_aliases ORDER BY created_at ASC')
+      const canonical = new Set(this.db.all<{ subject_type: string; canonical_key: string }>('SELECT subject_type, canonical_key FROM games').map((g) => `${g.subject_type}\u0000${g.canonical_key}`))
+      const seen = new Set<string>()
+      this.db.run('DELETE FROM game_aliases')
+      for (const a of aliases) {
+        const key = gameKey(a.alias)
+        const k = `${a.subject_type}\u0000${key}`
+        // Empty, an entry's canonical key, or already used by an earlier alias: redundant or ambiguous.
+        if (!key || canonical.has(k) || seen.has(k)) {
+          changed++
+          continue
+        }
+        seen.add(k)
+        if (key !== a.alias_key) changed++
+        this.db.run('INSERT INTO game_aliases (alias_key, subject_type, game_id, alias, created_at) VALUES (?, ?, ?, ?, ?)', key, a.subject_type, a.game_id, a.alias, a.created_at)
+      }
+    })
+    return changed
+  }
+
   markUsed(id: string): void {
     this.db.run('UPDATE games SET use_count = use_count + 1, last_used_at = ? WHERE id = ?', nowIso(), id)
   }

@@ -1,5 +1,5 @@
 import type { ScriptSection } from '@shared/types'
-import { normalizeHeading } from './validator'
+import { normalizeHeading, SPOKEN_DOMAIN_NAMES } from './validator'
 
 /**
  * Deterministic repairs applied to every writer output before validation (1.6.0). Each one
@@ -14,6 +14,11 @@ import { normalizeHeading } from './validator'
  *  - repeated spaces, trailing spaces and extra blank lines tidied.
  * Returns the fixed text and the list of fixes applied (logged as a job event).
  */
+const URL_SOURCE = String.raw`\b(?:https?:\/\/|www\.)[^\s)]+|\b[a-z0-9-]+\.(?:com|net|org|io|gg|tv|co|app|dev)\b(?:\/[^\s)]*)?`
+/** A web address that is not one of the spoken store names (non-global: safe for .test()). */
+const URL_ANY = { test: (s: string): boolean => new RegExp(URL_SOURCE, 'i').test(s.replace(SPOKEN_DOMAIN_NAMES, ' ')) }
+const URL_IN_PARENS = new RegExp(String.raw`\s?\((?:[^()\n]*\s)?(?:${URL_SOURCE})[^()\n]*\)`, 'gi')
+
 export function localScriptFixes(text: string, ctx: { titles: string[]; structure: ScriptSection[] }): { text: string; fixes: string[] } {
   const fixes: string[] = []
   let t = text.replace(/\r\n/g, '\n')
@@ -26,10 +31,28 @@ export function localScriptFixes(text: string, ctx: { titles: string[]; structur
     t = t.replace(/\[([^\]\n]{1,200})\]\((?:https?:\/\/|www\.)[^)\s]+\)/g, '$1')
     fixes.push('markdown links')
   }
-  // Bare URLs and web addresses (with optional surrounding parentheses)
-  const urlRe = /\(?\b(?:https?:\/\/|www\.)[^\s)]+\)?|\b[a-z0-9-]+\.(?:com|net|org|io|gg|tv|co|app|dev)\b(?:\/[^\s)]*)?/gi
-  if (before(new RegExp(urlRe.source, 'i'))) {
-    t = t.replace(urlRe, '')
+  // Bare URLs and web addresses. Removing one from the middle of a sentence would leave a broken
+  // sentence ("Visit  for more."), so: a parenthesised address or a line that is only an address
+  // (optionally "Source: …") is removed; any other sentence containing an address is dropped whole —
+  // such sentences are calls to visit a site, not content.
+  if (URL_ANY.test(t)) {
+    t = t
+      .split('\n')
+      .map((line) => {
+        if (!URL_ANY.test(line)) return line
+        let l = line.replace(URL_IN_PARENS, (m) => (URL_ANY.test(m) ? '' : m))
+        if (!URL_ANY.test(l)) return l
+        if (/^\s*(?:(?:source|sources|link|links|website|site|more info)\s*:\s*)?(?:\S+\s*)$/i.test(l) && URL_ANY.test(l)) return null
+        // Sentence ends are punctuation followed by whitespace, so the dots inside an address never split it.
+        l = l
+          .split(/(?<=[.!?…]["'”’)\]]?)\s+/)
+          .filter((x) => !URL_ANY.test(x))
+          .join(' ')
+          .trim()
+        return l.length ? l : null
+      })
+      .filter((line): line is string => line !== null)
+      .join('\n')
     fixes.push('web addresses')
   }
   // Citation markers
@@ -68,10 +91,10 @@ export function localScriptFixes(text: string, ctx: { titles: string[]; structur
   const firstIdx = lines.findIndex((l) => l.trim().length > 0)
   if (firstIdx >= 0) {
     const first = lines[firstIdx]!.trim()
-    const plain = first.replace(/^(?:title|game|product)\s*[:\-–]\s*/i, '').replace(/[.:!]+$/, '').trim()
+    const plain = first.replace(/^(?:title|game|product)\s*(?::|[-–]\s)\s*/i, '').replace(/[.:!]+$/, '').trim()
     const titles = ctx.titles.map((x) => x.trim()).filter(Boolean)
     const longest = Math.max(0, ...titles.map((x) => x.length))
-    const isTitle = titles.some((x) => normalizeHeading(plain) === normalizeHeading(x)) || /^(?:title|game|product)\s*[:\-–]/i.test(first)
+    const isTitle = titles.some((x) => normalizeHeading(plain) === normalizeHeading(x)) || /^(?:title|game|product)\s*(?::|[-–]\s)/i.test(first)
     if (isTitle && first.length <= longest + 20 && !labels.has(normalizeHeading(first))) {
       lines.splice(firstIdx, 1)
       t = lines.join('\n')

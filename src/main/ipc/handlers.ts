@@ -36,6 +36,7 @@ import { ProjectService } from '../services/projects'
 import { atomicWriteFile, ensureDir } from '../services/files'
 import { AppError } from '../util/errors'
 import { countWords } from '../util/common'
+import { openaiCost } from '../pipeline/cost'
 import type { IpcRegistry } from './registry'
 
 const ELEVEN_VOICE_CACHE_MS = 6 * 60 * 60 * 1000
@@ -297,7 +298,8 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
       inputTokens: res.usage.inputTokens,
       outputTokens: res.usage.outputTokens,
       characters: 0,
-      estimatedCost: 0,
+      // Counted like every other request so daily/monthly spending limits see it.
+      estimatedCost: openaiCost(settings.spending.pricing, res.model, res.usage.inputTokens, res.usage.outputTokens),
       reported: res.usage.reported ?? null
     })
     const caveats = [

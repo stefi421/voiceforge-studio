@@ -90,9 +90,16 @@ export function GeneratePage(): JSX.Element {
       .filter(Boolean)
     setRows((prev) => {
       const byTitle = new Map(prev.map((r) => [r.title, r]))
+      // A title pasted twice gets its own row id: rows are keyed and edited by id, so a shared id
+      // made both rows toggle/remove together (and duplicated React keys).
+      const used = new Set<string>()
       return lines.map((title) => {
         const existing = byTitle.get(title)
-        return existing ? { ...existing } : { id: newRowId(), title, channelId: null, selected: true }
+        if (existing && !used.has(existing.id)) {
+          used.add(existing.id)
+          return { ...existing }
+        }
+        return { id: newRowId(), title, channelId: existing?.channelId ?? null, selected: true }
       })
     })
   }, [])

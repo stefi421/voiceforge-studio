@@ -21,7 +21,8 @@ const isDev = !app.isPackaged && !!process.env.ELECTRON_RENDERER_URL
 const RENDERER_ORIGIN = isDev ? new URL(process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173').origin : 'file://'
 
 // Single instance: a second launch focuses the existing window instead of running two queues.
-if (!app.requestSingleInstanceLock()) {
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
   app.quit()
 }
 
@@ -288,6 +289,8 @@ app.on('second-instance', () => {
 })
 
 app.whenReady().then(() => {
+  // A second instance quits; it must never open the database or start a second queue meanwhile.
+  if (!gotSingleInstanceLock) return
   app.setAppUserModelId('com.voiceforge.studio')
   installCsp()
   const s = bootstrap()
@@ -296,6 +299,7 @@ app.whenReady().then(() => {
   engine = new QueueEngine(s, logger.child('queue'))
   // 1.6.0: research saved by earlier versions becomes part of the permanent Game Library (once).
   try {
+    engine.pipeline.library.rekeyIfNeeded()
     engine.pipeline.library.importLegacyResearch()
   } catch (err) {
     logger.log('warn', 'library', 'Importing earlier research into the Game Library failed', { error: (err as Error).message })
