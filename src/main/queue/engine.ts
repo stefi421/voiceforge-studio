@@ -51,6 +51,9 @@ export class QueueEngine {
   private lastStatsJson = ''
   private batchNotified = new Set<string>()
   private readonly instanceId = newId()
+  /** Auth/quota problem that stopped the queue; cleared on resume. */
+  private providerBlocked: NonNullable<QueueStats['providerBlocked']> | null = null
+  private statsTimer: NodeJS.Timeout | null = null
 
   constructor(
     private s: Services,
@@ -58,7 +61,16 @@ export class QueueEngine {
   ) {
     this.pipeline = new Pipeline(s, log)
     this.queuePaused = s.settingsRepo.get<boolean>('queue_paused') ?? false
+    this.providerBlocked = s.settingsRepo.get<NonNullable<QueueStats['providerBlocked']>>('provider_blocked') ?? null
     s.settings.onChange(() => this.tick())
+    // Live slot changes (adaptive limits, cool-downs) are pushed to the UI, coalesced to ≤ 4/s.
+    this.pipeline.governor.onChange(() => {
+      if (this.statsTimer) return
+      this.statsTimer = setTimeout(() => {
+        this.statsTimer = null
+        if (!this.stopped) this.publishStats()
+      }, 250)
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -76,6 +88,8 @@ export class QueueEngine {
     this.stopped = true
     if (this.timer) clearInterval(this.timer)
     this.timer = null
+    if (this.statsTimer) clearTimeout(this.statsTimer)
+    this.statsTimer = null
     for (const r of this.running.values()) r.controller.abort(new AppError('cancelled', 'Application is closing.', { retryable: false }))
     await Promise.allSettled([...this.running.values()].map((r) => r.promise))
     this.s.jobs.releaseAll()
@@ -191,6 +205,35 @@ export class QueueEngine {
       this.emitJob(jobId)
       return
     }
+    // Auth / quota problems affect every job of that provider: stop the queue once with one clear
+    // notification instead of failing every title. The job goes back to waiting at the same stage.
+    if (err.kind === 'auth' || err.kind === 'quota') {
+      const provider: 'openai' | 'elevenlabs' = job.stage === 'audio' || /ELEVEN/i.test(err.code) ? 'elevenlabs' : 'openai'
+      const name = provider === 'openai' ? 'OpenAI' : 'ElevenLabs'
+      const first = !this.providerBlocked
+      if (first) {
+        this.providerBlocked = { provider, message: err.message, action: err.action, at: new Date().toISOString() }
+        this.s.settingsRepo.set('provider_blocked', this.providerBlocked)
+        this.queuePaused = true
+        this.s.settingsRepo.set('queue_paused', true)
+        for (const [id, r] of this.running) {
+          if (id === jobId) continue
+          r.pauseRequested = true
+          r.controller.abort(new AppError('cancelled', `${name} problem — queue paused.`, { retryable: false }))
+        }
+        // The first job keeps the error so the cause is visible on it.
+        this.s.jobs.update(jobId, { lastError: err.toJobError(), nextRunAt: null })
+        this.s.jobs.setStatus(jobId, 'failed', { event: 'failed', detail: err.message })
+        this.log.error('Provider problem — queue paused', { provider, kind: err.kind, error: err.message })
+        this.s.events.notify('error', `${name}: ${err.kind === 'quota' ? 'not enough credits' : 'the API key was rejected'} — queue paused`, `${err.message} ${err.action} Then press "Resume queue"; failed titles can be retried.`)
+      } else {
+        this.s.jobs.update(jobId, { lastError: err.toJobError(), nextRunAt: null })
+        this.s.jobs.setStatus(jobId, 'pending', { event: 'provider_blocked', detail: err.message })
+      }
+      this.emitJob(jobId)
+      this.publishStats(true)
+      return
+    }
     if (err.kind === 'spending_limit') {
       this.spendingPaused = true
       this.s.jobs.update(jobId, { lastError: err.toJobError() })
@@ -238,10 +281,13 @@ export class QueueEngine {
   stats(): QueueStats {
     const base = this.s.jobs.stats(this.queuePaused, this.spendingPaused, null)
     const { progressPercent, remainingSeconds } = this.progress()
-    const conc = Math.max(1, this.s.settings.get().generation.maxConcurrentJobs)
+    // Effective parallelism is bounded by the provider slots, not by the number of titles in flight.
+    const st = this.s.settings.get()
+    const slots = this.pipeline.governor.status()
+    const conc = Math.max(1, Math.min(st.generation.maxConcurrentJobs, Math.max(slots.openai.limit, slots.elevenlabs.limit)))
     const remaining = base.pending + base.processing
     const eta = remaining > 0 ? Math.round(remainingSeconds / conc) : 0
-    return { ...base, estimatedSecondsRemaining: eta, progressPercent }
+    return { ...base, estimatedSecondsRemaining: eta, progressPercent, providers: this.pipeline.governor.status(), providerBlocked: this.providerBlocked }
   }
 
   private stageMediansCache: { at: number; value: Record<string, number> } | null = null
@@ -333,6 +379,12 @@ export class QueueEngine {
   resumeAll(): QueueStats {
     this.queuePaused = false
     this.s.settingsRepo.set('queue_paused', false)
+    if (this.providerBlocked) {
+      this.providerBlocked = null
+      this.s.settingsRepo.set('provider_blocked', null)
+      // The provider (keys, cached plan) may have changed while paused.
+      this.s.providers.reset()
+    }
     for (const job of this.s.jobs.listByStatus(['paused'])) this.resumeJob(job.id)
     this.publishStats(true)
     this.tick()

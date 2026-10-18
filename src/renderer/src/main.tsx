@@ -8,6 +8,7 @@ import './styles/components.css'
 import './styles/queue.css'
 import './styles/shell.css'
 import './styles/studio.css'
+import './styles/speed.css'
 
 import { toast } from './store/toasts'
 

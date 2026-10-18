@@ -85,3 +85,70 @@ export function chunksCoverText(text: string, chunks: TextChunk[]): boolean {
   const squash = (s: string): string => s.replace(/\s+/g, ' ').trim()
   return squash(chunks.map((c) => c.text).join(' ')) === squash(text)
 }
+
+/** A heading-like paragraph: one short line without terminal punctuation. */
+function isHeadingParagraph(p: string): boolean {
+  const t = p.trim()
+  return t.length > 0 && t.length <= 60 && !t.includes('\n') && !/[.!…,;:]["'”’)\]]?$/.test(t)
+}
+
+/**
+ * Splits narration into `parts` pieces of similar length for parallel TTS (v1.5). Cuts only
+ * between paragraphs, never right after a heading (the heading stays with its text), and
+ * prefers cutting just before a heading. Each piece still respects `maxChars` (oversized
+ * pieces are chunked again with `splitIntoChunks`). Joining the pieces with blank lines
+ * reproduces the text; `chunksCoverText` verifies it.
+ */
+export function splitForParallel(text: string, parts: number, maxChars: number, opts: { minChars?: number; contextChars?: number } = {}): TextChunk[] {
+  const normalized = text.replace(/\r\n/g, '\n').trim()
+  const minChars = opts.minChars ?? 1800
+  const contextChars = opts.contextChars ?? 300
+  const base = splitIntoChunks(normalized, maxChars, contextChars)
+  if (parts <= 1 || normalized.length < minChars || base.length >= parts) return base
+  const paragraphs = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+  if (paragraphs.length < 2) return base
+  const total = paragraphs.reduce((n, p) => n + p.length + 2, 0)
+  const cuts: number[] = [] // split BEFORE paragraph index
+  let cum = 0
+  const cumBefore: number[] = []
+  for (const p of paragraphs) {
+    cumBefore.push(cum)
+    cum += p.length + 2
+  }
+  for (let k = 1; k < parts; k++) {
+    const target = (total * k) / parts
+    let best = -1
+    let bestScore = Infinity
+    for (let i = 1; i < paragraphs.length; i++) {
+      if (cuts.includes(i) || (cuts.length && i <= cuts[cuts.length - 1]!)) continue
+      if (isHeadingParagraph(paragraphs[i - 1]!)) continue // never orphan a heading at the end of a part
+      const dist = Math.abs(cumBefore[i]! - target) / total
+      const score = dist - (isHeadingParagraph(paragraphs[i]!) && dist < 0.12 ? 0.08 : 0)
+      if (score < bestScore) {
+        bestScore = score
+        best = i
+      }
+    }
+    if (best > 0) cuts.push(best)
+  }
+  if (!cuts.length) return base
+  const pieces: string[] = []
+  let start = 0
+  for (const c of [...cuts, paragraphs.length]) {
+    const piece = paragraphs.slice(start, c).join('\n\n')
+    if (piece) pieces.push(piece)
+    start = c
+  }
+  // Respect the per-request limit inside each piece.
+  const flat: string[] = []
+  for (const piece of pieces) {
+    if (piece.length <= maxChars) flat.push(piece)
+    else for (const c of splitIntoChunks(piece, maxChars, contextChars)) flat.push(c.text)
+  }
+  return flat.map((piece, index) => ({
+    index,
+    text: piece,
+    previousText: index > 0 ? flat[index - 1]!.slice(-contextChars) : '',
+    nextText: index < flat.length - 1 ? flat[index + 1]!.slice(0, contextChars) : ''
+  }))
+}

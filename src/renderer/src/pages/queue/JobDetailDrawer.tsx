@@ -10,6 +10,7 @@ import { Alert, AudioPlayer, Badge, Button, ChannelChip, Drawer, KeyValue, Skele
 import { NarrationToggle, narrationOf, ScriptProvenance, type ScriptView } from '@/components/ScriptMeta'
 import { ValidationIssues } from '@/components/dialogs/ScriptReviewDialog'
 import type { JobAction } from './JobRow'
+import { JobTimingPanel } from '@/components/SpeedViews'
 
 export interface JobDetailDrawerProps {
   job: JobView | null
@@ -31,6 +32,7 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
   const script = useAsync(() => api.invoke('scripts:get', { id: scriptId ?? '' }), [scriptId], { enabled: Boolean(scriptId) })
   const [scriptView, setScriptView] = useState<ScriptView>('script')
   const audio = useAsync(() => api.invoke('audio:get', { id: audioId ?? '' }), [audioId], { enabled: Boolean(audioId) })
+  const timings = useAsync(() => api.invoke('queue:timings', { jobId: jobId ?? '' }), [jobId, job?.updatedAt], { enabled: Boolean(jobId) })
   const events = useAsync(() => api.invoke('history:list', { jobId: jobId ?? '', limit: 200 }), [jobId, job?.updatedAt], { enabled: Boolean(jobId), fallback: [] })
 
   const eventRows = useMemo(() => (Array.isArray(events.data) ? [...events.data].sort((a, b) => b.at.localeCompare(a.at)) : []), [events.data])
@@ -230,6 +232,11 @@ export function JobDetailDrawer({ job, onClose, onAction }: JobDetailDrawerProps
             {audio.data ? <AudioPlayer src={audioUrl(audio.data.id)} onOpenFolder={() => void api.invoke('app:showItemInFolder', { path: audio.data?.filePath ?? '' })} /> : audio.loading ? <SkeletonRows rows={2} /> : null}
           </section>
         )}
+
+        <section className="detail-section">
+          <div className="detail-title">Where the time went</div>
+          <JobTimingPanel timings={timings.data ?? null} />
+        </section>
 
         <section className="detail-section">
           <div className="detail-title">Timeline</div>

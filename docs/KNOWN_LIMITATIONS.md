@@ -1,6 +1,23 @@
-# Known limitations (v1.4.0)
+# Known limitations (v1.5.0)
 
 Honest list of what is not done, partially done, or unverified.
+
+## Speed features (1.5.0) — unverified against the live APIs
+
+* **Continuity hints on newer voice models**: parallel voice parts send `previous_text` /
+  `next_text`. ElevenLabs documents these for its TTS endpoint but does not say whether every
+  model (e.g. `eleven_v3` / `eleven_v4`) honours them. If a model rejects them the part is
+  retried once without them and that model is remembered for the session; if a model silently
+  ignores them, joins may sound slightly less smooth. Set "Voice parts per title" to 1 to rule
+  this out.
+* **ElevenLabs concurrency per plan** is taken from the docs table (checked 18 Oct 2026); newer
+  models are assumed to share the "Multilingual" column. The `current-concurrent-requests` /
+  `maximum-concurrent-requests` response headers override it when present.
+* **OpenAI adaptive concurrency** relies on `x-ratelimit-*` headers and 429s; the starting value
+  (6) and ceiling (10) are conservative guesses, not measured against a real account.
+* The benchmark numbers in the changelog come from mocked providers with scaled delays; real
+  speed-ups depend on your plans and current provider latency. `gpt-6-luna` being faster than
+  `gpt-6.1-sol` for research is not modelled in the benchmark.
 
 ## Not verified live
 

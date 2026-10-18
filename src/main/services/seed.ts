@@ -62,6 +62,7 @@ function upgradeLegacy(s: Services, channel: Channel, seed: SeedChannelV3): void
 export function seedDefaults(s: Services): void {
   seedV3(s)
   upgradeTo13(s)
+  upgradeTo15(s)
 }
 
 /** Channel length limits as seeded by 1.2.0 — only these untouched values are replaced in 1.3.0. */
@@ -125,6 +126,21 @@ function upgradeTo13(s: Services): void {
     s.settingsRepo.set('seeded_v4', true)
   })
   if (refreshed) log.info('Refreshed untouched seed formats for 1.3.0', { refreshed })
+}
+
+/**
+ * 1.5.0 speed defaults for existing installs: values still at the 1.3/1.4 defaults move to the
+ * new ones (research on the small model, more titles in flight). Owner-changed values stay.
+ */
+function upgradeTo15(s: Services): void {
+  if (s.settingsRepo.get<boolean>('seeded_v15')) return
+  const st = s.settings.get()
+  const patch: Record<string, Record<string, unknown>> = {}
+  if (st.openai.researchModel === 'gpt-6.1-sol') patch.openai = { researchModel: 'gpt-6-luna' }
+  if (st.generation.maxConcurrentJobs === 6) patch.generation = { maxConcurrentJobs: 16 }
+  if (Object.keys(patch).length) s.settings.update(patch)
+  s.settingsRepo.set('seeded_v15', true)
+  if (Object.keys(patch).length) s.logger.child('seed').info('Applied 1.5.0 speed defaults', { patch })
 }
 
 function seedV3(s: Services): void {

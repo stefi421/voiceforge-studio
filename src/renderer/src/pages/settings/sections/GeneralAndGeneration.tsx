@@ -8,6 +8,7 @@ import { toast } from '@/store/toasts'
 import { Button, Field, Input, Select, Switch } from '@/components/ui'
 import { useSettingsPatch } from '../useSettingsPatch'
 import { DeferredNumber } from './ProviderShared'
+import { ProviderSlots } from '@/components/SpeedViews'
 
 export function GeneralSection(): JSX.Element {
   const { settings, set } = useSettingsPatch()
@@ -89,6 +90,7 @@ export function GeneralSection(): JSX.Element {
 export function GenerationSection(): JSX.Element {
   const { settings, set } = useSettingsPatch()
   const g = settings.generation
+  const providers = useApp((s) => s.stats.providers)
   return (
     <div className="settings-section">
       <div className="settings-group">
@@ -115,16 +117,35 @@ export function GenerationSection(): JSX.Element {
         <div className="small muted" style={{ marginBottom: 'var(--sp-3)' }}>
           Titles run side by side: while one voiceover is being generated, the next titles are already being researched and written.
         </div>
+        <Switch
+          checked={g.autoTuneConcurrency !== false}
+          onChange={(v) => void set('generation', 'autoTuneConcurrency', v)}
+          label="Automatic (recommended)"
+          description="Uses your ElevenLabs plan's real limit and adapts to your OpenAI rate limits: speeds up while requests succeed, backs off on rate limits. Turn off to set the numbers yourself."
+        />
+        {g.autoTuneConcurrency !== false && (
+          <div className="slots" aria-live="polite">
+            <ProviderSlots name="OpenAI" status={providers?.openai} />
+            <ProviderSlots name="ElevenLabs" status={providers?.elevenlabs} />
+          </div>
+        )}
         <div className="form-grid">
-          <Field label="Titles at the same time" hint="How many titles are in progress at once.">
-            <DeferredNumber value={g.maxConcurrentJobs} onCommit={(v) => void set('generation', 'maxConcurrentJobs', v ?? 1)} min={1} max={20} />
+          <Field label="Titles at the same time" hint="Upper bound on titles in progress at once. Provider slots above decide how many requests actually run.">
+            <DeferredNumber value={g.maxConcurrentJobs} onCommit={(v) => void set('generation', 'maxConcurrentJobs', v ?? 1)} min={1} max={50} />
           </Field>
-          <Field label="OpenAI requests at once" hint="Research and script writing in parallel.">
-            <DeferredNumber value={settings.openai.concurrency} onCommit={(v) => void set('openai', 'concurrency', v ?? 1)} min={1} max={10} />
+          <Field label="Voice parts per title" hint="Long voiceovers are split into this many parts that are generated at the same time and joined seamlessly. 1 = one request per title.">
+            <DeferredNumber value={settings.elevenlabs.parallelParts ?? 3} onCommit={(v) => void set('elevenlabs', 'parallelParts', Math.max(1, Math.min(4, v ?? 3)))} min={1} max={4} />
           </Field>
-          <Field label="Voiceovers at once" hint="Parallel ElevenLabs requests. Lower it if ElevenLabs reports too many requests.">
-            <DeferredNumber value={settings.elevenlabs.concurrency} onCommit={(v) => void set('elevenlabs', 'concurrency', v ?? 1)} min={1} max={10} />
-          </Field>
+          {g.autoTuneConcurrency === false && (
+            <>
+              <Field label="OpenAI requests at once" hint="Research and script writing in parallel.">
+                <DeferredNumber value={settings.openai.concurrency} onCommit={(v) => void set('openai', 'concurrency', v ?? 1)} min={1} max={10} />
+              </Field>
+              <Field label="Voiceovers at once" hint="Parallel ElevenLabs requests. Your plan's limit: Free 2, Starter 3, Creator 5, Pro 10, Scale/Business 15.">
+                <DeferredNumber value={settings.elevenlabs.concurrency} onCommit={(v) => void set('elevenlabs', 'concurrency', v ?? 1)} min={1} max={10} />
+              </Field>
+            </>
+          )}
         </div>
         <Switch
           checked={g.aiReviewPass}

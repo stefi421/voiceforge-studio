@@ -28,6 +28,11 @@ export class GenerationService {
     return channel.id === input.channelId ? input.templateId ?? null : null
   }
 
+  /** Format gate for one channel of a batch (same rule createBatch enforces). */
+  gate(channel: Channel, input: CreateBatchInput): ReturnType<StyleService['gate']> {
+    return this.style.gate(channel, input.mode, this.templateFor(input, channel))
+  }
+
   parseTitles(text: string): ParsedTitles {
     return parseTitles(text)
   }
@@ -116,8 +121,14 @@ export class GenerationService {
     const textStages = secs.research + secs.script
     const audio = mode === 'scripts_only' ? 0 : secs.audio
     const perJob = textStages + audio + secs.save
-    const openaiLanes = Math.max(1, Math.min(st.openai.concurrency, st.generation.maxConcurrentJobs))
-    const elevenLanes = Math.max(1, Math.min(st.elevenlabs.concurrency, st.generation.maxConcurrentJobs))
+    // Live slots (automatic tuning) when available, else the manual values.
+    const live = this.engine.pipeline?.governor?.status()
+    const openaiLimit = live?.openai.limit ?? st.openai.concurrency
+    const elevenLimit = live?.elevenlabs.limit ?? st.elevenlabs.concurrency
+    const parts = Math.max(1, st.elevenlabs.parallelParts ?? 1)
+    const openaiLanes = Math.max(1, Math.min(openaiLimit, st.generation.maxConcurrentJobs))
+    // Audio time per job (history) already reflects parallel parts; each job uses up to `parts` slots.
+    const elevenLanes = Math.max(1, Math.min(elevenLimit / parts, st.generation.maxConcurrentJobs))
     const perExtra = Math.max(textStages / openaiLanes, audio / elevenLanes)
     return Math.round(perJob + (jobs - 1) * perExtra)
   }

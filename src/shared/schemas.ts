@@ -140,7 +140,8 @@ export const createBatchSchema = z.object({
   entries: z.array(titleEntrySchema).min(1).max(500),
   skipExisting: z.boolean(),
   manualResearchNotes: z.record(z.string(), z.string().max(20000)).optional(),
-  templateId: idSchema.nullable().optional()
+  templateId: idSchema.nullable().optional(),
+  startAnyway: z.boolean().optional()
 })
 
 export const jobFilterSchema = z.object({
@@ -213,11 +214,13 @@ export const appSettingsSchema = z.object({
     timeoutMs: z.number().int().min(5000).max(900000),
     maxRetries: z.number().int().min(0).max(10),
     concurrency: z.number().int().min(1).max(10),
-    maxCharsPerRequest: z.number().int().min(0).max(40000)
+    maxCharsPerRequest: z.number().int().min(0).max(40000),
+    parallelParts: z.number().int().min(1).max(4)
   }),
   generation: z.object({
     defaultMode: jobModeSchema,
-    maxConcurrentJobs: z.number().int().min(1).max(20),
+    maxConcurrentJobs: z.number().int().min(1).max(50),
+    autoTuneConcurrency: z.boolean(),
     maxRewriteAttempts: z.number().int().min(0).max(10),
     maxStageRetries: z.number().int().min(0).max(10),
     validationStrictness: z.enum(['relaxed', 'standard', 'strict']),

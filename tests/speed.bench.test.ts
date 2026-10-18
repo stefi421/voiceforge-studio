@@ -15,7 +15,9 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 describe.skipIf(!process.env.VF_BENCH)('speed benchmark', () => {
   it('measures a 10-title batch', async () => {
-    const env = createTestEnv()
+    // VF_BENCH_14=1 reproduces the 1.4 behaviour (manual concurrency, one TTS request per script).
+    const env = createTestEnv({ speedDefaults: !process.env.VF_BENCH_14 })
+    if (process.env.VF_BENCH_14) env.s.settings.update({ generation: { maxConcurrentJobs: 6 } })
     const gv = env.s.channels.getByName('Game Vault')!
     const v = env.s.channels.activeVersionOf(env.s.channels.defaultTemplate(gv.id)!.id)!
     env.s.channels.setVersionStatus(v.id, 'approved')
@@ -40,8 +42,9 @@ describe.skipIf(!process.env.VF_BENCH)('speed benchmark', () => {
       return origReview(req)
     }
     const origSynth = env.eleven.synthImpl
+    // TTS time scales with text length (≈20 s for a full 4,750-character script).
     env.eleven.synthImpl = async (req) => {
-      await sleep(20_000 / SCALE)
+      await sleep(((20_000 / SCALE) * req.text.length) / 4750)
       return origSynth(req)
     }
     const engine = new QueueEngine(env.s, new Logger().child('bench'))
@@ -60,7 +63,8 @@ describe.skipIf(!process.env.VF_BENCH)('speed benchmark', () => {
       scaledWallMinutes: +((wall * SCALE) / 60_000).toFixed(1),
       firstJobScaledSeconds: Math.round((firstDone * SCALE) / 1000),
       openaiCallsPerJob: Object.fromEntries(Object.entries(calls).map(([k, n]) => [k, n / jobIds.length])),
-      ttsCallsPerJob: env.eleven.calls.length / jobIds.length
+      ttsCallsPerJob: env.eleven.calls.length / jobIds.length,
+      limits: { openai: engine.stats().providers?.openai.limit, elevenlabs: engine.stats().providers?.elevenlabs.limit }
     }
     console.log('BENCH', JSON.stringify(report))
     if (process.env.VF_BENCH_TRACE) {

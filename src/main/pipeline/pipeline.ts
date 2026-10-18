@@ -7,10 +7,13 @@ import { moveInto, ProjectService } from '../services/projects'
 import { atomicWriteFile, describeFsError, sha256Buffer } from '../services/files'
 import type { ScopedLogger } from '../services/logger'
 import { AppError, toAppError } from '../util/errors'
-import { Semaphore, withRetry } from '../util/retry'
+import { withRetry } from '../util/retry'
+import { ConcurrencyGovernor } from '../queue/governor'
+import { PRIORITY } from '../queue/limits'
 import { countWords, estimateDurationSec, normalizeTitle, nowIso } from '../util/common'
 import { elevenCost, openaiCost } from './cost'
-import { chunksCoverText, splitIntoChunks } from './chunker'
+import { chunksCoverText, splitForParallel } from './chunker'
+import crypto from 'node:crypto'
 import { concatMp3, isMp3Format, parseMp3, pcmDuration } from './mp3'
 import { applyPronunciation, describeIssuesForRewrite, onlyLengthErrors, stripSectionHeadings, targetChars, validateScript } from './validator'
 import { KNOWN_MODEL_LIMITS, voiceSettingsForModel } from '../providers/elevenlabs'
@@ -20,6 +23,10 @@ import { buildNarrationText, normalizeLockedText } from './style'
 /** Research is reused across channels (same category) for 30 days — facts don't change per channel. */
 const RESEARCH_CACHE_MS = 30 * 24 * 60 * 60 * 1000
 const LEASE_MS = 120_000
+/** Per-call timeouts (v1.5); the Settings timeout still applies when it is lower. */
+const CALL_TIMEOUT_MS = { research: 120_000, script: 180_000, ttsPart: 120_000 }
+/** Models that rejected previous_text/next_text continuity hints (remembered for this run). */
+const NO_CONTEXT_MODELS = new Set<string>()
 
 export interface StageContext {
   signal: AbortSignal
@@ -41,8 +48,8 @@ export class Pipeline {
   get projects(): ProjectService {
     return this.projectsSvc
   }
-  readonly openaiSem: Semaphore
-  readonly elevenSem: Semaphore
+  /** Provider slots, adaptive concurrency and circuit breakers (v1.5). */
+  readonly governor: ConcurrencyGovernor
 
   constructor(
     private s: Services,
@@ -50,13 +57,13 @@ export class Pipeline {
   ) {
     this.projectsSvc = new ProjectService(s)
     this.style = new StyleService(s)
-    const st = s.settings.get()
-    this.openaiSem = new Semaphore(st.openai.concurrency)
-    this.elevenSem = new Semaphore(st.elevenlabs.concurrency)
-    s.settings.onChange((next) => {
-      this.openaiSem.setLimit(next.openai.concurrency)
-      this.elevenSem.setLimit(next.elevenlabs.concurrency)
-    })
+    this.governor = new ConcurrencyGovernor(s, log)
+  }
+
+  private timeout(kind: keyof typeof CALL_TIMEOUT_MS, provider: 'openai' | 'elevenlabs'): number {
+    const st = this.s.settings.get()
+    const configured = provider === 'openai' ? st.openai.timeoutMs : st.elevenlabs.timeoutMs
+    return Math.min(CALL_TIMEOUT_MS[kind], configured || CALL_TIMEOUT_MS[kind])
   }
 
   // ---------------------------------------------------------------------------
@@ -213,20 +220,19 @@ export class Pipeline {
     this.setStatus(job.id, 'researching')
     this.s.jobs.update(job.id, { researchAttempts: job.researchAttempts + 1 })
     const model = this.s.settings.get().openai.researchModel || channel.openaiModel || this.s.settings.get().openai.defaultModel
-    const release = await this.openaiSem.acquire(ctx.signal)
-    let result
-    try {
-      result = await withRetry(() => this.s.providers.openai().research({ title: job.title, category: channel.category, settings: research, model, manualNotes: job.manualResearchNotes, signal: ctx.signal }), {
+    // Retries happen outside the slot so a waiting backoff never blocks other titles.
+    const timeoutMs = this.timeout('research', 'openai')
+    const result = await withRetry(
+      () => this.governor.withOpenAI(PRIORITY.research, ctx.signal, () => this.s.providers.openai().research({ title: job.title, category: channel.category, settings: research, model, manualNotes: job.manualResearchNotes, signal: ctx.signal, timeoutMs })),
+      {
         maxRetries: this.s.settings.get().openai.maxRetries,
         signal: ctx.signal,
         onRetry: (attempt, delay, err) => {
           ctx.heartbeat()
           this.s.jobs.addEvent(job.id, 'retry', null, null, `Research retry ${attempt} in ${Math.round(delay / 1000)}s: ${err.message}`)
         }
-      })
-    } finally {
-      release()
-    }
+      }
+    )
     this.recordOpenAIUsage(job, 'research', result.model, result.usage)
     const data = result.data
     const candidates = data.ambiguityCandidates ?? []
@@ -332,14 +338,13 @@ export class Pipeline {
         references,
         // Same stable prefix for every title of this format → provider-side prompt caching.
         promptCacheKey: `vf:${template.id}`,
-        signal: ctx.signal
+        signal: ctx.signal,
+        timeoutMs: this.timeout('script', 'openai')
       })
     const callWriter = async (opts: WriterOpts, kind: string) => {
-      const release = await this.openaiSem.acquire(ctx.signal)
-      let out
-      try {
-        out = await withRetry(
-          async () => {
+      const out = await withRetry(
+        () =>
+          this.governor.withOpenAI(PRIORITY.script, ctx.signal, async () => {
             try {
               return await writeOnce(opts, maxOutputTokens)
             } catch (err) {
@@ -350,19 +355,16 @@ export class Pipeline {
               }
               throw e
             }
-          },
-          {
-            maxRetries: settings.openai.maxRetries,
-            signal: ctx.signal,
-            onRetry: (n, delay, err) => {
-              ctx.heartbeat()
-              this.s.jobs.addEvent(job.id, 'retry', null, null, `Script retry ${n} in ${Math.round(delay / 1000)}s: ${err.message}`)
-            }
+          }),
+        {
+          maxRetries: settings.openai.maxRetries,
+          signal: ctx.signal,
+          onRetry: (n, delay, err) => {
+            ctx.heartbeat()
+            this.s.jobs.addEvent(job.id, 'retry', null, null, `Script retry ${n} in ${Math.round(delay / 1000)}s: ${err.message}`)
           }
-        )
-      } finally {
-        release()
-      }
+        }
+      )
       ctx.heartbeat()
       this.recordOpenAIUsage(job, kind, out.model, out.usage)
       // Presentation-only fixes (label case, quote/dash style, a locked intro/outro merged into a
@@ -386,16 +388,10 @@ export class Pipeline {
       // The extra fact-check request is opt-in (Settings → Generation) since 1.3.0: it roughly doubles script time.
       if (report.ok && settings.generation.aiReviewPass && channel.validation.aiReviewPass && strictness !== 'relaxed') {
         try {
-          const r2 = await this.openaiSem.acquire(ctx.signal)
-          let review
-          try {
-            review = await withRetry(() => this.s.providers.openai().reviewScript({ channel, title: job.title, script: text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal }), {
-              maxRetries: 1,
-              signal: ctx.signal
-            })
-          } finally {
-            r2()
-          }
+          const review = await withRetry(
+            () => this.governor.withOpenAI(PRIORITY.review, ctx.signal, () => this.s.providers.openai().reviewScript({ channel, title: job.title, script: text, research: researchData, model: settings.openai.reviewModel || model, signal: ctx.signal })),
+            { maxRetries: 1, signal: ctx.signal }
+          )
           this.recordOpenAIUsage(job, 'review', review.model, review.usage)
           aiIssues = review.issues.map((i) => (strictness === 'standard' && i.severity === 'error' ? i : { ...i, severity: strictness === 'strict' ? i.severity : 'warning' }))
         } catch (err) {
@@ -580,6 +576,7 @@ export class Pipeline {
       return 'continue'
     }
     // Recovery: an audio row that already completed for this job means the request succeeded before a crash.
+    let resumeRow: ReturnType<Services['audio']['get']> | undefined
     if (job.audioId) {
       const existing = this.s.audio.get(job.audioId)
       if (existing?.status === 'ready' && fs.existsSync(existing.filePath)) {
@@ -594,7 +591,9 @@ export class Pipeline {
           this.s.jobs.update(job.id, { stage: 'save' })
           return 'continue'
         }
-        this.s.audio.update(existing.id, { status: 'failed' })
+        // Keep the row (and its file path) so finished parts written before the interruption are reused
+        // instead of being generated — and billed — again.
+        resumeRow = existing
       }
     }
     const scriptId = job.scriptId
@@ -628,7 +627,10 @@ export class Pipeline {
     const live = liveModels.find((m) => m.modelId === modelId) ?? null
     const limit = settings.elevenlabs.maxCharsPerRequest > 0 ? settings.elevenlabs.maxCharsPerRequest : live?.maxCharacters ?? KNOWN_MODEL_LIMITS[modelId]?.maxChars ?? 5000
     const safeLimit = Math.max(500, Math.floor(limit * 0.95))
-    const chunks = splitIntoChunks(narration, safeLimit)
+    // v1.5: long narration is split into up to N similar parts (paragraph boundaries, headings kept
+    // with their text) that are voiced at the same time and joined frame by frame.
+    const parts = Math.max(1, Math.min(4, settings.elevenlabs.parallelParts ?? 1))
+    const chunks = splitForParallel(narration, parts, safeLimit)
     if (!chunks.length) throw new AppError('validation', 'The narration text is empty after processing.', { retryable: false })
     if (!chunksCoverText(narration, chunks)) throw new AppError('unknown', 'Internal error: chunking changed the narration text.', { retryable: false })
     const voiceSettings = voiceSettingsForModel(modelId, baseVoiceSettings, live ? { modelId, name: '', description: '', canDoTextToSpeech: true, canUseStyle: live.canUseStyle, canUseSpeakerBoost: live.canUseSpeakerBoost, maxCharacters: live.maxCharacters, languages: [] } : null)
@@ -636,72 +638,92 @@ export class Pipeline {
     const project = this.s.projects.get(job.projectId)!
     // Audio is generated in app data and moved into the output folder when the job completes.
     const dir = this.projectsSvc.workDir(project)
-    const version = this.s.audio.nextVersion(job.projectId)
-    let finalPath = path.join(dir, this.projectsSvc.audioFileName(version, outputFormat))
-    if (fs.existsSync(finalPath)) finalPath = path.join(dir, `Voice_v${version}_${Date.now()}.${path.extname(finalPath).slice(1)}`)
-    const audioRow = this.s.audio.create({
-      projectId: job.projectId,
-      scriptId: script.id,
-      jobId: job.id,
-      filePath: finalPath,
-      voiceId,
-      voiceName,
-      modelId,
-      voiceSettings: baseVoiceSettings,
-      outputFormat,
-      bytes: 0,
-      durationSec: null,
-      sha256: null,
-      characters: narration.length,
-      chunkCount: chunks.length,
-      status: 'generating'
-    })
-    this.s.jobs.update(job.id, { audioId: audioRow.id })
-    this.log.info('Generating audio', { jobId: job.id, chunks: chunks.length, chars: narration.length, model: modelId })
+    let audioRow: NonNullable<typeof resumeRow>
+    let finalPath: string
+    const sameRequest = resumeRow && resumeRow.scriptId === script.id && resumeRow.voiceId === voiceId && resumeRow.modelId === modelId && resumeRow.outputFormat === outputFormat
+    if (resumeRow && sameRequest) {
+      audioRow = this.s.audio.update(resumeRow.id, { status: 'generating', chunkCount: chunks.length })
+      finalPath = resumeRow.filePath
+    } else {
+      if (resumeRow) this.s.audio.update(resumeRow.id, { status: 'failed' })
+      const version = this.s.audio.nextVersion(job.projectId)
+      finalPath = path.join(dir, this.projectsSvc.audioFileName(version, outputFormat))
+      if (fs.existsSync(finalPath)) finalPath = path.join(dir, `Voice_v${version}_${Date.now()}.${path.extname(finalPath).slice(1)}`)
+      audioRow = this.s.audio.create({
+        projectId: job.projectId,
+        scriptId: script.id,
+        jobId: job.id,
+        filePath: finalPath,
+        voiceId,
+        voiceName,
+        modelId,
+        voiceSettings: baseVoiceSettings,
+        outputFormat,
+        bytes: 0,
+        durationSec: null,
+        sha256: null,
+        characters: narration.length,
+        chunkCount: chunks.length,
+        status: 'generating'
+      })
+      this.s.jobs.update(job.id, { audioId: audioRow.id })
+    }
+    this.log.info('Generating audio', { jobId: job.id, parts: chunks.length, chars: narration.length, model: modelId, resumed: !!sameRequest })
 
-    const buffers: Buffer[] = []
-    // Part files only matter for multi-chunk scripts (resume after a crash mid-way); a single
-    // request is written once, directly as the final file.
+    // Part files only matter for multi-part scripts (parallel + resume after a crash); a single
+    // request is written once, directly as the final file. Part names carry a hash of their text,
+    // so a part is only reused for exactly the same words.
     const multi = chunks.length > 1
+    const partPathOf = (text: string, index: number): string => `${finalPath}.p${index}-${crypto.createHash('sha1').update(text).digest('hex').slice(0, 10)}.part`
     let singleInfo: ReturnType<typeof parseMp3> | null = null
-    for (const chunk of chunks) {
-      this.throwIfAborted(ctx.signal)
-      const partPath = `${finalPath}.chunk${chunk.index}.part`
-      // Recovery within a job: reuse a chunk that was fully written before an interruption.
+    const ttsTimeout = this.timeout('ttsPart', 'elevenlabs')
+    const synthPart = async (chunk: (typeof chunks)[number]): Promise<Buffer> => {
+      const partPath = partPathOf(chunk.text, chunk.index)
       if (multi && fs.existsSync(partPath)) {
         const buf = await fsp.readFile(partPath)
         if (buf.length > 0 && (!isMp3Format(outputFormat) || parseMp3(buf).valid)) {
-          buffers.push(buf)
-          continue
+          this.s.jobs.addEvent(job.id, 'audio_part_reused', null, null, `Part ${chunk.index + 1}/${chunks.length} reused from before the interruption`)
+          return buf
         }
       }
-      const release = await this.elevenSem.acquire(ctx.signal)
-      let res
-      try {
-        res = await withRetry(
-          () =>
-            this.s.providers.eleven().synthesize({
-              text: chunk.text,
-              voiceId,
-              modelId,
-              outputFormat,
-              voiceSettings,
-              previousText: chunk.previousText || undefined,
-              nextText: chunk.nextText || undefined,
-              signal: ctx.signal
-            }),
-          {
-            maxRetries: settings.elevenlabs.maxRetries,
-            signal: ctx.signal,
-            onRetry: (n, delay, err) => {
-              ctx.heartbeat()
-              this.s.jobs.addEvent(job.id, 'retry', null, null, `Audio chunk ${chunk.index + 1}/${chunks.length} retry ${n} in ${Math.round(delay / 1000)}s: ${err.message}`)
+      const useContext = !NO_CONTEXT_MODELS.has(modelId)
+      const request = (withContext: boolean) =>
+        this.s.providers.eleven().synthesize({
+          text: chunk.text,
+          voiceId,
+          modelId,
+          outputFormat,
+          voiceSettings,
+          previousText: withContext ? chunk.previousText || undefined : undefined,
+          nextText: withContext ? chunk.nextText || undefined : undefined,
+          signal: ctx.signal,
+          timeoutMs: ttsTimeout
+        })
+      const res = await withRetry(
+        () =>
+          this.governor.withEleven(PRIORITY.audio, ctx.signal, async () => {
+            try {
+              return await request(useContext && !NO_CONTEXT_MODELS.has(modelId))
+            } catch (err) {
+              const e = toAppError(err)
+              // A model that refuses continuity hints: retry this part once without them and remember it.
+              if (e.kind === 'config' && (chunk.previousText || chunk.nextText) && /previous_text|next_text|previous text|next text|context/i.test(`${e.message} ${e.details ?? ''}`)) {
+                NO_CONTEXT_MODELS.add(modelId)
+                this.log.warn('ElevenLabs model rejected continuity hints; continuing without them', { modelId })
+                return await request(false)
+              }
+              throw e
             }
+          }),
+        {
+          maxRetries: settings.elevenlabs.maxRetries,
+          signal: ctx.signal,
+          onRetry: (n, delay, err) => {
+            ctx.heartbeat()
+            this.s.jobs.addEvent(job.id, 'retry', null, null, `Audio part ${chunk.index + 1}/${chunks.length} retry ${n} in ${Math.round(delay / 1000)}s: ${err.message}`)
           }
-        )
-      } finally {
-        release()
-      }
+        }
+      )
       ctx.heartbeat()
       this.recordElevenUsage(job, modelId, chunk.text.length, res.requestId ? { requestId: res.requestId, chunk: chunk.index } : null)
       if (!res.audio.length) throw new AppError('provider_down', 'ElevenLabs returned an empty audio response.', { retryable: true })
@@ -710,9 +732,16 @@ export class Pipeline {
         if (!info.valid) throw new AppError('provider_down', 'ElevenLabs returned data that is not a valid MP3 stream.', { details: `frames=${info.frames}`, retryable: true })
         if (!multi) singleInfo = info
       }
+      // Persist each finished part immediately: if a sibling fails, a retry only pays for the missing parts.
       if (multi) await atomicWriteFile(partPath, res.audio)
-      buffers.push(res.audio)
+      return res.audio
     }
+    this.throwIfAborted(ctx.signal)
+    const settled = await Promise.allSettled(chunks.map((c) => synthPart(c)))
+    const firstFailure = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (firstFailure) throw toAppError(firstFailure.reason)
+    const buffers = settled.map((r) => (r as PromiseFulfilledResult<Buffer>).value)
+    if (multi) this.s.jobs.addEvent(job.id, 'audio_parts', null, null, `${chunks.length} parts voiced in parallel`)
 
     const combined = multi ? (isMp3Format(outputFormat) ? concatMp3(buffers) : Buffer.concat(buffers)) : buffers[0]!
     let durationSec: number | null | undefined
@@ -733,7 +762,10 @@ export class Pipeline {
       const d = describeFsError(err, 'saving the voiceover')
       throw new AppError('filesystem', d.message, { action: d.action, retryable: false })
     }
-    for (const chunk of chunks) await fsp.unlink(`${finalPath}.chunk${chunk.index}.part`).catch(() => undefined)
+    for (const chunk of chunks) await fsp.unlink(partPathOf(chunk.text, chunk.index)).catch(() => undefined)
+    for (const f of await fsp.readdir(path.dirname(finalPath)).catch(() => [] as string[])) {
+      if (f.startsWith(path.basename(finalPath) + '.') && f.endsWith('.part')) await fsp.unlink(path.join(path.dirname(finalPath), f)).catch(() => undefined)
+    }
     const sha = sha256Buffer(combined)
     this.s.audio.update(audioRow.id, { status: 'ready', bytes: combined.length, durationSec: durationSec ?? null, sha256: sha })
     this.s.jobs.update(job.id, { stage: 'save' })

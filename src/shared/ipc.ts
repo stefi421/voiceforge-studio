@@ -28,6 +28,9 @@ import type {
   TemplateVersion,
   TemplateVersionInput,
   UpdateStatus,
+  JobTimings,
+  TimingSummary,
+  PreflightResult,
   ReferenceScript,
   ReferenceFormat,
   StyleAnalysis,
@@ -135,11 +138,17 @@ export interface IpcContract {
   'generation:importTitles': { req: { path: string }; res: ParsedTitles }
   'generation:estimate': { req: CreateBatchInput; res: BatchEstimate }
   'generation:createBatch': { req: CreateBatchInput; res: CreateBatchResult }
+  /** Fast checks before a batch (keys, voices, characters, folder, disk); cached 60 s. */
+  'generation:preflight': { req: CreateBatchInput; res: PreflightResult }
 
   // Queue
   'queue:list': { req: unknown; res: JobView[] }
   'queue:get': { req: { id: string }; res: JobView }
   'queue:stats': { req: void; res: QueueStats }
+  /** Per-stage timing of one job (from its status history). */
+  'queue:timings': { req: { jobId: string }; res: JobTimings }
+  /** Median stage durations of recent finished jobs (optionally one batch). */
+  'queue:timingSummary': { req: { batchId?: string; limit?: number }; res: TimingSummary }
   'queue:batches': { req: void; res: Batch[] }
   'queue:pauseAll': { req: void; res: QueueStats }
   'queue:resumeAll': { req: void; res: QueueStats }

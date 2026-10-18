@@ -463,9 +463,18 @@ describe('batch creation and generation pipeline', () => {
     env.eleven.synthImpl = () => {
       throw new AppError('quota', 'Not enough credits', { retryable: false })
     }
-    const b = gen.createBatch({ channelId: gv.id, mode: 'auto', entries: [{ title: 'No Credits', channelId: null }], skipExisting: false })
-    await settle(b.jobIds, ['failed'])
-    expect(env.s.jobs.get(b.jobIds[0]!)!.lastError?.kind).toBe('quota')
+    const b = gen.createBatch({ channelId: gv.id, mode: 'auto', entries: [{ title: 'No Credits', channelId: null }, { title: 'No Credits Either', channelId: null }], skipExisting: false })
+    // v1.5: one failed job + one notification and a paused queue, instead of N failures.
+    await waitFor(() => engine.stats().providerBlocked?.provider === 'elevenlabs')
+    await waitFor(() => b.jobIds.filter((id) => env.s.jobs.get(id)!.status === 'failed').length === 1)
+    const failedB = b.jobIds.find((id) => env.s.jobs.get(id)!.status === 'failed')!
+    expect(env.s.jobs.get(failedB)!.lastError?.kind).toBe('quota')
+    expect(engine.stats().queuePaused).toBe(true)
+    await new Promise((r) => setTimeout(r, 200))
+    expect(b.jobIds.filter((id) => env.s.jobs.get(id)!.status === 'failed')).toHaveLength(1)
+    for (const id of b.jobIds) if (id !== failedB) engine.cancelJob(id)
+    engine.resumeAll()
+    expect(engine.stats().providerBlocked).toBeNull()
 
     env.openai.researchImpl = () => {
       throw new AppError('auth', 'Invalid key', { retryable: false })
@@ -474,6 +483,8 @@ describe('batch creation and generation pipeline', () => {
     await settle(c.jobIds, ['failed'])
     expect(env.s.jobs.get(c.jobIds[0]!)!.lastError?.kind).toBe('auth')
     expect(env.s.jobs.get(c.jobIds[0]!)!.lastError?.action).toMatch(/API key/)
+    expect(engine.stats().providerBlocked?.provider).toBe('openai')
+    engine.resumeAll()
   }, 20000)
 
   it('schedules automatic retries for rate limits and succeeds afterwards', async () => {

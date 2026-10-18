@@ -59,7 +59,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   openai: {
     defaultModel: 'gpt-6.1-sol',
-    researchModel: 'gpt-6.1-sol',
+    // 1.5.0: research only finds the right game and its facts — the small model is much faster.
+    researchModel: 'gpt-6-luna',
     reviewModel: 'gpt-6-luna',
     temperature: 0.7,
     maxOutputTokens: 8000,
@@ -74,11 +75,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
     timeoutMs: 300000,
     maxRetries: 2,
     concurrency: 3,
-    maxCharsPerRequest: 0
+    maxCharsPerRequest: 0,
+    parallelParts: 3
   },
   generation: {
     defaultMode: 'auto',
-    maxConcurrentJobs: 6,
+    // Titles in flight. Provider slots (OpenAI / ElevenLabs) are the real limit; a higher value
+    // lets research for later titles run while earlier ones are being voiced.
+    maxConcurrentJobs: 16,
+    autoTuneConcurrency: true,
     maxRewriteAttempts: 2,
     maxStageRetries: 3,
     validationStrictness: 'standard',

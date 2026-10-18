@@ -1,0 +1,202 @@
+/* v1.5: pre-flight checklist, stage timings, live provider slots */
+
+.pf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+.pf-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 12px;
+  font-size: var(--fs-sm);
+  border-top: 1px solid var(--border);
+}
+.pf-row:first-child {
+  border-top: 0;
+}
+.pf-icon {
+  display: inline-flex;
+  margin-top: 1px;
+  flex: none;
+}
+.pf-ok .pf-icon {
+  color: var(--success);
+}
+.pf-warning .pf-icon {
+  color: var(--warning);
+}
+.pf-error {
+  background: var(--danger-soft);
+}
+.pf-error .pf-icon {
+  color: var(--danger);
+}
+.pf-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pf-label {
+  font-weight: 560;
+  color: var(--fg);
+}
+.pf-message {
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+.pf-action {
+  color: var(--fg);
+  font-size: var(--fs-xs);
+}
+.pf-loading {
+  color: var(--fg-muted);
+  align-items: center;
+}
+.spin {
+  animation: vf-spin 900ms linear infinite;
+}
+@keyframes vf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* Timings */
+.timing-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.timing-bar {
+  display: flex;
+  height: 10px;
+  border-radius: var(--r-full);
+  overflow: hidden;
+  background: var(--neutral-soft);
+  gap: 2px;
+}
+.timing-bar.timing-compact {
+  height: 6px;
+}
+.timing-empty {
+  opacity: 0.6;
+}
+.timing-seg {
+  min-width: 3px;
+  flex-basis: 0;
+}
+.t-research {
+  background: var(--info);
+}
+.t-script {
+  background: var(--accent);
+}
+.t-validate {
+  background: var(--violet);
+}
+.t-audio {
+  background: var(--teal);
+}
+.t-save {
+  background: var(--amber);
+}
+.t-waiting {
+  background: var(--border-strong);
+}
+.timing-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.timing-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.timing-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Where time goes" */
+.time-goes {
+  display: grid;
+  grid-template-columns: minmax(80px, max-content) 1fr minmax(52px, max-content);
+  gap: 8px 12px;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.time-goes-track {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--neutral-soft);
+  overflow: hidden;
+}
+.time-goes-fill {
+  height: 100%;
+  border-radius: var(--r-full);
+}
+.time-goes-value {
+  text-align: right;
+  color: var(--fg-muted);
+}
+
+/* Live provider slots */
+.slots {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-tile);
+}
+.slots-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: var(--fs-sm);
+}
+.slots-name {
+  font-weight: 560;
+  min-width: 84px;
+}
+.slots-value {
+  color: var(--fg);
+}
+.slots-source,
+.slots-live {
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+}
+.slots-cooling {
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}
+
+/* Queue: batch median line + provider banner */
+.batch-medians {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}

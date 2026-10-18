@@ -34,7 +34,7 @@ export interface TestEnv {
   reopen: () => TestEnv
 }
 
-export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?: MockElevenLabs; seed?: boolean; approveSeeded?: boolean } = {}): TestEnv {
+export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?: MockElevenLabs; seed?: boolean; speedDefaults?: boolean; approveSeeded?: boolean } = {}): TestEnv {
   const dir = opts.dir ?? fs.mkdtempSync(path.join(os.tmpdir(), 'vf-test-'))
   const userData = path.join(dir, 'userData')
   const output = path.join(dir, 'output')
@@ -76,6 +76,9 @@ export function createTestEnv(opts: { dir?: string; openai?: MockOpenAI; eleven?
       }
     }
   }
+  // Legacy tests assert exact concurrency and one TTS request per script; the v1.5 tests opt in
+  // to automatic tuning and parallel parts explicitly.
+  if (!opts.speedDefaults) repos.settings.update({ generation: { autoTuneConcurrency: false }, elevenlabs: { parallelParts: 1 } })
   secrets.set('openai', 'sk-test-openai-key-1234567890')
   secrets.set('elevenlabs', '0123456789abcdef0123456789abcdef')
   const cleanup = (): void => {

@@ -29,6 +29,8 @@ export interface ResearchRequest {
   model: string
   manualNotes?: string | null
   signal?: AbortSignal
+  /** Per-call timeout (v1.5: research 120 s). */
+  timeoutMs?: number
 }
 
 export interface ResearchResponse {
@@ -59,6 +61,8 @@ export interface ScriptRequest {
   /** Provider prompt-cache key; identical for every title of one format version. */
   promptCacheKey?: string
   signal?: AbortSignal
+  /** Per-call timeout (v1.5: script 180 s). */
+  timeoutMs?: number
 }
 
 export interface ScriptResponse {
@@ -155,6 +159,8 @@ export interface TtsRequest {
   previousText?: string
   nextText?: string
   signal?: AbortSignal
+  /** Per-call timeout (v1.5: one TTS part 120 s). */
+  timeoutMs?: number
 }
 
 export interface TtsResponse {

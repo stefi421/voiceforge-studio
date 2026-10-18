@@ -31,6 +31,7 @@ import { GenerationService } from '../services/generation'
 import { BackupService } from '../services/backup'
 import { StyleService } from '../services/style'
 import type { UpdateService } from '../services/updater'
+import { PreflightService } from '../services/preflight'
 import { ProjectService } from '../services/projects'
 import { atomicWriteFile, ensureDir } from '../services/files'
 import { AppError } from '../util/errors'
@@ -353,7 +354,13 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
   reg.handle('generation:parseTitles', z.object({ text: z.string().max(2_000_000) }), ({ text }) => generation.parseTitles(text))
   reg.handle('generation:importTitles', z.object({ path: pathSchema }), ({ path: p }) => generation.importTitles(p))
   reg.handle('generation:estimate', createBatchSchema, (input) => generation.estimate(input))
-  reg.handle('generation:createBatch', createBatchSchema, (input) => generation.createBatch(input))
+  const preflight = new PreflightService(s, generation)
+  reg.handle('generation:preflight', createBatchSchema, (input) => preflight.run(input))
+  // The UI shows the pre-flight checklist first; here it is enforced again (cached, so cheap).
+  reg.handle('generation:createBatch', createBatchSchema, async (input) => {
+    await preflight.assertCanStart(input)
+    return generation.createBatch(input)
+  })
 
   reg.handle('queue:list', jobFilterSchema, (filter) => s.jobs.list(filter))
   reg.handle('queue:get', z.object({ id: idSchema }), ({ id }) => {
@@ -362,6 +369,8 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     return j
   })
   reg.handle('queue:stats', null, () => engine.stats())
+  reg.handle('queue:timings', z.object({ jobId: idSchema }), ({ jobId }) => s.jobs.timings(jobId))
+  reg.handle('queue:timingSummary', z.object({ batchId: idSchema.optional(), limit: z.number().int().min(1).max(500).optional() }), (q) => s.jobs.timingSummary(q))
   reg.handle('queue:batches', null, () => s.jobs.listBatches())
   reg.handle('queue:pauseAll', null, () => engine.pauseAll())
   reg.handle('queue:resumeAll', null, () => engine.resumeAll())

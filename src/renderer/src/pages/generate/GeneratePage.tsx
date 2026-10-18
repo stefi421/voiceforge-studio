@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
-import { ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, ListChecks, Sparkles, TriangleAlert, Zap } from 'lucide-react'
-import type { BatchEstimate, CreateBatchInput, JobMode } from '@shared/types'
+import { ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, ListChecks, RefreshCw, Sparkles, TriangleAlert, Zap } from 'lucide-react'
+import type { BatchEstimate, CreateBatchInput, JobMode, PreflightResult } from '@shared/types'
+import { PreflightChecklist } from '@/components/SpeedViews'
 import { modeLabel } from '@/lib/jobs'
 import { allowsAuto, allowsMode, allowsSupervised, blockReason, contentTypeLabel, loadFormats } from '@/lib/formats'
 import { FormatStatusPill } from '@/components/FormatStatus'
@@ -41,6 +42,9 @@ export function GeneratePage(): JSX.Element {
   const [estimate, setEstimate] = useState<BatchEstimate | null>(null)
   const [liveEstimate, setLiveEstimate] = useState<BatchEstimate | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [preflight, setPreflight] = useState<PreflightResult | null>(null)
+  const [preflightLoading, setPreflightLoading] = useState(false)
+  const preflightSeq = useRef(0)
   const [busy, setBusy] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -225,6 +229,8 @@ export function GeneratePage(): JSX.Element {
       return
     }
     setBusy('estimate')
+    setPreflight(null)
+    runPreflight(input)
     try {
       const est = await api.invoke('generation:estimate', input)
       setEstimate(est)
@@ -236,9 +242,29 @@ export function GeneratePage(): JSX.Element {
     }
   }
 
-  const createBatch = async (): Promise<void> => {
-    const input = buildInput()
-    if (!input) return
+  /** Pre-flight checks (v1.5). Runs alongside the estimate; the dialog shows a spinner until done. */
+  const runPreflight = (input: CreateBatchInput): void => {
+    const seq = ++preflightSeq.current
+    setPreflightLoading(true)
+    api
+      .invoke('generation:preflight', input)
+      .then((r) => {
+        if (seq === preflightSeq.current) setPreflight(r)
+      })
+      .catch((err) => {
+        if (seq !== preflightSeq.current) return
+        // Never block on a broken check: show it as a warning and let the server decide at start.
+        setPreflight({ checks: [{ key: 'format', label: 'Pre-flight checks', status: 'warning', message: err instanceof Error ? err.message : 'Could not run the checks.', overridable: false }], canStart: true, needsOverride: false, checkedAt: new Date().toISOString() })
+      })
+      .finally(() => {
+        if (seq === preflightSeq.current) setPreflightLoading(false)
+      })
+  }
+
+  const createBatch = async (startAnyway = false): Promise<void> => {
+    const base = buildInput()
+    if (!base) return
+    const input: CreateBatchInput = startAnyway ? { ...base, startAnyway: true } : base
     setBusy('create')
     try {
       const res = await api.invoke('generation:createBatch', input)
@@ -248,6 +274,8 @@ export function GeneratePage(): JSX.Element {
       navigate('queue', { batchId: res.batchId })
     } catch (err) {
       toast.error('Could not start batch', err)
+      // The server re-checks at start; refresh the list so the dialog shows why.
+      runPreflight(input)
     } finally {
       setBusy(null)
     }
@@ -527,12 +555,22 @@ export function GeneratePage(): JSX.Element {
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={busy === 'create'}>
               Back
             </Button>
-            <Button variant="primary" data-autofocus loading={busy === 'create'} onClick={createBatch}>
-              Start generation
+            <Button variant="ghost" icon={<RefreshCw size={14} />} onClick={() => { const i = buildInput(); if (i) runPreflight(i) }} disabled={preflightLoading || busy === 'create'}>
+              Check again
             </Button>
+            {preflight?.needsOverride ? (
+              <Button variant="danger" loading={busy === 'create'} onClick={() => void createBatch(true)}>
+                Start anyway
+              </Button>
+            ) : (
+              <Button variant="primary" data-autofocus loading={busy === 'create'} disabled={preflightLoading || (preflight != null && !preflight.canStart)} onClick={() => void createBatch(false)} title={preflight && !preflight.canStart ? 'Fix the problems marked in red first' : preflightLoading ? 'Running checks…' : undefined}>
+                Start generation
+              </Button>
+            )}
           </>
         }
       >
+        <PreflightChecklist result={preflight} loading={preflightLoading} />
         {estimate && (
           <>
             <div className="grid grid-3">

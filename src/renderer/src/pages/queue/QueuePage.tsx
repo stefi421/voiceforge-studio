@@ -13,6 +13,7 @@ import { ResearchReviewDialog } from '@/components/dialogs/ResearchReviewDialog'
 import { ScriptReviewDialog } from '@/components/dialogs/ScriptReviewDialog'
 import { JobRow, type JobAction } from './JobRow'
 import { JobDetailDrawer } from './JobDetailDrawer'
+import { BatchMedians } from '@/components/SpeedViews'
 
 type StatusGroup = 'all' | 'active' | 'needs_you' | 'failed' | 'completed' | 'paused' | JobStatus
 
@@ -338,7 +339,33 @@ export function QueuePage(): JSX.Element {
           A local daily or monthly spend limit was reached. Raise it in Settings → Spending, then resume the queue.
         </Alert>
       )}
-      {stats.queuePaused && !stats.spendingPaused && <Alert tone="warning">The queue is paused. Pending jobs will not start until you resume.</Alert>}
+      {stats.providerBlocked && (
+        <Alert
+          tone="danger"
+          title={stats.providerBlocked.provider === 'openai' ? 'Stopped: OpenAI needs attention' : 'Stopped: ElevenLabs needs attention'}
+          actions={
+            <Button size="sm" onClick={() => navigate('settings', { tab: stats.providerBlocked!.provider === 'openai' ? 'openai' : 'elevenlabs' })}>
+              Open settings
+            </Button>
+          }
+        >
+          {stats.providerBlocked.message} {stats.providerBlocked.action} Other jobs were kept and continue when you resume the queue.
+        </Alert>
+      )}
+      {(() => {
+        const cooling = (['openai', 'elevenlabs'] as const).filter((k) => {
+          const until = stats.providers?.[k]?.coolingDownUntil
+          return until && new Date(until).getTime() > now
+        })
+        if (!cooling.length) return null
+        return (
+          <Alert tone="warning" title="Short pause">
+            {cooling.map((k) => (k === 'openai' ? 'OpenAI' : 'ElevenLabs')).join(' and ')} returned several errors in a row, so new requests wait about{' '}
+            {Math.max(1, Math.round((Math.max(...cooling.map((k) => new Date(stats.providers![k]!.coolingDownUntil!).getTime())) - now) / 1000))}s before trying again. Running jobs are not lost.
+          </Alert>
+        )
+      })()}
+      {stats.queuePaused && !stats.spendingPaused && !stats.providerBlocked && <Alert tone="warning">The queue is paused. Pending jobs will not start until you resume.</Alert>}
 
       <div className="queue-summary">
         <div className="queue-summary-stats">
@@ -401,6 +428,7 @@ export function QueuePage(): JSX.Element {
                     {gFailed ? ` · ${gFailed} failed` : ''}
                     {gNeeds ? ` · ${gNeeds} need you` : ''}
                   </span>
+                  <BatchMedians batchId={g.id} doneCount={gDone} />
                 </div>
                 <div className="batch-progress">
                   <ProgressBar value={gPct} tone={finished ? (gFailed ? 'warning' : 'success') : 'accent'} />

@@ -458,6 +458,71 @@ export interface QueueStats {
   estimatedSecondsRemaining: number | null
   /** 0–100: finished stages across all unfinished+finished jobs in the current view, so the bar moves inside a job too. */
   progressPercent: number
+  /** Live provider slots (v1.5). */
+  providers?: { openai: ProviderLiveStatus; elevenlabs: ProviderLiveStatus }
+  /** Set when an auth/quota problem stopped the queue (one notification instead of N failures). */
+  providerBlocked?: { provider: 'openai' | 'elevenlabs'; message: string; action: string; at: string } | null
+}
+
+export interface ProviderLiveStatus {
+  /** Requests allowed at once right now. */
+  limit: number
+  inUse: number
+  waiting: number
+  /** Where the limit comes from: response headers, the plan, adaptive control, or Settings. */
+  source: 'headers' | 'plan' | 'adaptive' | 'manual' | 'default'
+  detail: string
+  /** Circuit breaker: new requests pause until this time after repeated transient failures. */
+  coolingDownUntil: string | null
+  lastError: string | null
+}
+
+export type TimingStage = 'research' | 'script' | 'validate' | 'audio' | 'save' | 'waiting'
+
+export interface StageTiming {
+  stage: TimingStage
+  startedAt: string
+  endedAt: string
+  seconds: number
+  detail: string | null
+}
+
+export interface JobTimings {
+  jobId: string
+  segments: StageTiming[]
+  /** Seconds per stage (sum of segments). */
+  totals: Record<TimingStage, number>
+  totalSeconds: number
+}
+
+export interface TimingSummary {
+  /** Number of finished jobs the medians are based on. */
+  samples: number
+  medians: Record<TimingStage, number>
+  /** Share of the median total per stage, 0–1. */
+  share: Record<TimingStage, number>
+  medianTotalSeconds: number
+}
+
+export type PreflightStatus = 'ok' | 'warning' | 'error'
+
+export interface PreflightCheck {
+  key: 'openai_key' | 'eleven_key' | 'voices' | 'characters' | 'output_folder' | 'disk_space' | 'format'
+  label: string
+  status: PreflightStatus
+  message: string
+  action?: string
+  /** True when "Start anyway" may bypass this failure. */
+  overridable: boolean
+}
+
+export interface PreflightResult {
+  checks: PreflightCheck[]
+  /** False when an error that cannot be overridden is present. */
+  canStart: boolean
+  /** True when only overridable errors block (offer "Start anyway"). */
+  needsOverride: boolean
+  checkedAt: string
 }
 
 // ---------------------------------------------------------------------------
@@ -742,10 +807,14 @@ export interface AppSettings {
     concurrency: number
     /** Chunk size override (chars). 0 = use model limit. */
     maxCharsPerRequest: number
+    /** Split one voiceover into up to N parts generated at the same time (1 = one request). */
+    parallelParts: number
   }
   generation: {
     defaultMode: JobMode
     maxConcurrentJobs: number
+    /** Learn safe concurrency from the providers (plan limits, rate-limit headers) instead of the manual values. */
+    autoTuneConcurrency: boolean
     maxRewriteAttempts: number
     maxStageRetries: number
     validationStrictness: 'relaxed' | 'standard' | 'strict'
@@ -883,6 +952,8 @@ export interface CreateBatchInput {
   manualResearchNotes?: Record<string, string>
   /** Template (content type) to use; defaults to the channel's active template. */
   templateId?: string | null
+  /** Skip overridable pre-flight failures (e.g. not enough ElevenLabs characters). */
+  startAnyway?: boolean
 }
 
 export interface CreateBatchResult {

@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.5.0
+
+**Much faster batches** (mock benchmark, same work: 10 titles 3.7 → 2.4 min, 30 titles 9.9 → 4.5 min, 1 title 1.6 → 1.4 min)
+- Long voiceovers are split into up to 3 parts (Settings → Generation → Voice parts per title, 1–4)
+  that are generated at the same time and joined frame by frame. Each part gets the text before and
+  after it so intonation flows across the joins; models that refuse that context fall back to
+  plain parts automatically. Every part is saved as soon as it is ready, so a crash or restart
+  only redoes the missing parts. The finished file is checked against the expected length.
+- Research for every title in a batch starts right away; titles closest to finishing get the
+  next free slot (save → voice → script → research), so the first finished files arrive sooner.
+- Research uses `gpt-6-luna` by default (faster); scripts are still written with `gpt-6.1-sol`.
+  Settings still on the old research default switch once; any other research model you picked stays.
+  "Titles at the same time" still at the old default 6 moves to 16 (provider slots do the real limiting).
+
+**Automatic speed (recommended, on by default)**
+- ElevenLabs: uses your plan's real number of requests at once (from the response headers, or
+  your plan: Free 2, Starter 3, Creator 5, Pro 10, Scale/Business 15) and lowers it by one if
+  ElevenLabs says there are too many at once.
+- OpenAI: starts at 6 requests at once, adds one after 3 successes in a row (up to 10), halves on
+  a rate limit, and waits briefly before sending when your rate-limit headers say the minute's
+  budget is almost used up.
+- Settings → Generation → Speed shows the live values and where they come from. Turn Automatic
+  off to set the numbers yourself as before.
+
+**Fewer failures**
+- Pre-flight checks in the start dialog: OpenAI and ElevenLabs keys, ElevenLabs characters left
+  vs. needed, every channel's voice still in your account, the format, the output folder (write
+  test) and free disk space. Blocking problems disable Start; low credits or disk space offer
+  "Start anyway". The same checks run again when the batch is created.
+- Time limits per request (research 2 min, script 3 min, each voice part 2 min) so a hung request
+  is retried instead of blocking a slot.
+- If a provider fails several times in a row, new requests to it pause for 30 s instead of
+  burning retries; the queue shows a short-pause notice.
+- A wrong key or an empty quota now stops the whole queue with one notification and one failed
+  job, instead of failing every title. Fix it and press Resume queue.
+
+**See where the time goes**
+- Job details: a bar with research, script, checks, voice and save times.
+- Batch header: median time per stage once titles finish.
+- Usage: "Where time goes" across your last 50 titles.
+
 ## 1.4.0
 
 **Your reference pack is built in (15 channels)**

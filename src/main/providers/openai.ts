@@ -3,6 +3,7 @@ import type { ResponseCreateParamsNonStreaming, Response as OpenAIResponse, Tool
 import type { ConnectionTestResult, OpenAIModelInfo, ResearchData, ResearchSource, ScriptSection, StyleFinding, ValidationIssue } from '@shared/types'
 import { AppError, parseRetryAfter, toAppError } from '../util/errors'
 import type { ScopedLogger } from '../services/logger'
+import { parseOpenAIRateHeaders, providerTelemetry } from '../queue/limits'
 import {
   ANALYZE_JSON_SCHEMA,
   REVIEW_JSON_SCHEMA,
@@ -163,10 +164,30 @@ export class OpenAIClientProvider implements OpenAIProvider {
     this.client = new OpenAI({ apiKey: cfg.apiKey, timeout: cfg.timeoutMs, maxRetries: 0 })
   }
 
-  private async create(params: ResponseCreateParamsNonStreaming, signal?: AbortSignal): Promise<OpenAIResponse> {
+  /** One request; response headers (rate limits) are reported to the concurrency governor. */
+  private async send(params: ResponseCreateParamsNonStreaming, signal?: AbortSignal, timeoutMs?: number): Promise<OpenAIResponse> {
+    const { data, response } = await this.client.responses.create(params, { signal, ...(timeoutMs ? { timeout: timeoutMs } : {}) }).withResponse()
     try {
-      return await this.client.responses.create(params, { signal })
+      const info = parseOpenAIRateHeaders(response.headers)
+      if (info) providerTelemetry.onOpenAI?.(info)
+    } catch {
+      /* telemetry is best-effort */
+    }
+    return data
+  }
+
+  private async create(params: ResponseCreateParamsNonStreaming, signal?: AbortSignal, timeoutMs?: number): Promise<OpenAIResponse> {
+    try {
+      return await this.send(params, signal, timeoutMs)
     } catch (err) {
+      if (err instanceof APIError) {
+        try {
+          const info = parseOpenAIRateHeaders(err.headers as unknown as Headers)
+          if (info) providerTelemetry.onOpenAI?.(info)
+        } catch {
+          /* ignore */
+        }
+      }
       // Some models reject temperature/reasoning; retry once without the unsupported parameter.
       if (err instanceof APIError && err.status === 400 && /(temperature|reasoning|verbosity)/i.test(err.message)) {
         const retry = { ...params }
@@ -179,7 +200,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
         }
         this.log.warn('Retrying OpenAI request without unsupported parameter', { reason: err.message })
         try {
-          return await this.client.responses.create(retry, { signal })
+          return await this.send(retry, signal, timeoutMs)
         } catch (err2) {
           throw mapOpenAIError(err2)
         }
@@ -238,7 +259,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
       params.tool_choice = 'auto'
       params.include = ['web_search_call.action.sources']
     }
-    const res = await this.create(params, req.signal)
+    const res = await this.create(params, req.signal, req.timeoutMs)
     const data = parseJsonOutput<ResearchData>(res, 'research')
     data.confidence = Math.max(0, Math.min(1, Number(data.confidence) || 0))
     const sources = extractSources(res)
@@ -251,7 +272,7 @@ export class OpenAIClientProvider implements OpenAIProvider {
     params.instructions = scriptSystemPrompt(req.channel, req.template, req.references ?? [])
     params.input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
     if (req.promptCacheKey) params.prompt_cache_key = req.promptCacheKey
-    const res = await this.create(params, req.signal)
+    const res = await this.create(params, req.signal, req.timeoutMs)
     if (res.status === 'incomplete') {
       const reason = res.incomplete_details?.reason ?? 'unknown'
       throw new AppError('config', `OpenAI stopped the script early (${reason}).`, {

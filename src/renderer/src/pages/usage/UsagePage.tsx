@@ -7,6 +7,7 @@ import { navigate } from '@/store/router'
 import { formatCompact, formatCost, formatNumber, isoDay } from '@/lib/format'
 import { Alert, Badge, Button, Card, CostLabel, EmptyState, Field, Input, PageHeader, ProgressBar, SkeletonRows, Tabs } from '@/components/ui'
 import { BarChart } from './BarChart'
+import { WhereTimeGoes } from '@/components/SpeedViews'
 
 type Preset = 'today' | '7d' | '30d' | 'month' | 'custom'
 
@@ -38,6 +39,7 @@ export function UsagePage(): JSX.Element {
   const [custom, setCustom] = useState({ from: '', to: '' })
   const range = useMemo(() => rangeFor(preset, custom), [preset, custom])
   const usage = useAsync(() => api.invoke('usage:summary', range), [range.from, range.to])
+  const timing = useAsync(() => api.invoke('queue:timingSummary', { limit: 50 }), [])
   const u = usage.data
 
   const daily = useMemo(() => (Array.isArray(u?.daily) ? u.daily : []).map((d) => ({ label: d.day.slice(5), a: d.openaiCost, b: d.elevenCost })), [u])
@@ -124,6 +126,12 @@ export function UsagePage(): JSX.Element {
           </div>
         </Card>
       </div>
+
+      <Card title="Where time goes" actions={<Badge>last 50 titles</Badge>}>
+        <div className="card-body">
+          <WhereTimeGoes summary={timing.data ?? null} />
+        </div>
+      </Card>
 
       <Card title="Spend vs. local limits" actions={<Badge>estimate</Badge>}>
         <div className="card-body col gap-4">

@@ -1,4 +1,4 @@
-import type { Batch, Job, JobError, JobEvent, JobMode, JobOverrides, JobStage, JobStatus, JobView, QueueStats } from '@shared/types'
+import type { Batch, Job, JobError, JobEvent, JobMode, JobOverrides, JobStage, JobStatus, JobView, QueueStats, JobTimings, StageTiming, TimingStage, TimingSummary } from '@shared/types'
 import type { Database } from '../database'
 import { newId, nowIso, parseJson } from '../../util/common'
 
@@ -219,7 +219,8 @@ export class JobRepo {
       .all<JobRow>(
         `SELECT * FROM jobs WHERE status = 'pending' AND (next_run_at IS NULL OR next_run_at <= ?)
          AND (lease_expires_at IS NULL OR lease_expires_at < ?)
-         ORDER BY created_at ASC, position ASC LIMIT ?`,
+         ORDER BY CASE stage WHEN 'save' THEN 0 WHEN 'audio' THEN 1 WHEN 'approval' THEN 1 WHEN 'script' THEN 2 ELSE 3 END ASC,
+                  created_at ASC, position ASC LIMIT ?`,
         now,
         now,
         limit
@@ -381,6 +382,40 @@ export class JobRepo {
     return out
   }
 
+  /** Per-stage timing of one job, derived from its status history (v1.5). */
+  timings(jobId: string): JobTimings {
+    const events = this.db.all<{ to_status: string | null; event: string; detail: string | null; at: string }>(
+      'SELECT to_status, event, detail, at FROM job_events WHERE job_id = ? ORDER BY id ASC',
+      jobId
+    )
+    return buildTimings(jobId, events)
+  }
+
+  /** Median stage durations of the most recent finished jobs (optionally one batch). */
+  timingSummary(opts: { batchId?: string; limit?: number } = {}): TimingSummary {
+    const limit = Math.max(1, Math.min(500, opts.limit ?? 50))
+    const ids = opts.batchId
+      ? this.db.all<{ id: string }>(`SELECT id FROM jobs WHERE batch_id = ? AND status = 'completed' ORDER BY updated_at DESC LIMIT ?`, opts.batchId, limit)
+      : this.db.all<{ id: string }>(`SELECT id FROM jobs WHERE status = 'completed' ORDER BY updated_at DESC LIMIT ?`, limit)
+    const per: Record<TimingStage, number[]> = { research: [], script: [], validate: [], audio: [], save: [], waiting: [] }
+    const totals: number[] = []
+    for (const { id } of ids) {
+      const t = this.timings(id)
+      for (const k of TIMING_STAGES) per[k].push(t.totals[k])
+      totals.push(t.totalSeconds)
+    }
+    const median = (list: number[]): number => {
+      if (!list.length) return 0
+      const sorted = [...list].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2
+    }
+    const medians = Object.fromEntries(TIMING_STAGES.map((k) => [k, Math.round(median(per[k]) * 10) / 10])) as Record<TimingStage, number>
+    const work = TIMING_STAGES.reduce((n, k) => n + medians[k], 0)
+    const share = Object.fromEntries(TIMING_STAGES.map((k) => [k, work > 0 ? medians[k] / work : 0])) as Record<TimingStage, number>
+    return { samples: ids.length, medians, share, medianTotalSeconds: Math.round(median(totals) * 10) / 10 }
+  }
+
   countForProject(projectId: string, statuses?: JobStatus[]): number {
     if (statuses?.length) {
       return (
@@ -447,4 +482,48 @@ export class JobRepo {
     )
     return r?.avg ?? null
   }
+}
+
+
+const TIMING_STAGES: TimingStage[] = ['research', 'script', 'validate', 'audio', 'save', 'waiting']
+
+const STATUS_TO_TIMING: Partial<Record<string, TimingStage>> = {
+  researching: 'research',
+  writing_script: 'script',
+  validating_script: 'validate',
+  generating_audio: 'audio',
+  saving_files: 'save',
+  pending: 'waiting',
+  script_ready: 'waiting'
+}
+
+/**
+ * Turns a job's status events into stage segments. Each status lasts until the next status
+ * event; time spent waiting for the user (approval, research choice) or paused is excluded,
+ * and the clock stops at completed/failed/cancelled.
+ */
+export function buildTimings(jobId: string, events: Array<{ to_status: string | null; event: string; detail: string | null; at: string }>): JobTimings {
+  const segments: StageTiming[] = []
+  const transitions = events.filter((e) => e.to_status)
+  for (let i = 0; i < transitions.length; i++) {
+    const cur = transitions[i]!
+    const stage = STATUS_TO_TIMING[cur.to_status!]
+    if (!stage) continue
+    const next = transitions[i + 1]
+    if (!next) break // still running: not counted until it ends
+    const seconds = (new Date(next.at).getTime() - new Date(cur.at).getTime()) / 1000
+    if (!(seconds >= 0) || seconds > 6 * 3600) continue
+    const last = segments[segments.length - 1]
+    if (last && last.stage === stage && last.endedAt === cur.at) {
+      last.endedAt = next.at
+      last.seconds = Math.round((last.seconds + seconds) * 10) / 10
+    } else {
+      segments.push({ stage, startedAt: cur.at, endedAt: next.at, seconds: Math.round(seconds * 10) / 10, detail: cur.detail })
+    }
+  }
+  // Leading "waiting" before anything started (queued behind other titles) is real waiting too, keep it.
+  const totals = Object.fromEntries(TIMING_STAGES.map((k) => [k, 0])) as Record<TimingStage, number>
+  for (const seg of segments) totals[seg.stage] = Math.round((totals[seg.stage] + seg.seconds) * 10) / 10
+  const totalSeconds = Math.round(segments.reduce((n, x) => n + x.seconds, 0) * 10) / 10
+  return { jobId, segments, totals, totalSeconds }
 }

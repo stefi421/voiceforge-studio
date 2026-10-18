@@ -4,6 +4,7 @@ import type { ConnectionTestResult, ElevenModel, ElevenSubscription, ElevenVoice
 import { AppError, parseRetryAfter, toAppError } from '../util/errors'
 import type { ScopedLogger } from '../services/logger'
 import type { ElevenLabsProvider, TtsRequest, TtsResponse } from './types'
+import { parseElevenConcurrencyHeaders, providerTelemetry } from '../queue/limits'
 
 export interface ElevenClientConfig {
   apiKey: string
@@ -215,10 +216,17 @@ export class ElevenLabsClientProvider implements ElevenLabsProvider {
       }
       if (req.previousText) body.previousText = req.previousText
       if (req.nextText) body.nextText = req.nextText
-      const promise = this.client.textToSpeech.convert(req.voiceId, body, { abortSignal: req.signal })
+      const promise = this.client.textToSpeech.convert(req.voiceId, body, { abortSignal: req.signal, ...(req.timeoutMs ? { timeoutInSeconds: Math.ceil(req.timeoutMs / 1000) } : {}) })
       const { data: stream, rawResponse } = await promise.withRawResponse()
+      const headers = rawResponse?.headers as Headers | undefined
+      try {
+        const info = parseElevenConcurrencyHeaders(headers)
+        if (info) providerTelemetry.onEleven?.(info)
+      } catch {
+        /* best-effort */
+      }
       const audio = await readAll(stream, req.signal)
-      const requestId = (rawResponse?.headers as Headers | undefined)?.get?.('request-id') ?? null
+      const requestId = headers?.get?.('request-id') ?? null
       return { audio, requestId }
     } catch (err) {
       throw mapElevenError(err)
