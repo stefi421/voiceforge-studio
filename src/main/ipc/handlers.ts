@@ -345,6 +345,22 @@ export function registerHandlers(reg: IpcRegistry, deps: HandlerDeps): void {
     if (!t || t.channelId !== channelId) throw new AppError('config', 'Format not found for this channel.', { retryable: false, code: 'FORMAT_NOT_FOUND' })
     return s.channels.setDefaultTemplate(channelId, templateId)
   })
+  reg.handle(
+    'templates:setLimits',
+    z
+      .object({
+        templateId: idSchema,
+        formFactor: z.enum(['long', 'short']).optional(),
+        minChars: z.number().int().min(0).max(100000).nullable().optional(),
+        maxChars: z.number().int().min(50).max(100000).nullable().optional(),
+        targetDurationSec: z.number().int().min(3).max(3600).nullable().optional()
+      })
+      .refine((p) => p.minChars == null || p.maxChars == null || p.maxChars >= p.minChars, { message: 'maxChars must be >= minChars' }),
+    ({ templateId, ...patch }) => {
+      if (!s.channels.getTemplate(templateId)) throw new AppError('config', 'Format not found.', { retryable: false, code: 'FORMAT_NOT_FOUND' })
+      return s.channels.setTemplateLimits(templateId, patch)
+    }
+  )
   reg.handle('templates:setFixedBlocks', z.object({ versionId: idSchema, blocks: z.array(fixedTextBlockSchema).max(100) }), ({ versionId, blocks }) => style.setFixedBlocks(versionId, blocks))
   reg.handle('style:test', z.object({ templateId: idSchema, title: z.string().trim().min(1).max(200), notes: z.string().max(20000).optional() }), ({ templateId, title, notes }) => style.runTest(templateId, title, notes))
   reg.handle('style:tests', z.object({ templateId: idSchema, limit: z.number().int().min(1).max(100).optional() }), ({ templateId, limit }) => s.channels.listStyleTests(templateId, limit ?? 20))

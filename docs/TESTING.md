@@ -62,6 +62,13 @@ one-time full-cap fallback, per-model token budget (refill, ordering, isolation 
 SDK `maxRetries: 0`, `retry-after-ms`/`retry-after`/reset parsing, `waitingFor` set and cleared,
 provider_calls rows (429 then 200 with retry 1) and pruning.
 
+1.7.0 (`tests/v17.test.ts`, `tests/v17.ipc.test.ts`): migration defaults (existing formats long
+with channel limits, `short_review` short), per-format length in validator / prompt / estimate,
+short-form validator rules (URL, markdown, heading lines, product name), idempotent short-format
+seed that never touches owner-edited formats or lengths, one TTS request per short with parallel
+parts on, `<Title> (Short)` folder and flat files, Games library research reused long ↔ short
+(no extra research calls), `templates:list` / `templates:setLimits` over IPC.
+
 `VF_BENCH=1 npx vitest run tests/ratelimit.bench.test.ts` runs 3 and 10 titles against a mock
 OpenAI that enforces tokens/min per model (sol 30k, luna 200k, 429 + Retry-After, scaled 100×).
 

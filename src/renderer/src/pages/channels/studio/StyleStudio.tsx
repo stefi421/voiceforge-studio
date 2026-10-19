@@ -19,13 +19,14 @@ export interface StyleStudioProps {
   initialTemplateId?: string | undefined
   minChars: number
   maxChars: number
+  targetDurationSec?: number
 }
 
 /**
  * Channel Style Preservation Studio: one workspace per content type ("format").
  * Formats never overwrite each other; each keeps its own references, versions and tests.
  */
-export function StyleStudio({ channelId, channelName, activeVersionId, channelInstructions, initialTemplateId, minChars, maxChars }: StyleStudioProps): JSX.Element {
+export function StyleStudio({ channelId, channelName, activeVersionId, channelInstructions, initialTemplateId, minChars, maxChars, targetDurationSec = 300 }: StyleStudioProps): JSX.Element {
   const templates = useAsync(() => api.invoke('templates:list', { channelId }), [channelId], { fallback: [] })
   const [selectedId, setSelectedId] = useState<string | null>(initialTemplateId ?? null)
   const [adding, setAdding] = useState(false)
@@ -82,6 +83,7 @@ export function StyleStudio({ channelId, channelName, activeVersionId, channelIn
                 <button key={t.id} type="button" role="tab" aria-selected={t.id === selectedId} className={`studio-format ${t.id === selectedId ? 'active' : ''}`} onClick={() => setSelectedId(t.id)} title={STATUS_LABEL[st]}>
                   <span className="studio-format-name">
                     {contentTypeLabel(t.contentType)}
+                    {contentTypeLabel(t.contentType) !== 'Short' && <span className="xs subtle"> · {t.formFactor === 'short' ? 'Short' : 'Long'}</span>}
                     {isDefault && <span className="xs subtle"> · default</span>}
                   </span>
                   <span className="xs muted truncate">{t.name}</span>
@@ -110,6 +112,7 @@ export function StyleStudio({ channelId, channelName, activeVersionId, channelIn
             channelInstructions={channelInstructions}
             minChars={minChars}
             maxChars={maxChars}
+            targetDurationSec={targetDurationSec}
             onChanged={refresh}
             onDelete={() => setDeleting(selected)}
           />

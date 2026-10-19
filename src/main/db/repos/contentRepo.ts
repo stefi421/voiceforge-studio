@@ -29,6 +29,7 @@ interface ProjectRow {
   folder_name: string
   folder_path: string | null
   layout?: string | null
+  form_factor?: string | null
   archived: number
   created_at: string
   updated_at: string
@@ -50,6 +51,7 @@ function rowToProject(r: ProjectRow): Project {
     folderName: r.folder_name,
     folderPath: r.folder_path,
     layout: r.layout === 'flat' ? 'flat' : 'folders',
+    formFactor: r.form_factor === 'short' ? 'short' : 'long',
     archived: toBool(r.archived),
     createdAt: r.created_at,
     updatedAt: r.updated_at
@@ -92,10 +94,10 @@ export interface LibraryFilter {
 export class ProjectRepo {
   constructor(private db: Database) {}
 
-  create(input: { channelId: string; title: string; titleNormalized: string; folderName: string; folderPath: string | null; layout?: Project['layout'] }, id = newId()): Project {
+  create(input: { channelId: string; title: string; titleNormalized: string; folderName: string; folderPath: string | null; layout?: Project['layout']; formFactor?: Project['formFactor'] }, id = newId()): Project {
     const ts = nowIso()
     this.db.run(
-      'INSERT INTO projects (id, channel_id, title, title_normalized, folder_name, folder_path, layout, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
+      'INSERT INTO projects (id, channel_id, title, title_normalized, folder_name, folder_path, layout, form_factor, archived, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)',
       id,
       input.channelId,
       input.title,
@@ -103,6 +105,7 @@ export class ProjectRepo {
       input.folderName,
       input.folderPath,
       input.layout ?? 'folders',
+      input.formFactor ?? 'long',
       ts,
       ts
     )
@@ -119,8 +122,9 @@ export class ProjectRepo {
     return r ? rowToProjectView(r) : undefined
   }
 
-  findByTitle(channelId: string, titleNormalized: string): Project | undefined {
-    const r = this.db.get<ProjectRow>('SELECT * FROM projects WHERE channel_id = ? AND title_normalized = ? ORDER BY created_at ASC LIMIT 1', channelId, titleNormalized)
+  /** A title has one long-form and one short-form project per channel (1.7.0). */
+  findByTitle(channelId: string, titleNormalized: string, formFactor: Project['formFactor'] = 'long'): Project | undefined {
+    const r = this.db.get<ProjectRow>('SELECT * FROM projects WHERE channel_id = ? AND title_normalized = ? AND form_factor = ? ORDER BY created_at ASC LIMIT 1', channelId, titleNormalized, formFactor)
     return r ? rowToProject(r) : undefined
   }
 

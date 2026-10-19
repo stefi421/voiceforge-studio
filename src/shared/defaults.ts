@@ -120,6 +120,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     lastChannelId: null,
     lastTemplateId: null,
+    formFactorByChannel: {},
     lastMode: null
   },
   updates: {

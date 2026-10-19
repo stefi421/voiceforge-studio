@@ -4,7 +4,7 @@ import type { JobView, WaitingFor } from '@shared/types'
 import { fixActionFor, jobAttempts, isActiveStatus, isFinished, needsUser, stageText, waitingText, waitingTooltip } from '@/lib/jobs'
 import { useNow } from '@/lib/hooks'
 import { relativeTime } from '@/lib/format'
-import { Button, ChannelChip, StagePipeline, StatusBadge } from '@/components/ui'
+import { Badge, Button, ChannelChip, StagePipeline, StatusBadge } from '@/components/ui'
 
 export type JobAction = 'pause' | 'resume' | 'retry' | 'fix' | 'cancel' | 'remove' | 'openFolder' | 'viewScript' | 'viewResearch' | 'review' | 'details'
 
@@ -35,8 +35,11 @@ export const JobRow = memo(function JobRow({ job, busy, highlighted, selected, n
     <tr className={`job-row ${highlighted ? 'highlighted' : ''} ${selected ? 'selected' : ''}`} onClick={() => onAction('details', job)}>
       <td>
         <div className="col" style={{ gap: 2, minWidth: 0 }}>
-          <span className="strong truncate" title={job.title} style={{ maxWidth: 380 }}>
-            {job.title}
+          <span className="row" style={{ gap: 6, minWidth: 0 }}>
+            <span className="strong truncate" title={job.title} style={{ maxWidth: 380 }}>
+              {job.title}
+            </span>
+            {job.formFactor === 'short' && <Badge tone="accent">Short</Badge>}
           </span>
           {job.waitingFor && !isFinished(job.status) && job.status !== 'paused' ? (
             <WaitLine wait={job.waitingFor} />

@@ -38,6 +38,7 @@ interface JobRow {
   project_folder?: string | null
   script_char_count?: number | null
   audio_file_path?: string | null
+  form_factor?: string | null
 }
 
 export const ACTIVE_STATUSES: JobStatus[] = ['researching', 'writing_script', 'validating_script', 'generating_audio', 'saving_files']
@@ -83,13 +84,14 @@ function rowToView(r: JobRow): JobView {
     projectFolder: r.project_folder ?? null,
     scriptCharCount: r.script_char_count ?? null,
     audioFilePath: r.audio_file_path ?? null,
+    formFactor: r.form_factor === 'short' ? 'short' : 'long',
     waitingFor: jobWaits.get(r.id)
   }
 }
 
 const VIEW_SELECT = `
 SELECT j.*, c.name AS channel_name, c.color AS channel_color, c.icon AS channel_icon, b.name AS batch_name,
-       p.folder_path AS project_folder,
+       p.folder_path AS project_folder, p.form_factor AS form_factor,
        (SELECT char_count FROM scripts s WHERE s.id = j.script_id) AS script_char_count,
        (SELECT file_path FROM audio_files a WHERE a.id = j.audio_id) AS audio_file_path
 FROM jobs j

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { BatchEstimate, Channel, CreateBatchInput, CreateBatchResult, JobOverrides, ParsedTitles } from '@shared/types'
+import { applyFormatLimits } from '@shared/types'
 import type { Services } from './container'
 import { ProjectService } from './projects'
 import type { QueueEngine } from '../queue/engine'
@@ -92,12 +93,15 @@ export class GenerationService {
     const seen = new Set<string>()
     const library = this.engine.pipeline?.library
     input.entries.forEach((e, i) => {
-      const ch = perEntry[i]!
+      const baseCh = perEntry[i]!
+      // 1.7.0: the chosen format's own length window (shorts) drives the estimate.
+      const fmt = this.style.resolve(baseCh, this.templateFor(input, baseCh))?.template ?? null
+      const ch = applyFormatLimits(baseCh, fmt)
       const id = this.identify(e.title)
-      const keys = id.keys.map((k) => `${ch.id}:${k}`)
+      const keys = id.keys.map((k) => `${ch.id}:${fmt?.formFactor ?? 'long'}:${k}`)
       if (keys.some((k) => seen.has(k))) return
       for (const k of keys) seen.add(k)
-      const expectedChars = Math.round((ch.minChars + ch.maxChars) / 2) || 4000
+      const expectedChars = Math.round((ch.minChars + ch.maxChars) / 2) || (fmt?.formFactor === 'short' ? 400 : 4000)
       const researches = ch.research.enabled && ch.research.mode !== 'manual'
       // Saved research (Game Library) costs nothing; near matches are counted as new (the user may say "different game").
       const m = researches && library ? library.match(id.title, ch.category, id.overrides.steamAppId) : null
@@ -200,13 +204,15 @@ export class GenerationService {
         const id = this.identify(typed)
         const title = id.title
         // A Steam link and the same game's name (or two links to one app) are duplicates (1.6.1).
-        const keys = id.keys.map((k) => `${channel.id}:${k}`)
+        const resolved = this.style.resolve(channel, this.templateFor(input, channel))?.template
+        const formFactor = resolved?.formFactor ?? 'long'
+        const keys = id.keys.map((k) => `${channel.id}:${formFactor}:${k}`)
         if (settings.generation.duplicateDetection && keys.some((k) => seen.has(k))) {
           skipped.push(`${typed === title ? title : `${typed} → ${title}`} (duplicate in this batch)`)
           return
         }
         for (const k of keys) seen.add(k)
-        const { project, created } = this.projectsSvc.getOrCreate(channel, title)
+        const { project, created } = this.projectsSvc.getOrCreate(channel, title, formFactor)
         if (!created) {
           const active = this.s.jobs.countForProject(project.id, ['pending', 'researching', 'writing_script', 'validating_script', 'script_ready', 'awaiting_approval', 'research_review_required', 'generating_audio', 'saving_files'])
           if (active > 0) {
@@ -219,7 +225,7 @@ export class GenerationService {
           }
         }
         const notes = input.manualResearchNotes?.[typed] ?? input.manualResearchNotes?.[title] ?? input.manualResearchNotes?.[normalizeTitle(title)] ?? null
-        const templateId = this.style.resolve(channel, this.templateFor(input, channel))?.template.id
+        const templateId = resolved?.id
         const overrides: JobOverrides = { ...(templateId ? { templateId } : {}), ...id.overrides }
         const job = this.s.jobs.create({ batchId: batch.id, projectId: project.id, channelId: channel.id, title, mode: input.mode, position: i, manualResearchNotes: notes, overrides: Object.keys(overrides).length ? overrides : undefined })
         jobIds.push(job.id)
@@ -230,7 +236,10 @@ export class GenerationService {
     }
     // Remember the choice so the next batch (and "Paste & generate") needs no clicks.
     try {
-      const next = this.s.settings.update({ ui: { lastChannelId: base.id, lastTemplateId: input.templateId ?? null, lastMode: input.mode } })
+      const chosen = input.templateId ? this.s.channels.getTemplate(input.templateId) : undefined
+      const next = this.s.settings.update({
+        ui: { lastChannelId: base.id, lastTemplateId: input.templateId ?? null, lastMode: input.mode, ...(chosen ? { formFactorByChannel: { [base.id]: chosen.formFactor } } : {}) }
+      })
       this.s.events.emit('settings:changed', next)
     } catch {
       /* best effort */

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import path from 'node:path'
+import { applyFormatLimits } from '@shared/types'
 import type { Channel, Job, ResearchData, ResearchResult, ResearchSource, Script, TemplateVersion, ValidationIssue, ValidationReport } from '@shared/types'
 import type { Services } from '../services/container'
 import { moveInto, ProjectService } from '../services/projects'
@@ -414,6 +415,16 @@ export class Pipeline {
   // Script
   // ---------------------------------------------------------------------------
 
+  /** 1.7.0: a format may carry its own length window (shorts); null fields fall back to the channel. */
+  private formatChannel(channel: Channel, templateId: string | null | undefined): Channel {
+    if (!templateId) return channel
+    return applyFormatLimits(channel, this.s.channels.getTemplate(templateId) ?? null)
+  }
+
+  private isShortFormat(templateId: string | null | undefined): boolean {
+    return !!templateId && this.s.channels.getTemplate(templateId)?.formFactor === 'short'
+  }
+
   private loadTemplate(channel: Channel, job?: Job): { version: TemplateVersion; templateId: string; contentType: string } {
     const r = this.style.resolve(channel, job?.overrides?.templateId)
     if (!r) {
@@ -434,7 +445,8 @@ export class Pipeline {
     return { version: tv, templateId: r.template.id, contentType: r.template.contentType }
   }
 
-  private async runScript(job: Job, channel: Channel, ctx: StageContext): Promise<StageOutcome> {
+  private async runScript(job: Job, baseChannel: Channel, ctx: StageContext): Promise<StageOutcome> {
+    let channel = baseChannel
     // Audio-only regeneration: use the requested script version directly.
     if (job.overrides?.useScriptId) {
       const existing = this.s.scripts.get(job.overrides.useScriptId)
@@ -451,10 +463,13 @@ export class Pipeline {
     }
     const loaded = this.loadTemplate(channel, job)
     const template = loaded.version
+    channel = this.formatChannel(channel, loaded.templateId)
+    const shortForm = this.isShortFormat(loaded.templateId)
     // 1.6.0, fewer tokens: one reference script is enough when the format is pinned down by locked
     // text and required labels; the skeleton still counts paragraphs over every reference.
     const lockedElements = template.fixedBlocks.filter((b) => b.locked && b.text.trim()).length + template.structure.filter((sec) => sec.required).length
     const references = this.style.promptReferences(loaded.templateId, lockedElements >= 3 ? 1 : 2)
+    // Skeleton comes only from this format's own references (shorts never inherit the long-form one).
     const skeletonReferences = this.s.channels.listReferences(loaded.templateId).map((r) => ({ text: r.text }))
     const provenance = { templateId: loaded.templateId, contentType: loaded.contentType, referenceSetVersion: this.s.channels.referenceSetVersion(loaded.templateId), researchId: job.researchId ?? null }
     const research = job.researchId ? this.s.research.get(job.researchId) : undefined
@@ -494,6 +509,7 @@ export class Pipeline {
       tighten: opts.tighten,
       references,
       skeletonReferences,
+      formFactor: shortForm ? 'short' : 'long',
       // Same stable prefix for every title of this format → provider-side prompt caching.
       promptCacheKey: `vf:${template.id}`,
       signal: ctx.signal,
@@ -536,6 +552,7 @@ export class Pipeline {
       const report = validateScript(text, {
         channel,
         template,
+        formFactor: shortForm ? 'short' : 'long',
         expectedTitle: researchData?.canonicalTitle || job.title,
         researchConfirmed: false,
         strictness,
@@ -686,7 +703,8 @@ export class Pipeline {
     const base = baseScriptId ? this.s.scripts.get(baseScriptId) : this.s.scripts.latestForProject(projectId)
     const template = base?.templateVersionId ? this.s.channels.getVersion(base.templateVersionId) ?? null : this.style.resolve(channel)?.version ?? null
     const gen = this.s.settings.get().generation
-    const report = validateScript(text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
+    const fmtChannel = this.formatChannel(channel, base?.templateId ?? template?.templateId)
+    const report = validateScript(text, { channel: fmtChannel, template, formFactor: this.isShortFormat(base?.templateId ?? template?.templateId) ? 'short' : 'long', expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
     const dir = this.projectsSvc.workDir(project)
     const script = this.s.scripts.create({
       projectId,
@@ -720,7 +738,8 @@ export class Pipeline {
     const channel = this.s.channels.get(project.channelId)!
     const template = script.templateVersionId ? this.s.channels.getVersion(script.templateVersionId) ?? null : null
     const gen = this.s.settings.get().generation
-    const report = validateScript(script.text, { channel, template, expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
+    const fmtId = script.templateId ?? template?.templateId
+    const report = validateScript(script.text, { channel: this.formatChannel(channel, fmtId), template, formFactor: this.isShortFormat(fmtId) ? 'short' : 'long', expectedTitle: project.title, researchConfirmed: true, strictness: gen.validationStrictness, lengthToleranceChars: gen.lengthToleranceChars })
     // A force-approved script keeps its approval even when the rules still flag it.
     const status = report.ok ? (script.status === 'approved' ? 'approved' : 'validated') : script.status === 'approved' && script.approvedWithIssues ? 'approved' : 'invalid'
     this.s.scripts.update(scriptId, { validation: report, status })
@@ -790,7 +809,9 @@ export class Pipeline {
     const safeLimit = Math.max(500, Math.floor(limit * 0.95))
     // v1.5: long narration is split into up to N similar parts (paragraph boundaries, headings kept
     // with their text) that are voiced at the same time and joined frame by frame.
-    const parts = Math.max(1, Math.min(4, settings.elevenlabs.parallelParts ?? 1))
+    // 1.7.0: shorts are always voiced in one piece (no parallel parts).
+    const shortForm = this.isShortFormat(script.templateId ?? template?.templateId)
+    const parts = shortForm ? 1 : Math.max(1, Math.min(4, settings.elevenlabs.parallelParts ?? 1))
     const freshTake = job.overrides?.freshTake === true
     // Keep the previous split points of this project when possible (only changed parts are voiced again).
     const chunks = splitForParallel(narration, parts, safeLimit, { anchors: freshTake ? undefined : this.s.audio.latestPartAnchors(job.projectId) ?? undefined })

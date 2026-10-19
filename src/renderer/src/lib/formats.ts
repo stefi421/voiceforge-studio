@@ -116,7 +116,15 @@ export interface ChannelFormat {
 export function toFormats(channel: Channel, templates: Template[]): ChannelFormat[] {
   return templates
     .map((t) => ({
-      template: { ...t, contentType: t.contentType ?? 'review', referenceCount: t.referenceCount ?? 0 },
+      template: {
+        ...t,
+        contentType: t.contentType ?? 'review',
+        referenceCount: t.referenceCount ?? 0,
+        formFactor: t.formFactor === 'short' ? ('short' as const) : ('long' as const),
+        minChars: t.minChars ?? null,
+        maxChars: t.maxChars ?? null,
+        targetDurationSec: t.targetDurationSec ?? null
+      },
       status: normalizeStatus(t.approvalStatus),
       isDefault: Boolean(channel.activeTemplateVersionId && t.activeVersionId === channel.activeTemplateVersionId)
     }))
@@ -157,6 +165,20 @@ export function contentTypeLabel(key: string | null | undefined): string {
     .map((w) => WORD_CASE[w.toLowerCase()] ?? w)
   const out = words.join(' ')
   return out.replace(/^./, (c) => c.toUpperCase())
+}
+
+/** "350–650 chars · ~35 s" (shorts) or "4,000–5,000 chars · ~5 min" (long form). */
+export function formatLength(l: { minChars: number; maxChars: number; targetDurationSec: number }): string {
+  const n = (v: number): string => v.toLocaleString('en-US')
+  const chars = `${n(l.minChars)}–${n(l.maxChars)} chars`
+  if (!l.targetDurationSec) return chars
+  return `${chars} · ~${formatDuration(l.targetDurationSec)}`
+}
+
+export function formatDuration(sec: number): string {
+  if (sec < 90) return `${Math.round(sec)} s`
+  const min = sec / 60
+  return `${Number.isInteger(min) ? min : min.toFixed(1)} min`
 }
 
 /** Defensive defaults for versions written by an older main process. */

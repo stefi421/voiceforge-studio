@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { Sparkles } from 'lucide-react'
 import type { JobView, Script, ValidationReport } from '@shared/types'
+import { applyFormatLimits } from '@shared/types'
 import { api } from '@/lib/api'
 import { useAsync } from '@/lib/hooks'
 import { toast } from '@/store/toasts'
@@ -25,7 +26,14 @@ export interface ScriptReviewDialogProps {
 export function ScriptReviewDialog({ job, onClose }: ScriptReviewDialogProps): JSX.Element {
   const scriptId = job?.scriptId ?? null
   const script = useAsync(() => api.invoke('scripts:get', { id: scriptId ?? '' }), [scriptId], { enabled: Boolean(scriptId) })
-  const channel = useApp((s) => (job ? s.channels.find((c) => c.id === job.channelId) : undefined))
+  const baseChannel = useApp((s) => (job ? s.channels.find((c) => c.id === job.channelId) : undefined))
+  // 1.7.0: the script's format may have its own length window (shorts).
+  const templates = useAsync(() => api.invoke('templates:list', { channelId: job?.channelId ?? '' }), [job?.channelId], { enabled: Boolean(job?.channelId) })
+  const channel = useMemo(() => {
+    if (!baseChannel) return undefined
+    const t = script.data?.templateId ? templates.data?.find((x) => x.id === script.data!.templateId) : undefined
+    return applyFormatLimits(baseChannel, t)
+  }, [baseChannel, script.data, templates.data])
   const [text, setText] = useState('')
   const [feedback, setFeedback] = useState('')
   const [busy, setBusy] = useState<string | null>(null)

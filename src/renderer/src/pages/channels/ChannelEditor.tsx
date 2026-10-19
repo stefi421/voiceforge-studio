@@ -217,7 +217,7 @@ export function ChannelEditor({ channelId, initialTab, initialFormat, onClose }:
         {tab === 'output' && <OutputTab form={form} patch={patch} errors={errors} />}
         {tab === 'formats' &&
           (createdId ? (
-            <StyleStudio key={createdId} channelId={createdId} channelName={form.name || existing?.name || 'Channel'} activeVersionId={existing?.activeTemplateVersionId ?? null} channelInstructions={form.writingInstructions} initialTemplateId={initialFormat} minChars={form.minChars} maxChars={form.maxChars} />
+            <StyleStudio key={createdId} channelId={createdId} channelName={form.name || existing?.name || 'Channel'} activeVersionId={existing?.activeTemplateVersionId ?? null} channelInstructions={form.writingInstructions} initialTemplateId={initialFormat} minChars={form.minChars} maxChars={form.maxChars} targetDurationSec={form.targetDurationSec} />
           ) : (
             <Alert tone="info" title="Save the channel first" actions={<Button size="sm" variant="primary" onClick={() => void save()}>Create channel</Button>}>
               Formats are stored per channel, so the channel must exist before you can add one.

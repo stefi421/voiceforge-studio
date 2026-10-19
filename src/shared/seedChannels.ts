@@ -1,4 +1,4 @@
-import type { ChannelInput, FixedTextBlock, ScriptSection, TemplateApprovalStatus, TemplateVersionInput } from './types'
+import type { ChannelInput, FixedTextBlock, FormFactor, ScriptSection, TemplateApprovalStatus, TemplateVersionInput } from './types'
 import { DEFAULT_RESEARCH, DEFAULT_VALIDATION, DEFAULT_VOICE_SETTINGS } from './defaults'
 
 /**
@@ -38,6 +38,9 @@ export interface SeedFormat {
   name: string
   contentType: string
   version: TemplateVersionInput & { approvalStatus: TemplateApprovalStatus }
+  /** 1.7.0: long-form (default) or short-form, with the format's own length window. */
+  formFactor?: FormFactor
+  limits?: { minChars: number; maxChars: number; targetDurationSec: number }
 }
 
 export interface SeedChannelV3 {
@@ -119,6 +122,55 @@ const IMPORT_REQUIRED = (n: string): string[] => [
   'Script length — measure from approved references.'
 ]
 
+const SHORT_LENGTH_NOTE = 'provisional default — adjust after approving your first shorts'
+
+/**
+ * 1.7.0 short-form formats (YouTube Shorts voiceovers). All provisional: lengths and structure
+ * come from the owner's request ("long form or short form"), not from approved example shorts.
+ */
+function playTopiaShort(): SeedFormat {
+  const f = format('Short form', 'short', 'provisional', {
+    systemPrompt: prompt('PlayTopia', ['Category: gaming. Format: short-form vertical video (YouTube Shorts) voiceover about one game — one continuous spoken voiceover, no headings, not the long PlayTopia review format.']),
+    structure: [
+      section('hook', 'Hook', 'One punchy opening sentence that makes the viewer stay.', [], false),
+      section('what', 'What the game is', 'Name the game and say in one or two sentences what it is.', [], false),
+      section('points', 'Key points', 'Two or three of the strongest verified points.', [], false),
+      section('close', 'Closing line', 'One short closing line.', [], false)
+    ],
+    confirmed: [],
+    unverified: ['Approved PlayTopia short-form example scripts.', 'Exact hook/outro wording.', `Length 350–650 characters, about 35 seconds — ${SHORT_LENGTH_NOTE}.`],
+    notes: `Short-form format added in 1.7.0. Structure Hook → What the game is → 2–3 key points → closing line (not locked). Length 350–650 characters, target 35 s: ${SHORT_LENGTH_NOTE}.`
+  })
+  return { ...f, formFactor: 'short', limits: { minChars: 350, maxChars: 650, targetDurationSec: 35 } }
+}
+
+function techShort(channel: string, name: string, contentType: string): SeedFormat {
+  const f = format(name, contentType, 'provisional', {
+    systemPrompt: prompt(channel, ['Category: technology. Format: short-form vertical video (YouTube Shorts) voiceover of about 8–12 seconds about one product — one continuous spoken voiceover, no headings.']),
+    structure: [
+      section('hook', 'Hook', 'A short hook.', [], false),
+      section('name', 'Product name', 'Say the product name.', [], false),
+      section('specs', 'Key specs', 'Three or four key verified specifications.', [], false)
+    ],
+    confirmed: [
+      'Short structure (owner-stated): HOOK → product NAME → 3–4 key specs. About 8–12 seconds.',
+      'Use the established lowercase styling for abbreviations (usb-c, qmk, via, ghz).',
+      'Accurate specifications only; no invented benchmarks, scores or personal testing.',
+      'No URLs.'
+    ],
+    unverified: ['Approved short-form example scripts for this channel.', `Length 120–260 characters, about 11 seconds — ${SHORT_LENGTH_NOTE}.`],
+    notes: `Short-form format added in 1.7.0. Length 120–260 characters, target 11 s: ${SHORT_LENGTH_NOTE}.`
+  })
+  return { ...f, formFactor: 'short', limits: { minChars: 120, maxChars: 260, targetDurationSec: 11 } }
+}
+
+/** Short formats added by 1.7.0, per channel name (created only when missing). */
+export const SHORT_FORMATS: Record<string, SeedFormat[]> = {
+  PlayTopia: [playTopiaShort()],
+  'RiftForge Tech': [techShort('RiftForge Tech', 'RiftForge short review', 'short_review')],
+  RENVO: [techShort('RENVO', 'RENVO short', 'short')]
+}
+
 export const SEED_CHANNELS: SeedChannelV3[] = [
   // 01 — PlayTopia
   {
@@ -143,7 +195,8 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
           'Import at least three (preferably five) approved PlayTopia scripts before activation.'
         ],
         notes: 'TEMPLATE VERIFICATION REQUIRED. Generation stays blocked until approved references are imported and the extracted template is approved.'
-      })
+      }),
+      playTopiaShort()
     ]
   },
   // 02 — Game Vault
@@ -375,7 +428,7 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
       formats: [
         format('RiftForge full review', 'full_review', 'provisional', { systemPrompt: `${base}\nFormat: full product review.`, confirmed: [...tech, PROVISIONAL_LENGTH], unverified: ['Exact approved RiftForge Tech review template — import approved scripts.'] }),
         format('RiftForge unboxing', 'unboxing', 'not_configured', { systemPrompt: `${base}\nFormat: unboxing.`, confirmed: tech, unverified: ['Exact unboxing template and length — import approved RiftForge unboxing scripts.'] }),
-        format('RiftForge short review', 'short_review', 'not_configured', { systemPrompt: `${base}\nFormat: short review (shorter voiceover).`, confirmed: tech, unverified: ['Exact short-review template and length — import approved short scripts (the channel length limits apply to every format; adjust them for short batches).'] })
+        techShort('RiftForge Tech', 'RiftForge short review', 'short_review')
       ]
     }
   })(),
@@ -416,7 +469,8 @@ export const SEED_CHANNELS: SeedChannelV3[] = [
         systemPrompt: prompt('RENVO', ['Category: premium technology, product overview format.']),
         confirmed: ['English, professional technology tone.', 'No fabricated hands-on testing.', 'No URLs.'],
         unverified: ['Product overview template and length — import approved RENVO overview scripts.']
-      })
+      }),
+      techShort('RENVO', 'RENVO short', 'short')
     ]
   },
   // PixelDrop (additional profile)

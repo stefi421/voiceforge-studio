@@ -105,6 +105,13 @@ export function App(): JSX.Element {
         if (el) el.scrollTop = arg === 'bottom' ? el.scrollHeight : Number(arg) || 0
         return
       }
+      if (detail.startsWith('__click:')) {
+        // Smoke-test helper: click the first button with this exact text, e.g. '__click:Short form'.
+        const label = detail.slice('__click:'.length)
+        const btn = [...document.querySelectorAll('button')].find((b) => b.textContent?.trim() === label)
+        btn?.click()
+        return
+      }
       if (detail === '__closeOverlays') {
         useOverlays.getState().setPalette(false)
         useOverlays.getState().setShortcuts(false)

@@ -108,7 +108,7 @@ export function WritingTab({ form, patch, errors, channelId }: TabProps): JSX.El
         <div>
           <div className="strong">Script length</div>
           <div className="small muted">
-            Scripts shorter or longer than this window are rewritten automatically (up to the rewrite limit); you can always approve one anyway. ElevenLabs v4 accepts up to 10,000 characters per request — longer scripts are split at sentence boundaries.
+            The channel default: formats without their own length (Formats tab) use it — shorts set their own. Scripts shorter or longer than the window are rewritten automatically (up to the rewrite limit); you can always approve one anyway. ElevenLabs v4 accepts up to 10,000 characters per request — longer scripts are split at sentence boundaries.
           </div>
         </div>
         <div className="preset-row">

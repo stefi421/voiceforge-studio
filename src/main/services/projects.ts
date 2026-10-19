@@ -1,7 +1,7 @@
 import path from 'node:path'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
-import type { Channel, Project } from '@shared/types'
+import type { Channel, FormFactor, Project } from '@shared/types'
 import type { Services } from './container'
 import { ensureDir, safeSegment, uniqueFolderName } from './files'
 import { normalizeTitle } from '../util/common'
@@ -26,17 +26,20 @@ export class ProjectService {
     return path.join(root, safeSegment(channel.name))
   }
 
-  /** Find or create the project for a title in a channel. Creates no folders in the output root. */
-  getOrCreate(channel: Channel, title: string): { project: Project; created: boolean } {
+  /**
+   * Find or create the project for a title in a channel. Creates no folders in the output root.
+   * 1.7.0: a short is its own project: "<Title> (Short)/" (folders) or "<Title> (Short).txt/.mp3" (flat).
+   */
+  getOrCreate(channel: Channel, title: string, formFactor: FormFactor = 'long'): { project: Project; created: boolean } {
     const normalized = normalizeTitle(title)
-    const existing = this.s.projects.findByTitle(channel.id, normalized)
+    const existing = this.s.projects.findByTitle(channel.id, normalized, formFactor)
     if (existing) return { project: existing, created: false }
     const parent = this.channelRoot(channel)
     const shortId = Math.random().toString(36).slice(2, 7)
     const layout = this.s.settings.get().storage.outputLayout === 'flat' ? 'flat' : 'folders'
-    const folderName = uniqueFolderName(parent, title, shortId, (name) => this.s.projects.folderNameExists(channel.id, name) || (layout === 'flat' && (fs.existsSync(path.join(parent, `${name}.txt`)) || fs.existsSync(path.join(parent, `${name}.mp3`)))))
+    const folderName = uniqueFolderName(parent, folderTitle(title, formFactor), shortId, (name) => this.s.projects.folderNameExists(channel.id, name) || (layout === 'flat' && (fs.existsSync(path.join(parent, `${name}.txt`)) || fs.existsSync(path.join(parent, `${name}.mp3`)))))
     const folderPath = layout === 'flat' ? parent : path.join(parent, folderName)
-    const project = this.s.projects.create({ channelId: channel.id, title, titleNormalized: normalized, folderName, folderPath, layout })
+    const project = this.s.projects.create({ channelId: channel.id, title, titleNormalized: normalized, folderName, folderPath, layout, formFactor })
     return { project, created: true }
   }
 
@@ -50,7 +53,7 @@ export class ProjectService {
     if (!project) return false
     const normalized = normalizeTitle(title)
     if (!normalized) return false
-    const clash = this.s.projects.findByTitle(project.channelId, normalized)
+    const clash = this.s.projects.findByTitle(project.channelId, normalized, project.formFactor)
     if (clash && clash.id !== project.id) return false
     const channel = this.s.channels.get(project.channelId)
     if (!channel) return false
@@ -59,7 +62,7 @@ export class ProjectService {
     if (written) return false
     const parent = this.channelRoot(channel)
     const shortId = Math.random().toString(36).slice(2, 7)
-    const folderName = uniqueFolderName(parent, title, shortId, (name) => (name !== project.folderName && this.s.projects.folderNameExists(channel.id, name)) || (project.layout === 'flat' && (fs.existsSync(path.join(parent, `${name}.txt`)) || fs.existsSync(path.join(parent, `${name}.mp3`)))))
+    const folderName = uniqueFolderName(parent, folderTitle(title, project.formFactor), shortId, (name) => (name !== project.folderName && this.s.projects.folderNameExists(channel.id, name)) || (project.layout === 'flat' && (fs.existsSync(path.join(parent, `${name}.txt`)) || fs.existsSync(path.join(parent, `${name}.mp3`)))))
     const folderPath = project.layout === 'flat' ? parent : path.join(parent, folderName)
     this.s.projects.update(project.id, { title, titleNormalized: normalized, canonicalTitle: title, folderName, folderPath })
     return true
@@ -115,7 +118,7 @@ export class ProjectService {
     if (!project) throw new Error('Project not found')
     const parent = project.layout === 'flat' ? this.folderFor(project) : path.dirname(this.folderFor(project))
     const shortId = Math.random().toString(36).slice(2, 7)
-    const folderName = uniqueFolderName(parent, newTitle, shortId, (name) => name.toLowerCase() !== project.folderName.toLowerCase() && this.s.projects.folderNameExists(project.channelId, name))
+    const folderName = uniqueFolderName(parent, folderTitle(newTitle, project.formFactor), shortId, (name) => name.toLowerCase() !== project.folderName.toLowerCase() && this.s.projects.folderNameExists(project.channelId, name))
     if (project.layout === 'flat') {
       // Rename only this project's published files; the channel folder is shared.
       const rewrite = (file: string): string => {
@@ -151,6 +154,11 @@ export class ProjectService {
   audioFileName(version: number, outputFormat: string): string {
     return `Voice_v${version}.${audioExt(outputFormat)}`
   }
+}
+
+/** Output folder / flat file base name: shorts get a " (Short)" suffix. */
+export function folderTitle(title: string, formFactor: FormFactor = 'long'): string {
+  return formFactor === 'short' ? `${title.trim()} (Short)` : title
 }
 
 export function audioExt(outputFormat: string): string {

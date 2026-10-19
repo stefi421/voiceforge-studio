@@ -259,7 +259,9 @@ export const appSettingsSchema = z.object({
   ui: z.object({
     lastChannelId: z.string().max(100).nullable(),
     lastTemplateId: z.string().max(100).nullable(),
-    lastMode: jobModeSchema.nullable()
+    lastMode: jobModeSchema.nullable(),
+    /** 1.7.0: Long form / Short form choice remembered per channel. */
+    formFactorByChannel: z.record(z.string().max(100), z.enum(['long', 'short'])).default({})
   }),
   updates: z.object({
     checkOnStartup: z.boolean(),
@@ -313,6 +315,10 @@ export const channelExportSchema = z.object({
     z.object({
       name: z.string().min(1).max(120),
       contentType: z.string().max(60).optional(),
+      formFactor: z.enum(['long', 'short']).optional(),
+      minChars: z.number().int().min(0).max(100000).nullable().optional(),
+      maxChars: z.number().int().min(50).max(100000).nullable().optional(),
+      targetDurationSec: z.number().int().min(3).max(3600).nullable().optional(),
       versions: z.array(templateVersionInputSchema.extend({ version: z.number().int().min(1) })),
       activeVersion: z.number().int().min(1).nullable(),
       references: z

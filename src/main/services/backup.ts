@@ -99,6 +99,10 @@ export class BackupService {
         return {
           name: t.name,
           contentType: t.contentType,
+          formFactor: t.formFactor,
+          minChars: t.minChars,
+          maxChars: t.maxChars,
+          targetDurationSec: t.targetDurationSec,
           versions: versions.map((v) => ({
             version: v.version,
             systemPrompt: v.systemPrompt,
@@ -142,6 +146,9 @@ export class BackupService {
         if (!t.versions.length) continue
         const [firstVersion, ...others] = t.versions
         const created = this.s.channels.createTemplate(channel.id, t.name, firstVersion as TemplateVersionInput, t.contentType)
+        if (t.formFactor || t.minChars != null || t.maxChars != null || t.targetDurationSec != null) {
+          this.s.channels.setTemplateLimits(created.template.id, { formFactor: t.formFactor, minChars: t.minChars ?? null, maxChars: t.maxChars ?? null, targetDurationSec: t.targetDurationSec ?? null })
+        }
         const versionIds = new Map<number, string>([[firstVersion!.version, created.version.id]])
         for (const v of others) versionIds.set(v.version, this.s.channels.addVersion(created.template.id, v as TemplateVersionInput).id)
         // The export carries the user's own earlier approvals; keep them instead of resetting to "awaiting approval".

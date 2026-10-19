@@ -421,5 +421,19 @@ CREATE INDEX IF NOT EXISTS idx_provider_calls_job ON provider_calls(job_id);
 ALTER TABLE games ADD COLUMN steam_app_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_games_steam ON games(steam_app_id) WHERE steam_app_id IS NOT NULL;
 `
+  },
+  {
+    id: 7,
+    name: 'format_form_factor_and_limits',
+    // 1.7.0: each format is long-form or short-form and can carry its own length window
+    // (NULL = the channel's limits). Existing RiftForge-style "short_review" formats become shorts.
+    sql: `
+ALTER TABLE templates ADD COLUMN form_factor TEXT NOT NULL DEFAULT 'long';
+ALTER TABLE templates ADD COLUMN min_chars INTEGER;
+ALTER TABLE templates ADD COLUMN max_chars INTEGER;
+ALTER TABLE templates ADD COLUMN target_duration_sec INTEGER;
+UPDATE templates SET form_factor = 'short' WHERE content_type IN ('short_review', 'short');
+ALTER TABLE projects ADD COLUMN form_factor TEXT NOT NULL DEFAULT 'long';
+`
   }
 ]

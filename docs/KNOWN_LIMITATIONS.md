@@ -142,8 +142,13 @@ Honest list of what is not done, partially done, or unverified.
 * Channels without a fixed intro open with a short, varied channel introduction written by the
   model (toggle in Writing → Opening). Its wording is not checked word for word.
 * GameSense / GAMIX / VELIX should match the "Dark Auction" script, which has not been imported.
-* Length limits are per channel, not per format (RiftForge short reviews: lower the channel
-  limits for that batch).
+* Short-form formats (PlayTopia "Short form", RiftForge "short review", RENVO "short", 1.7.0) are
+  **provisional until you approve example shorts**: their structure and lengths (PlayTopia
+  350–650 chars / ~35 s; RiftForge and RENVO 120–260 chars / ~11 s) are defaults from your
+  request, not measured from approved shorts. They run in Review before voice / Scripts only until
+  approved; adjust the length in Channels → Formats after approving your first shorts.
+* Short duration is estimated from words per minute; the real length of a short depends on the
+  voice's pace (check the first few against the 8–12 s / ~35 s targets).
 * Dropping .docx/.pdf onto the window cannot pass file paths through the sandbox; use
   *Choose files* (TXT/MD paste and drop work).
 

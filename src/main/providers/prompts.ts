@@ -1,4 +1,4 @@
-import type { Channel, ReferenceScript, ResearchData, ResearchSource, TemplateVersion } from '@shared/types'
+import type { Channel, FormFactor, ReferenceScript, ResearchData, ResearchSource, TemplateVersion } from '@shared/types'
 import { targetChars } from '../pipeline/validator'
 import { buildFormatSkeleton } from '../pipeline/style'
 
@@ -128,6 +128,9 @@ Narration formatting: speech-friendly text. For technology scripts write abbrevi
  * writer opens with a short spoken channel introduction (1.3.0 — scripts used to start cold),
  * unless the owner turned that off for the channel.
  */
+const SHORT_FORM_RULE =
+  'SHORT-FORM VOICEOVER: this is a vertical short (YouTube Shorts), not a long review. Write one continuous spoken voiceover: open with a hook in the first sentence, name the game/product early, cover only the strongest points, end with one short closing line. No section labels or heading lines, no long channel intro or outro, no lists — just short, punchy spoken sentences in plain text.'
+
 export function openingRule(channel: Channel, template: TemplateVersion, hasReferences: boolean): string {
   const lockedIntro = template.fixedBlocks.some((b) => b.locked && b.kind === 'intro' && b.text.trim())
   if (lockedIntro) return 'OPENING: the locked opening above is the very first spoken text, word for word; continue naturally into the content after it.'
@@ -162,10 +165,14 @@ export function formatSkeleton(template: TemplateVersion, references: Array<Pick
   ].join('\n\n')
 }
 
-function formatRules(template: TemplateVersion, references: Array<Pick<ReferenceScript, 'text'>> = []): string {
+function formatRules(template: TemplateVersion, references: Array<Pick<ReferenceScript, 'text'>> = [], formFactor: FormFactor = 'long'): string {
   const parts: string[] = []
   if (template.confirmedRules.trim()) parts.push(`Rules the channel owner confirmed for this format:\n${template.confirmedRules.trim()}`)
-  if (template.structure.length) {
+  if (formFactor === 'short' && !template.headingsSpoken) {
+    if (template.structure.length) {
+      parts.push(`Flow of the short (do NOT write these as labels or headings, they are only the order of ideas):\n${template.structure.map((s, i) => `${i + 1}. ${s.label}${s.guidance ? ` — ${s.guidance}` : ''}`).join('\n')}`)
+    }
+  } else if (template.structure.length) {
     parts.push(
       `Required structure — write each section label as a plain-text line on its own, in exactly this order:\n${template.structure
         .map((s, i) => `${i + 1}. ${s.label}${s.aliases.length ? ` (accepted label: ${[s.label, ...s.aliases].map((a) => `"${a}"`).join(' or ')})` : ''}${s.required ? '' : ' (optional)'}${s.guidance ? ` — ${s.guidance}` : ''}`)
@@ -181,7 +188,8 @@ function formatRules(template: TemplateVersion, references: Array<Pick<Reference
       `LOCKED TEXT — each item below must appear EXACTLY as written, word for word, never paraphrased:\n${locked.map((b) => `- ${label[b.kind] ?? 'Fixed text'}${b.wholeParagraph ? ' (a paragraph of its own)' : ''}: <<${b.text.trim()}>>`).join('\n')}\n(Write the text without the << >> markers.)`
     )
   }
-  const skeleton = formatSkeleton(template, references)
+  // Shorts only get a skeleton from their own approved references.
+  const skeleton = formFactor === 'short' && !references.length ? '' : formatSkeleton(template, references)
   if (skeleton) parts.push(skeleton)
   return parts.join('\n\n')
 }
@@ -195,8 +203,10 @@ export function scriptSystemPrompt(
   channel: Channel,
   template: TemplateVersion,
   references: Array<Pick<ReferenceScript, 'title' | 'text'>> = [],
-  skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = references
+  skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = references,
+  formFactor: FormFactor = 'long'
 ): string {
+  const short = formFactor === 'short'
   const forbidden = channel.validation.forbiddenPhrases.filter(Boolean)
   const refBlock = references.length
     ? `Approved reference scripts for this format (match their structure, tone, pacing, paragraphing and ending; reuse only the wording that the locked text above requires; never copy their game-specific sentences and never reuse their game facts — those belong to other games):\n${references
@@ -208,13 +218,13 @@ export function scriptSystemPrompt(
   const parts = [
     GLOBAL_NARRATION_RULES,
     `CHANNEL MASTER PROMPT — ${channel.name}\n${template.systemPrompt.trim()}`,
-    formatRules(template, skeletonReferences.length ? skeletonReferences : references),
-    openingRule(channel, template, references.length > 0 || !!template.exampleScript?.trim()),
+    formatRules(template, skeletonReferences.length ? skeletonReferences : references, formFactor),
+    short ? SHORT_FORM_RULE : openingRule(channel, template, references.length > 0 || !!template.exampleScript?.trim()),
     `Channel: ${channel.name} (${channel.category}). Language: ${channel.language === 'en' ? 'English' : channel.language}.`,
     channel.writingInstructions.trim() ? `Channel writing instructions:\n${channel.writingInstructions.trim()}` : '',
     channel.writingStyle.trim() ? `Writing style: ${channel.writingStyle.trim()}` : '',
-    channel.introRequirements.trim() ? `Intro requirements: ${channel.introRequirements.trim()}` : '',
-    channel.outroRequirements.trim() ? `Outro requirements: ${channel.outroRequirements.trim()}` : '',
+    !short && channel.introRequirements.trim() ? `Intro requirements: ${channel.introRequirements.trim()}` : '',
+    !short && channel.outroRequirements.trim() ? `Outro requirements: ${channel.outroRequirements.trim()}` : '',
     refBlock,
     lengthRule(channel),
     forbidden.length ? `Never use these words or phrases: ${forbidden.map((f) => `"${f}"`).join(', ')}.` : '',
@@ -230,12 +240,13 @@ export function scriptSystemPrompt(
  * the channel's style, so the reference scripts are not sent again — only the rules needed to
  * fix it (global rules, format with locked text and skeleton, length, hard rules).
  */
-export function scriptCorrectionSystemPrompt(channel: Channel, template: TemplateVersion, skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = []): string {
+export function scriptCorrectionSystemPrompt(channel: Channel, template: TemplateVersion, skeletonReferences: Array<Pick<ReferenceScript, 'text'>> = [], formFactor: FormFactor = 'long'): string {
   const forbidden = channel.validation.forbiddenPhrases.filter(Boolean)
   return [
     GLOBAL_NARRATION_RULES,
-    `You are correcting a draft voiceover script for the channel ${channel.name}. Keep its wording, style and facts; change only what the violations require.`,
-    formatRules(template, skeletonReferences),
+    `You are correcting a draft ${formFactor === 'short' ? 'short-form ' : ''}voiceover script for the channel ${channel.name}. Keep its wording, style and facts; change only what the violations require.`,
+    formatRules(template, skeletonReferences, formFactor),
+    formFactor === 'short' ? SHORT_FORM_RULE : '',
     lengthRule(channel),
     forbidden.length ? `Never use these words or phrases: ${forbidden.map((f) => `"${f}"`).join(', ')}.` : '',
     'Hard rules: no URLs, no citation markers, no markdown, no bullet symbols, no headings other than the section labels, no notes to the editor, no title line, nothing after the final sentence.',
@@ -290,7 +301,13 @@ function lengthRule(channel: Channel): string {
   } else if (channel.minChars > 0) {
     parts.push(`LENGTH: at least ${channel.minChars} characters (including spaces); aim for about ${target}.`)
   }
-  if (channel.targetDurationSec > 0) parts.push(`That is roughly ${Math.round(channel.targetDurationSec / 60)} minute(s) of narration.`)
+  if (channel.targetDurationSec > 0) {
+    parts.push(
+      channel.targetDurationSec < 90
+        ? `That is roughly ${Math.round(channel.targetDurationSec)} seconds of narration.`
+        : `That is roughly ${Math.round(channel.targetDurationSec / 60)} minute(s) of narration.`
+    )
+  }
   return parts.join(' ')
 }
 
@@ -503,10 +520,12 @@ export function buildScriptPrompt(req: {
   issues?: string
   feedback?: string
   tighten?: { cut: number; target: number; max: number }
+  formFactor?: FormFactor
 }): { instructions: string; input: string; correction: boolean } {
   const correction = !!req.previousScript
   const skeleton = req.skeletonReferences ?? req.references ?? []
-  const instructions = correction ? scriptCorrectionSystemPrompt(req.channel, req.template, skeleton) : scriptSystemPrompt(req.channel, req.template, req.references ?? [], skeleton)
+  const ff = req.formFactor ?? 'long'
+  const instructions = correction ? scriptCorrectionSystemPrompt(req.channel, req.template, skeleton, ff) : scriptSystemPrompt(req.channel, req.template, req.references ?? [], skeleton, ff)
   const input = scriptUserInput(req.title, req.research, req.researchSources, { previousScript: req.previousScript, issues: req.issues, feedback: req.feedback, tighten: req.tighten })
   return { instructions, input, correction }
 }

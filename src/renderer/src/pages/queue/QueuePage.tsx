@@ -460,8 +460,11 @@ export function QueuePage(): JSX.Element {
               <header className="batch-header" onClick={() => setCollapsed({ ...collapsed, [g.id]: !isCollapsed })}>
                 <span className="batch-chevron">{isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
                 <div className="batch-title">
-                  <span className="strong truncate" title={g.name}>
-                    {g.name}
+                  <span className="row" style={{ gap: 6, minWidth: 0 }}>
+                    <span className="strong truncate" title={g.name}>
+                      {g.name}
+                    </span>
+                    {g.jobs.length > 0 && g.jobs.every((j) => j.formFactor === 'short') && <Badge tone="accent">Short</Badge>}
                   </span>
                   <span className="xs muted">
                     {modeLabel(g.mode)} · {relativeTime(g.createdAt, now)} · {gDone}/{g.jobs.length} done

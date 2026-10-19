@@ -4,6 +4,7 @@ import type {
   ElevenModel,
   ElevenSubscription,
   ElevenVoice,
+  FormFactor,
   OpenAIModelInfo,
   ResearchData,
   ResearchSettings,
@@ -64,6 +65,8 @@ export interface ScriptRequest {
   references?: Array<Pick<ReferenceScript, 'title' | 'text'>>
   /** All references of the format, used only to derive the skeleton's paragraph counts (not sent as text). */
   skeletonReferences?: Array<Pick<ReferenceScript, 'text'>>
+  /** 1.7.0: short-form formats get the short voiceover rules (no headings, no long intro/outro). */
+  formFactor?: FormFactor
   /** Provider prompt-cache key; identical for every title of one format version. */
   promptCacheKey?: string
   signal?: AbortSignal

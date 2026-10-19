@@ -6,7 +6,8 @@ import { useAsync } from '@/lib/hooks'
 import { useRouter } from '@/store/router'
 import { toast } from '@/store/toasts'
 import { allowsAuto, contentTypeLabel, normalizeStatus, normalizeVersion } from '@/lib/formats'
-import { Alert, Button, SkeletonRows } from '@/components/ui'
+import { Alert, Badge, Button, SkeletonRows } from '@/components/ui'
+import { FormatLength } from './FormatLength'
 import { FormatStatusPill } from '@/components/FormatStatus'
 import { ReferencesStep } from './ReferencesStep'
 import { AnalyzeStep } from './AnalyzeStep'
@@ -52,11 +53,15 @@ export interface FormatWorkspaceProps {
   channelInstructions: string
   minChars: number
   maxChars: number
+  targetDurationSec?: number
   onChanged: () => Promise<void>
   onDelete: () => void
 }
 
-export function FormatWorkspace({ channelId, channelName, template, isDefault, channelInstructions, minChars, maxChars, onChanged, onDelete }: FormatWorkspaceProps): JSX.Element {
+export function FormatWorkspace({ channelId, channelName, template, isDefault, channelInstructions, minChars: channelMin, maxChars: channelMax, targetDurationSec = 300, onChanged, onDelete }: FormatWorkspaceProps): JSX.Element {
+  // 1.7.0: the format's own length window (shorts) wins over the channel default.
+  const minChars = template.minChars ?? channelMin
+  const maxChars = Math.max(template.maxChars ?? channelMax, minChars)
   const versions = useAsync(async () => (await api.invoke('templates:versions', { templateId: template.id })).map(normalizeVersion).sort((a, b) => b.version - a.version), [template.id], { fallback: [] })
   const refs = useAsync(() => api.invoke('references:list', { templateId: template.id }), [template.id], { fallback: [] })
   const analysis = useAsync(() => api.invoke('style:lastAnalysis', { templateId: template.id }), [template.id], { fallback: null })
@@ -123,6 +128,7 @@ export function FormatWorkspace({ channelId, channelName, template, isDefault, c
         <div className="col" style={{ gap: 2 }}>
           <div className="row gap-2">
             <span className="studio-title">{contentTypeLabel(template.contentType)}</span>
+            <Badge tone={template.formFactor === 'short' ? 'accent' : 'neutral'}>{template.formFactor === 'short' ? 'Short form' : 'Long form'}</Badge>
             <FormatStatusPill status={status} />
             {isDefault && <span className="xs muted">default format</span>}
           </div>
@@ -161,6 +167,8 @@ export function FormatWorkspace({ channelId, channelName, template, isDefault, c
           </Button>
         </div>
       </div>
+
+      <FormatLength template={template} channelMinChars={channelMin} channelMaxChars={channelMax} channelTargetSec={targetDurationSec} onChanged={onChanged} />
 
       {status === 'provisional' && (
         <Alert tone="warning" title="Provisional format">

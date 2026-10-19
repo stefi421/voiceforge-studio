@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.7.0
+
+**Long form or Short form for PlayTopia, RiftForge Tech and RENVO**
+- New generation: a *Long form | Short form* switch for channels that have both (remembered per
+  channel); the format pills show only the formats of the chosen length. The length shown, the
+  cost/character estimate and the pre-flight checks use the chosen format's length.
+- Every format is long-form or short-form and can have its own length (min/max characters,
+  target duration); empty fields use the channel length from the Writing tab, which stays the
+  default. Edit it in Channels → Formats (presets: Short 15/30/60 s, Long 3/5/8/10 min).
+- New short formats (provisional — adjust after approving your first shorts):
+  - PlayTopia *Short form*: Hook → what the game is → 2–3 key points → closing line (not locked),
+    350–650 characters, ~35 s, no heading lines. Only the general owner rules apply; the long
+    PlayTopia review format is not used.
+  - RiftForge *short review* (now short-form) and RENVO *short*: HOOK → product NAME → 3–4 key
+    specs, ~8–12 s (120–260 characters, target 11 s), lowercase acronyms (usb-c, qmk, via, ghz),
+    no invented benchmarks.
+  - Added once, only where missing; formats you edited, approved or gave a length are not changed.
+- Shorts are written as one continuous voiceover: no section labels, no long channel intro/outro,
+  no long-form paragraph skeleton (unless the short format's own approved references define one).
+  The validator checks the short's length window, URLs and markdown, and that the game/product is
+  named. Shorts are always voiced in one request (never split into parallel parts).
+- Output: `Channel/<Title> (Short)/Script.txt + Voice.mp3` (flat layout: `<Title> (Short).txt/.mp3`).
+  A short and a long-form script of the same title are separate projects, so neither is skipped
+  as a duplicate of the other. Saved research (Games library) is reused between them — no new
+  research credits.
+- Queue rows and batches of shorts carry a *Short* badge; Channels and Formats show each format's
+  form factor.
+
+
 ## 1.6.1
 
 **OpenAI limits per model — scripts no longer queue behind each other's reservations**

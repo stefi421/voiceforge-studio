@@ -1,4 +1,4 @@
-import type { Channel, ChannelInput, FixedTextBlock, ReferenceScript, ReferenceFormat, StyleAnalysis, StyleFinding, StyleTestResult, Template, TemplateApprovalStatus, TemplateVersion, TemplateVersionInput } from '@shared/types'
+import type { Channel, ChannelInput, FixedTextBlock, ReferenceScript, ReferenceFormat, StyleAnalysis, StyleFinding, StyleTestResult, Template, TemplateApprovalStatus, TemplateVersion, TemplateVersionInput, TemplateLimitsPatch } from '@shared/types'
 import { DEFAULT_RESEARCH, DEFAULT_VALIDATION, DEFAULT_VOICE_SETTINGS } from '@shared/defaults'
 import type { Database } from '../database'
 import { newId, nowIso, parseJson, slugify, toBool } from '../../util/common'
@@ -76,6 +76,10 @@ interface TemplateRow {
   channel_id: string
   name: string
   content_type: string
+  form_factor?: string | null
+  min_chars?: number | null
+  max_chars?: number | null
+  target_duration_sec?: number | null
   active_version_id: string | null
   reference_set_version: number
   created_at: string
@@ -304,6 +308,10 @@ export class ChannelRepo {
       channelId: r.channel_id,
       name: r.name,
       contentType: r.content_type,
+      formFactor: r.form_factor === 'short' ? 'short' : 'long',
+      minChars: r.min_chars ?? null,
+      maxChars: r.max_chars ?? null,
+      targetDurationSec: r.target_duration_sec ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       latestVersion: latest,
@@ -351,6 +359,28 @@ export class ChannelRepo {
       this.db.run('UPDATE templates SET active_version_id = ? WHERE id = ?', version.id, id)
       return { template: this.getTemplate(id)!, version }
     })
+  }
+
+  /** 1.7.0: form factor and the format's own length window (null = channel limits). */
+  setTemplateLimits(templateId: string, patch: TemplateLimitsPatch): Template {
+    const cur = this.getTemplate(templateId)
+    if (!cur) throw new Error('Format not found')
+    const next = {
+      formFactor: patch.formFactor ?? cur.formFactor,
+      minChars: patch.minChars === undefined ? cur.minChars : patch.minChars,
+      maxChars: patch.maxChars === undefined ? cur.maxChars : patch.maxChars,
+      targetDurationSec: patch.targetDurationSec === undefined ? cur.targetDurationSec : patch.targetDurationSec
+    }
+    this.db.run(
+      'UPDATE templates SET form_factor = ?, min_chars = ?, max_chars = ?, target_duration_sec = ?, updated_at = ? WHERE id = ?',
+      next.formFactor,
+      next.minChars,
+      next.maxChars,
+      next.targetDurationSec,
+      nowIso(),
+      templateId
+    )
+    return this.getTemplate(templateId)!
   }
 
   renameTemplate(templateId: string, name: string): Template {

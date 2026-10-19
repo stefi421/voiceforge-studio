@@ -253,7 +253,7 @@ export function ChannelsPage(): JSX.Element {
                   ) : (
                     fs.map((f) => (
                       <button key={f.template.id} type="button" className="format-link" onClick={() => setParams({ edit: c.id, tab: 'formats', format: f.template.id })} title={`${f.template.name} — open in the Formats tab`}>
-                        <FormatStatusPill status={f.status} prefix={fs.length > 1 ? contentTypeLabel(f.template.contentType) : undefined} />
+                        <FormatStatusPill status={f.status} prefix={fs.length > 1 ? `${contentTypeLabel(f.template.contentType)}${f.template.formFactor === 'short' ? ' (Short)' : ''}` : undefined} />
                       </button>
                     ))
                   )}

@@ -128,6 +128,12 @@ export interface Template {
    * type — and they never overwrite each other. Unique per channel.
    */
   contentType: string
+  /** 1.7.0: long-form video or short (vertical, ~10–60 s). Shorts are voiced in one request. */
+  formFactor: FormFactor
+  /** Per-format length window; null = use the channel's limits. */
+  minChars: number | null
+  maxChars: number | null
+  targetDurationSec: number | null
   createdAt: string
   updatedAt: string
   latestVersion: number
@@ -135,6 +141,31 @@ export interface Template {
   /** Approval status of the active version (denormalised for lists). */
   approvalStatus: TemplateApprovalStatus
   referenceCount: number
+}
+
+export type FormFactor = 'long' | 'short'
+
+export interface TemplateLimitsPatch {
+  formFactor?: FormFactor
+  minChars?: number | null
+  maxChars?: number | null
+  targetDurationSec?: number | null
+}
+
+/**
+ * The length window that applies to a script: the format's own limits when set, otherwise the
+ * channel's. Used everywhere a length is needed (prompt, validator, estimate, pre-flight, TTS).
+ */
+export function applyFormatLimits<C extends { minChars: number; maxChars: number; targetDurationSec: number }>(
+  channel: C,
+  template: Pick<Template, 'minChars' | 'maxChars' | 'targetDurationSec'> | null | undefined
+): C {
+  if (!template) return channel
+  const minChars = template.minChars ?? channel.minChars
+  const maxChars = template.maxChars ?? channel.maxChars
+  const targetDurationSec = template.targetDurationSec ?? channel.targetDurationSec
+  if (minChars === channel.minChars && maxChars === channel.maxChars && targetDurationSec === channel.targetDurationSec) return channel
+  return { ...channel, minChars, maxChars: Math.max(maxChars, minChars), targetDurationSec }
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +459,8 @@ export interface JobView extends Job {
   projectFolder: string | null
   scriptCharCount: number | null
   audioFilePath: string | null
+  /** 1.7.0: shorts show a "Short" badge in the queue. */
+  formFactor: FormFactor
   /** 1.6.1: set while the job's next request waits for a provider limit (in memory, not persisted). */
   waitingFor?: WaitingFor | null
 }
@@ -455,6 +488,8 @@ export interface Project {
   folderPath: string | null
   /** Layout the project's finished files are published with (fixed when the project is created). */
   layout: OutputLayout
+  /** 1.7.0: shorts are separate projects ("<Title> (Short)" folder / files). */
+  formFactor: FormFactor
   archived: boolean
   createdAt: string
   updatedAt: string
@@ -986,6 +1021,8 @@ export interface AppSettings {
     lastChannelId: string | null
     lastTemplateId: string | null
     lastMode: JobMode | null
+    /** 1.7.0: Long form / Short form choice remembered per channel. */
+    formFactorByChannel: Record<string, FormFactor>
   }
   updates: {
     /** Check GitHub Releases for a newer version shortly after launch. */

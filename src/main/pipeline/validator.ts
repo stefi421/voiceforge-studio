@@ -49,6 +49,12 @@ export interface ValidationContext {
   lengthToleranceChars?: number
   /** When true, any overshoot is an error regardless of the tolerance. */
   strictLength?: boolean
+  /**
+   * 1.7.0: short-form formats. `channel` must already carry the format's own length window
+   * (`applyFormatLimits`). Shorts always forbid URLs/markdown, require the game/product name and
+   * never inherit the long-form intro requirement or heading lines.
+   */
+  formFactor?: 'long' | 'short'
 }
 
 /** Character count the writer should aim for: comfortably inside the window, never at the edge. */
@@ -121,15 +127,15 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
       code: 'too_long',
       severity: minor ? 'warning' : 'error',
       message: minor
-        ? `Script has ${charCount} characters, ${over} over the channel maximum of ${channel.maxChars} (within the ${tolerance}-character tolerance).`
-        : `Script has ${charCount} characters; the channel maximum is ${channel.maxChars} (${over} over).`
+        ? `Script has ${charCount} characters, ${over} over the maximum of ${channel.maxChars} (within the ${tolerance}-character tolerance).`
+        : `Script has ${charCount} characters; the maximum is ${channel.maxChars} (${over} over).`
     })
   }
   if (channel.minChars > 0 && charCount < channel.minChars) {
     issues.push({
       code: 'too_short',
       severity: ctx.strictness === 'relaxed' ? 'warning' : 'error',
-      message: `Script has ${charCount} characters; the channel minimum is ${channel.minChars}.`
+      message: `Script has ${charCount} characters; the minimum is ${channel.minChars}.`
     })
   }
 
@@ -145,14 +151,15 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
     }
   }
 
+  const short = ctx.formFactor === 'short'
   // URLs / citations / markdown
-  if (rules.forbidUrls && URL_RE.test(clean.replace(SPOKEN_DOMAIN_NAMES, ' '))) {
+  if ((rules.forbidUrls || short) && URL_RE.test(clean.replace(SPOKEN_DOMAIN_NAMES, ' '))) {
     issues.push({ code: 'url', severity: 'error', message: 'The narration contains a URL or web address.' })
   }
   if (rules.forbidCitations && CITATION_RE.test(clean)) {
     issues.push({ code: 'citation', severity: 'error', message: 'The narration contains citation markers (e.g. [1], [source]).' })
   }
-  if (rules.forbidMarkdown && MARKDOWN_RE.test(clean)) {
+  if ((rules.forbidMarkdown || short) && MARKDOWN_RE.test(clean)) {
     issues.push({ code: 'markdown', severity: 'error', message: 'The narration contains markdown formatting (#, **, bullets).' })
   }
 
@@ -205,12 +212,16 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
     const t = ctx.expectedTitle.toLowerCase()
     const firstWords = t.split(/\s+/).slice(0, 2).join(' ')
     if (!clean.toLowerCase().includes(t) && !(firstWords.length > 3 && clean.toLowerCase().includes(firstWords))) {
-      issues.push({ code: 'title_missing', severity: 'warning', message: `The script never mentions "${ctx.expectedTitle}".` })
+      issues.push({
+        code: 'title_missing',
+        severity: short ? 'error' : 'warning',
+        message: short ? `The short never names "${ctx.expectedTitle}".` : `The script never mentions "${ctx.expectedTitle}".`
+      })
     }
   }
 
   // Intro requirement: if the channel declares an exact intro sentence, require it near the start.
-  const quotedIntro = channel.introRequirements.match(/"([^"]{20,})"/)?.[1]
+  const quotedIntro = short ? undefined : channel.introRequirements.match(/"([^"]{20,})"/)?.[1]
   if (quotedIntro) {
     const head = clean.slice(0, Math.max(400, quotedIntro.length + 50)).toLowerCase()
     if (!head.includes(quotedIntro.toLowerCase().slice(0, 40))) {
@@ -239,6 +250,15 @@ export function validateScript(text: string, ctx: ValidationContext): Validation
   const duplicates = foundKeys.filter((k, i) => foundKeys.indexOf(k) !== i)
   if (duplicates.length) {
     issues.push({ code: 'section_duplicate', severity: 'warning', message: `Duplicate section heading(s): ${[...new Set(duplicates)].join(', ')}.` })
+  }
+
+  // Shorts are one continuous voiceover: section labels must not appear as their own lines.
+  if (short && !ctx.template?.headingsSpoken) {
+    const labels = structure.filter((sec) => !sec.required).map((sec) => normalizeHeading(sec.label)).filter(Boolean)
+    const headingLines = clean.split('\n').map((l) => l.trim()).filter((l) => l && labels.includes(normalizeHeading(l)))
+    if (headingLines.length) {
+      issues.push({ code: 'short_heading', severity: 'error', message: `Shorts have no heading lines; remove "${headingLines[0]}".` })
+    }
   }
 
   // Locked fixed text (approved intro / outro / headings / phrases)

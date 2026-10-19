@@ -28,6 +28,7 @@ import type {
   TemplateVersion,
   TemplateVersionInput,
   UpdateStatus,
+  TemplateLimitsPatch,
   GameView,
   GameMatch,
   ReuseSavings,
@@ -131,6 +132,8 @@ export interface IpcContract {
   'templates:setApproval': { req: { versionId: string; status: TemplateApprovalStatus }; res: TemplateVersion }
   /** Makes a format the channel's default (used when a batch does not pick one). */
   'templates:setDefault': { req: { channelId: string; templateId: string }; res: Channel }
+  /** 1.7.0: long/short and the format's own length window (null clears it → channel limits). */
+  'templates:setLimits': { req: { templateId: string } & TemplateLimitsPatch; res: Template }
   'templates:setFixedBlocks': { req: { versionId: string; blocks: FixedTextBlock[] }; res: TemplateVersion }
   /** Generates a test script for one title (Scripts-only, not saved to the libraries) and a compliance report. */
   'style:test': { req: { templateId: string; title: string; notes?: string }; res: StyleTestResult }

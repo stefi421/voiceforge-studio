@@ -1,5 +1,5 @@
 import { LEGACY_SEED_V1 } from '@shared/defaults'
-import { SEED_CHANNELS, SEED_MARKER_RE, type SeedChannelV3 } from '@shared/seedChannels'
+import { SEED_CHANNELS, SEED_MARKER_RE, SHORT_FORMATS, type SeedChannelV3, type SeedFormat } from '@shared/seedChannels'
 import { versionToInput } from './style'
 import type { Channel, ChannelInput } from '@shared/types'
 import type { Services } from './container'
@@ -7,12 +7,19 @@ import { nowIso } from '../util/common'
 
 const TEXT_FIELDS = ['description', 'writingInstructions', 'writingStyle', 'introRequirements', 'outroRequirements'] as const
 
+/** Form factor and own length window of a seeded format (1.7.0). */
+function applySeedLimits(s: Services, templateId: string, f: SeedFormat): void {
+  if (!f.formFactor && !f.limits) return
+  s.channels.setTemplateLimits(templateId, { formFactor: f.formFactor ?? 'long', ...(f.limits ?? {}) })
+}
+
 function createSeedChannel(s: Services, seed: SeedChannelV3, position: number): Channel {
   const channel = s.channels.create({ ...seed.channel, position })
   seed.formats.forEach((f, i) => {
-    const { version } = s.channels.createTemplate(channel.id, f.name, f.version, f.contentType)
+    const { template, version } = s.channels.createTemplate(channel.id, f.name, f.version, f.contentType)
     // Seeded statuses (provisional / not configured) are set as-is; nothing starts approved.
     if (version.approvalStatus !== f.version.approvalStatus) s.channels.setVersionStatus(version.id, f.version.approvalStatus)
+    applySeedLimits(s, template.id, f)
     if (i === 0) s.channels.setActiveVersion(channel.id, version.id)
   })
   return channel
@@ -48,8 +55,9 @@ function upgradeLegacy(s: Services, channel: Channel, seed: SeedChannelV3): void
   s.channels.setDefaultTemplate(channel.id, existing.id)
   for (const f of rest) {
     if (s.channels.getTemplateByContentType(channel.id, f.contentType)) continue
-    const { version } = s.channels.createTemplate(channel.id, f.name, f.version, f.contentType)
+    const { template, version } = s.channels.createTemplate(channel.id, f.name, f.version, f.contentType)
     if (version.approvalStatus !== f.version.approvalStatus) s.channels.setVersionStatus(version.id, f.version.approvalStatus)
+    applySeedLimits(s, template.id, f)
   }
 }
 
@@ -63,6 +71,59 @@ export function seedDefaults(s: Services): void {
   seedV3(s)
   upgradeTo13(s)
   upgradeTo15(s)
+  upgradeTo17(s)
+}
+
+export const SHORTS_SEED_KEY = 'seeded_v17_shorts'
+
+/**
+ * 1.7.0 short-form formats, runs once per install (idempotent):
+ * - PlayTopia "short" and RENVO "short" are created only when the channel has no format of that
+ *   content type yet.
+ * - An existing RiftForge "short_review" becomes short-form; its length window is set only while
+ *   the owner never set one, and its seed text is refreshed only while the active version is still
+ *   the untouched, unapproved seed. Owner-edited or approved formats are never changed.
+ */
+function upgradeTo17(s: Services): void {
+  if (s.settingsRepo.get<boolean>(SHORTS_SEED_KEY)) return
+  const log = s.logger.child('seed')
+  let created = 0
+  let updated = 0
+  s.db.transaction(() => {
+    for (const [name, formats] of Object.entries(SHORT_FORMATS)) {
+      const channel = s.channels.getByName(name)
+      if (!channel) continue
+      for (const f of formats) {
+        const existing = s.channels.getTemplateByContentType(channel.id, f.contentType)
+        if (!existing) {
+          const { template, version } = s.channels.createTemplate(channel.id, f.name, f.version, f.contentType)
+          if (version.approvalStatus !== f.version.approvalStatus) s.channels.setVersionStatus(version.id, f.version.approvalStatus)
+          applySeedLimits(s, template.id, f)
+          created++
+          continue
+        }
+        const untouchedLimits = existing.minChars === null && existing.maxChars === null && existing.targetDurationSec === null
+        if (existing.formFactor !== 'short' || (untouchedLimits && f.limits)) {
+          s.channels.setTemplateLimits(existing.id, untouchedLimits && f.limits ? { formFactor: 'short', ...f.limits } : { formFactor: 'short' })
+          updated++
+        }
+        const active = s.channels.activeVersionOf(existing.id)
+        const seedOnly =
+          !!active &&
+          active.notes !== f.version.notes &&
+          SEED_MARKER_RE.test(active.notes) &&
+          !['approved', 'test_passed'].includes(active.approvalStatus) &&
+          s.channels.listVersions(existing.id).length === 1
+        if (seedOnly) {
+          const v = s.channels.addVersion(existing.id, f.version)
+          if (v.approvalStatus !== f.version.approvalStatus) s.channels.setVersionStatus(v.id, f.version.approvalStatus)
+          s.channels.setActiveVersion(channel.id, v.id)
+        }
+      }
+    }
+    s.settingsRepo.set(SHORTS_SEED_KEY, true)
+  })
+  if (created || updated) log.info('Added short-form formats for 1.7.0', { created, updated })
 }
 
 /** Channel length limits as seeded by 1.2.0 — only these untouched values are replaced in 1.3.0. */

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type JSX } from 'react'
 import { BookmarkCheck, ChevronDown, ChevronRight, ClipboardPaste, Eraser, Eye, FileInput, FileText, HelpCircle, ListChecks, RefreshCw, Search, Sparkles, TriangleAlert, Zap } from 'lucide-react'
-import type { BatchEstimate, CreateBatchInput, GameMatch, JobMode, PreflightResult } from '@shared/types'
+import type { BatchEstimate, CreateBatchInput, FormFactor, GameMatch, JobMode, PreflightResult } from '@shared/types'
+import { applyFormatLimits } from '@shared/types'
 import { PreflightChecklist } from '@/components/SpeedViews'
 import { modeLabel } from '@/lib/jobs'
-import { allowsAuto, allowsMode, allowsSupervised, blockReason, contentTypeLabel, loadFormats } from '@/lib/formats'
+import { allowsAuto, allowsMode, allowsSupervised, blockReason, contentTypeLabel, formatLength, loadFormats } from '@/lib/formats'
 import { FormatStatusPill } from '@/components/FormatStatus'
 import { api } from '@/lib/api'
 import { useAsync, useDebouncedValue } from '@/lib/hooks'
@@ -61,12 +62,33 @@ export function GeneratePage(): JSX.Element {
   const channelFormats = useMemo(() => formats.data?.[channelId] ?? [], [formats.data, channelId])
   const [templateId, setTemplateId] = useState<string | null>(params.templateId ?? (!params.channelId && rememberedChannel ? (remembered?.lastTemplateId ?? null) : null))
 
-  // Keep the chosen format valid for the chosen channel (default format otherwise).
+  // 1.7.0: Long form / Short form per channel (remembered per channel).
+  const [ffChoice, setFfChoice] = useState<Record<string, FormFactor>>({})
+  const hasShort = channelFormats.some((f) => f.template.formFactor === 'short')
+  const hasLong = channelFormats.some((f) => f.template.formFactor !== 'short')
+  const pickedFormat = channelFormats.find((f) => f.template.id === templateId)
+  const formFactor: FormFactor = !hasShort
+    ? 'long'
+    : !hasLong
+      ? 'short'
+      : (ffChoice[channelId] ?? pickedFormat?.template.formFactor ?? remembered?.formFactorByChannel?.[channelId] ?? 'long')
+  const visibleFormats = useMemo(() => channelFormats.filter((f) => (f.template.formFactor === 'short' ? 'short' : 'long') === formFactor), [channelFormats, formFactor])
+  const chooseFormFactor = (ff: FormFactor): void => {
+    if (ff === formFactor) return
+    setFfChoice((m) => ({ ...m, [channelId]: ff }))
+    setTemplateId(null)
+    void useApp
+      .getState()
+      .updateSettings({ ui: { formFactorByChannel: { [channelId]: ff } } })
+      .catch(() => undefined)
+  }
+
+  // Keep the chosen format valid for the chosen channel and form factor (default format otherwise).
   useEffect(() => {
-    if (channelFormats.length === 0) return
-    if (templateId && channelFormats.some((f) => f.template.id === templateId)) return
-    setTemplateId((channelFormats.find((f) => f.isDefault) ?? channelFormats[0])!.template.id)
-  }, [channelFormats, templateId])
+    if (visibleFormats.length === 0) return
+    if (templateId && visibleFormats.some((f) => f.template.id === templateId)) return
+    setTemplateId((visibleFormats.find((f) => f.isDefault) ?? visibleFormats[0])!.template.id)
+  }, [visibleFormats, templateId])
 
   const selectedChannel = live.find((c) => c.id === channelId)
   const selectedFormat = channelFormats.find((f) => f.template.id === templateId) ?? null
@@ -443,10 +465,22 @@ export function GeneratePage(): JSX.Element {
               )
             })}
           </div>
-          {selectedChannel && channelFormats.length > 1 && (
+          {selectedChannel && hasShort && hasLong && (
+            <div className="format-picker" role="radiogroup" aria-label="Video length">
+              <span className="xs muted">Video</span>
+              <div className="segmented" role="tablist" aria-label="Long or short form">
+                {(['long', 'short'] as const).map((ff) => (
+                  <button key={ff} type="button" role="tab" aria-selected={formFactor === ff} className={`segment ${formFactor === ff ? 'active' : ''}`} onClick={() => chooseFormFactor(ff)}>
+                    {ff === 'long' ? 'Long form' : 'Short form'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {selectedChannel && visibleFormats.length > 1 && (
             <div className="format-picker" role="radiogroup" aria-label="Format">
               <span className="xs muted">Format</span>
-              {channelFormats.map((f) => (
+              {visibleFormats.map((f) => (
                 <button key={f.template.id} type="button" role="radio" aria-checked={f.template.id === templateId} className={`filter-chip ${f.template.id === templateId ? 'active' : ''}`} onClick={() => setTemplateId(f.template.id)} title={f.template.name}>
                   {contentTypeLabel(f.template.contentType)}
                 </button>
@@ -457,7 +491,7 @@ export function GeneratePage(): JSX.Element {
             <div className="row wrap gen-channel-meta">
               {formatStatus && <FormatStatusPill status={formatStatus} prefix={selectedFormat ? contentTypeLabel(selectedFormat.template.contentType) : undefined} />}
               <span className="xs muted">
-                Voice: {selectedChannel.elevenVoiceName ?? 'none'} · {formatNumber(selectedChannel.minChars)}–{formatNumber(selectedChannel.maxChars)} chars
+                Voice: {selectedChannel.elevenVoiceName ?? 'none'} · {formatLength(applyFormatLimits(selectedChannel, selectedFormat?.template))}
               </span>
               {formatStatus && allowsSupervised(formatStatus) && !allowsAuto(formatStatus) && (
                 <Button size="sm" variant="ghost" onClick={() => navigate('channels', { edit: channelId, tab: 'formats', format: templateId ?? undefined })}>
@@ -657,7 +691,7 @@ export function GeneratePage(): JSX.Element {
         open={confirmOpen}
         onClose={() => setConfirmOpen(false)}
         title={needsConfirm ? 'Confirm this batch' : 'Ready to start'}
-        description={estimate ? `${estimate.jobs} job(s) · ${modeLabel(mode)} · ${selectedChannel?.name ?? ''}${selectedFormat && channelFormats.length > 1 ? ` · ${contentTypeLabel(selectedFormat.template.contentType)}` : ''}` : undefined}
+        description={estimate ? `${estimate.jobs} job(s) · ${modeLabel(mode)} · ${selectedChannel?.name ?? ''}${selectedFormat && channelFormats.length > 1 ? ` · ${contentTypeLabel(selectedFormat.template.contentType)}` : ''}${selectedFormat?.template.formFactor === 'short' ? ' · Short' : ''}` : undefined}
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmOpen(false)} disabled={busy === 'create'}>
